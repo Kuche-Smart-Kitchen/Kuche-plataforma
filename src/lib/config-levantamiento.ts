@@ -23,7 +23,7 @@ export interface LevantamientoConfig {
     accesoriosEspeciales: Record<string, number>;
   };
   extrasIluminacionCantidades: Record<string, number>;
-  factorHastaTecho?: number;
+  factorHastaTecho: number;
 }
 
 function defaultMateriales(): MaterialConfig[] {
