@@ -39,6 +39,7 @@ import {
   normalizeEtapaForStorage,
 } from "@/lib/seguimiento-project";
 import { CatalogProjectTypeField } from "@/components/CatalogProjectTypeField";
+import { DashboardBackButton } from "@/components/dashboard/DashboardBackButton";
 import { CATALOG_PROJECT_TYPES, normalizeLegacyProjectTypeToCatalog } from "@/lib/catalog-project-types";
 import { KUCHE_EMAIL, KUCHE_FORMAL_PDF_FOOTER_LINE_1 } from "@/lib/kuche-contact";
 /** Precio por metro lineal para material base (según ítem de ESTRUCTURA seleccionado). */
@@ -1895,6 +1896,7 @@ export default function CotizadorPage() {
 
   return (
     <div className={`space-y-8 ${showCotizadorBottomBar ? "pb-32" : "pb-24"}`}>
+      <DashboardBackButton href="/admin" preferCitaReturnUrl />
       <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-md">
         <p className="text-xs uppercase tracking-[0.3em] text-secondary">COTIZADOR PRO</p>
         <h1 className="mt-2 text-3xl font-semibold">Perfil del proyecto</h1>

@@ -14,6 +14,8 @@ import {
   lightingAppearsInPdf,
   lightingOtroAppearsInPdf,
   medidasCamposTieneValor,
+  SPECIAL_ACCESSORIES_ITEMS,
+  specialAccessoryAppearsInPdf,
   normalizeLevantamientoDetalle,
   wallSlotKey,
   WALL_ITEMS,
@@ -574,10 +576,17 @@ function addFichaTecnica(doc: jsPDF, data: PreliminarData, lev: LevantamientoDet
   if (lightingOtroAppearsInPdf(lev)) {
     rows.push([`Luz - Otro: ${safeText(lev.lightingOtro.descripcion, "(sin descripcion)")}`, safeText(lev.lightingOtro.ancho, "-"), safeText(lev.lightingOtro.alto, "-"), safeText(lev.lightingOtro.fondo, "-")]);
   }
+  for (const acc of SPECIAL_ACCESSORIES_ITEMS) {
+    if (!specialAccessoryAppearsInPdf(lev, acc.id)) continue;
+    const m = lev.specialAccessoriesMeasures?.[acc.id];
+    const q = Math.max(0, Math.floor(Number(lev.specialAccessoriesQty?.[acc.id]) || 0));
+    const label = q > 1 ? `Acc. especial - ${acc.label} (×${q})` : `Acc. especial - ${acc.label}`;
+    rows.push([label, safeText(m?.ancho, "-"), safeText(m?.alto, "-"), safeText(m?.fondo, "-")]);
+  }
 
   if (rows.length === 0) {
     setText(doc, TEXT_MID, 10, "normal");
-    doc.text("No se registraron electrodomesticos ni iluminacion.", marginX, y);
+    doc.text("No se registraron electrodomesticos, iluminacion ni accesorios especiales.", marginX, y);
     return y + 18;
   }
 

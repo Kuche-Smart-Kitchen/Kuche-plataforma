@@ -1734,6 +1734,8 @@ export type LevantamientoDetalle = {
   lightingOtro: OtroMedidas;
   /** Cantidades por id de `SPECIAL_ACCESSORIES_ITEMS`. */
   specialAccessoriesQty: Record<string, number>;
+  /** Medidas opcionales por id de accesorio especial (ancho / alto / fondo). */
+  specialAccessoriesMeasures: Record<string, MedidasCampos>;
 };
 
 export function emptyOtro(): OtroMedidas {
@@ -1777,6 +1779,14 @@ export function lightingOtroAppearsInPdf(lev: LevantamientoDetalle): boolean {
     medidasCamposTieneValor(o) ||
     (typeof o.precioEstimado === "number" && o.precioEstimado > 0)
   );
+}
+
+/** PDF: accesorio especial si cantidad &gt; 0 o tiene medidas opcionales capturadas. */
+export function specialAccessoryAppearsInPdf(lev: LevantamientoDetalle, accessoryId: string): boolean {
+  const q = Math.max(0, Math.floor(Number(lev.specialAccessoriesQty?.[accessoryId]) || 0));
+  if (q > 0) return true;
+  const m = lev.specialAccessoriesMeasures?.[accessoryId];
+  return m ? medidasCamposTieneValor(m) : false;
 }
 
 /** Overrides opcionales desde `LevantamientoConfig.extrasPrecios` (precio unitario MXN por id). */
@@ -1865,6 +1875,7 @@ export function defaultLevantamientoDetalle(): LevantamientoDetalle {
     lightingMeasures: initMeasuresMap(LIGHTING_ITEMS.map((l) => l.id)),
     lightingOtro: emptyOtro(),
     specialAccessoriesQty: defaultSpecialAccessoriesQty(),
+    specialAccessoriesMeasures: initMeasuresMap(SPECIAL_ACCESSORIES_ITEMS.map((i) => i.id)),
     medidasGenerales: {},
   };
 }
@@ -2031,6 +2042,11 @@ export function normalizeLevantamientoDetalle(raw: unknown): LevantamientoDetall
     return merged;
   })();
 
+  const specialAccessoriesMeasures = mergeMeasuresMapFromRaw(
+    r.specialAccessoriesMeasures,
+    SPECIAL_ACCESSORIES_ITEMS.map((i) => i.id),
+  );
+
   const largoGen = typeof r.largo === "string" ? r.largo : undefined;
   const altoGen = typeof r.alto === "string" ? r.alto : undefined;
 
@@ -2078,5 +2094,6 @@ export function normalizeLevantamientoDetalle(raw: unknown): LevantamientoDetall
     lightingMeasures,
     lightingOtro,
     specialAccessoriesQty,
+    specialAccessoriesMeasures,
   };
 }

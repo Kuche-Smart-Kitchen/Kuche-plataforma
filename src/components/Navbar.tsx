@@ -6,7 +6,7 @@ import { Menu } from "lucide-react";
 
 export default function Navbar() {
   const pathname = usePathname();
-  if (pathname.startsWith("/admin")) {
+  if (pathname.startsWith("/admin") || pathname.startsWith("/dashboard")) {
     return null;
   }
 

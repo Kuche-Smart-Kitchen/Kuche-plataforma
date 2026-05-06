@@ -445,7 +445,14 @@ export default function BookingSection() {
                 </p>
               </div>
 
-              <div className="mt-6 flex gap-3">
+              <p className="mt-5 rounded-xl border border-primary/10 bg-primary/[0.04] px-3 py-2.5 text-[11px] leading-relaxed text-secondary">
+                La fecha y el horario que elegiste son una{" "}
+                <span className="font-semibold text-primary">solicitud de visita</span>, no una cita firme. Küche puede
+                reprogramarla por motivos operativos (disponibilidad del equipo, carga de trabajo u otras causas
+                internas). La visita quedará confirmada cuando nos comuniquemos contigo y lo acordemos explícitamente.
+              </p>
+
+              <div className="mt-5 flex gap-3">
                 <button
                   type="button"
                   className="flex-1 rounded-lg border border-gray-200 px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-secondary"

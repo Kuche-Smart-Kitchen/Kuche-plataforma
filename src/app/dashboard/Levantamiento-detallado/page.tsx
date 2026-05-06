@@ -511,11 +511,14 @@ export default function CotizadorPreliminarPage() {
   const [lightingBrowseMode, setLightingBrowseMode] = useState(true);
   /** id del luminario en vista detalle (cuando lightingBrowseMode es false). */
   const [lightingFocusedId, setLightingFocusedId] = useState<string | null>(null);
+  const [specialAccessoriesBrowseMode, setSpecialAccessoriesBrowseMode] = useState(true);
+  /** id del accesorio especial en vista detalle (cuando specialAccessoriesBrowseMode es false). */
+  const [specialAccessoriesFocusedId, setSpecialAccessoriesFocusedId] = useState<string | null>(null);
   const applianceRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   /** Al pasar de carrusel → detalle el documento se acorta y el scroll absoluto deja la vista en la sección siguiente; se reencuadra la sección C. */
   const applianceSectionRef = useRef<HTMLDivElement | null>(null);
   const lightingSectionRef = useRef<HTMLDivElement | null>(null);
-  const catalogScrollPositions = useRef({ appliance: 0, lighting: 0 });
+  const catalogScrollPositions = useRef({ appliance: 0, lighting: 0, specialAccessories: 0 });
 
   useEffect(() => {
     setFocusedWallGroup(null);
@@ -529,7 +532,7 @@ export default function CotizadorPreliminarPage() {
   };
 
   const patchMedidasMap = (
-    mapKey: "applianceMeasures" | "lightingMeasures",
+    mapKey: "applianceMeasures" | "lightingMeasures" | "specialAccessoriesMeasures",
     id: string,
     field: keyof MedidasCampos,
     value: string,
@@ -1386,6 +1389,25 @@ export default function CotizadorPreliminarPage() {
       setLightingFocusedId(null);
     }
   }, [lightingFocusedId]);
+
+  const specialAccessoryDetailItem = useMemo(() => {
+    if (!specialAccessoriesFocusedId) return null;
+    return SPECIAL_ACCESSORIES_ITEMS.find((i) => i.id === specialAccessoriesFocusedId) ?? null;
+  }, [specialAccessoriesFocusedId]);
+
+  const specialAccessoryModalNavIds = useMemo(
+    () => SPECIAL_ACCESSORIES_ITEMS.map((i) => i.id),
+    [],
+  );
+
+  useEffect(() => {
+    if (
+      specialAccessoriesFocusedId &&
+      !SPECIAL_ACCESSORIES_ITEMS.some((i) => i.id === specialAccessoriesFocusedId)
+    ) {
+      setSpecialAccessoriesFocusedId(null);
+    }
+  }, [specialAccessoriesFocusedId]);
 
   useEffect(() => {
     const n = levantamiento.wallSlotCount;
@@ -2762,9 +2784,10 @@ export default function CotizadorPreliminarPage() {
                 Sección E · Extras
               </p>
               <p className="mt-2 text-sm text-secondary">
-                Iluminación y accesorios especiales (Alexa, botelleros, etc.). Los precios unitarios los ajusta el
-                administrador en Gestor de Levantamiento. Clic en el póster activa o anula (1 unidad); usa + / − para
-                varias unidades del mismo tipo. «Medidas opcionales» abre el detalle.
+                Iluminación y accesorios especiales (Alexa, botelleros, etc.). Clic en el póster activa o anula (1
+                unidad); usa + / − para varias unidades del mismo tipo. «Medidas opcionales» abre el detalle. Los
+                importes de estos extras los define el equipo en configuración interna (no se muestran aquí al
+                cliente).
               </p>
             </div>
             <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
@@ -2827,41 +2850,6 @@ export default function CotizadorPreliminarPage() {
                       </label>
                     ))}
                   </div>
-                  <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
-                    Precio estimado (MXN, cotización)
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      autoComplete="off"
-                      placeholder="Opcional"
-                      value={
-                        levantamiento.lightingOtro.precioEstimado == null ||
-                        levantamiento.lightingOtro.precioEstimado === 0
-                          ? ""
-                          : String(levantamiento.lightingOtro.precioEstimado)
-                      }
-                      onChange={(e) => {
-                        const raw = e.target.value.trim();
-                        if (raw === "") {
-                          setLevantamiento((prev) => ({
-                            ...prev,
-                            lightingOtro: { ...prev.lightingOtro, precioEstimado: undefined },
-                          }));
-                          return;
-                        }
-                        const n = Number.parseFloat(raw.replace(",", "."));
-                        if (!Number.isFinite(n)) return;
-                        setLevantamiento((prev) => ({
-                          ...prev,
-                          lightingOtro: {
-                            ...prev.lightingOtro,
-                            precioEstimado: Math.max(0, n),
-                          },
-                        }));
-                      }}
-                      className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-                    />
-                  </label>
                 </div>
               </div>
             ) : !lightingBrowseMode && lightingDetailItem ? (
@@ -3126,9 +3114,7 @@ export default function CotizadorPreliminarPage() {
                 <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
                   <div>
                     <p className={streamRowHeading}>Iluminación</p>
-                    <p className={streamRowHint}>
-                      Precio unitario según configuración · + / − para varios por tipo
-                    </p>
+                    <p className={streamRowHint}>+ / − para cantidad por tipo · importes solo en configuración interna</p>
                   </div>
                   <button
                     type="button"
@@ -3217,9 +3203,6 @@ export default function CotizadorPreliminarPage() {
                             <Plus className="h-4 w-4" strokeWidth={2.5} />
                           </button>
                         </div>
-                        <p className="text-center text-[10px] font-medium tabular-nums text-zinc-400">
-                          {formatCurrency(levantamientoConfig.extrasPrecios.iluminacion[item.id] ?? 0)} c/u
-                        </p>
                       </div>
                     </div>
                   ))}
@@ -3261,89 +3244,252 @@ export default function CotizadorPreliminarPage() {
                 </HorizontalScrollStrip>
               </div>
             )}
-            <div className={streamRowShell}>
-              <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-                <div>
-                  <p className={streamRowHeading}>Accesorios de Organización y Tecnología</p>
-                  <p className={streamRowHint}>
-                    Cantidades con + / − · precio unitario en Gestor de Levantamiento
-                  </p>
-                </div>
+            {!specialAccessoriesBrowseMode && specialAccessoryDetailItem ? (
+              <div className="space-y-5">
                 <button
                   type="button"
                   onClick={() => {
-                    const el = lightingRowRefs.current.accesoriosCatalogo;
-                    if (el) el.scrollTo({ left: el.scrollWidth, behavior: "smooth" });
+                    setSpecialAccessoriesBrowseMode(true);
+                    setSpecialAccessoriesFocusedId(null);
+                    setTimeout(() => {
+                      if (typeof window === "undefined") return;
+                      window.scrollTo({
+                        top: catalogScrollPositions.current.specialAccessories,
+                        behavior: "instant" as ScrollBehavior,
+                      });
+                    }, 0);
                   }}
-                  className={streamVerTodosClass}
+                  className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-white px-4 py-2 text-sm font-semibold text-[#8B1C1C] transition hover:border-primary/30"
                 >
-                  Ver todos
+                  <ChevronLeft className="h-4 w-4 shrink-0" />
+                  Volver al catálogo
                 </button>
-              </div>
-              <HorizontalScrollStrip
-                scrollClassName={streamScrollClass}
-                scrollContainerRef={(el) => {
-                  lightingRowRefs.current.accesoriosCatalogo = el;
-                }}
-              >
-                {SPECIAL_ACCESSORIES_ITEMS.map((item, rank) => {
-                  const qty = Math.max(
-                    0,
-                    Math.floor(Number(levantamiento.specialAccessoriesQty?.[item.id]) || 0),
-                  );
-                  return (
-                    <div key={item.id} className="flex shrink-0 items-end gap-1">
-                      <span className={streamRankClass} aria-hidden>
-                        {rank + 1}
+                <div className="grid gap-6 lg:grid-cols-[minmax(0,240px)_1fr]">
+                  <div className="relative mx-auto aspect-[2/3] w-full max-w-[min(20rem,92vw)] overflow-hidden rounded-2xl border border-primary/10 bg-white lg:mx-0">
+                    <img
+                      src={specialAccessoryDetailItem.image}
+                      alt=""
+                      className="absolute inset-0 z-0 h-full w-full object-cover object-center"
+                    />
+                    <span className="pointer-events-none absolute bottom-2 left-2 z-10 rounded-lg bg-black/55 px-2 py-1 text-[10px] font-semibold text-white">
+                      {specialAccessoryDetailItem.label}
+                    </span>
+                  </div>
+                  <div className="space-y-3">
+                    <p className="text-base font-semibold text-primary">{specialAccessoryDetailItem.label}</p>
+                    <p className="text-xs text-secondary">
+                      Cantidad con + / − · medidas opcionales para referencia en documentación.
+                    </p>
+                    <div className="flex items-center justify-between gap-1 rounded-xl border border-primary/10 bg-white px-1.5 py-1.5 shadow-inner">
+                      <button
+                        type="button"
+                        aria-label={`Menos unidades · ${specialAccessoryDetailItem.label}`}
+                        disabled={
+                          Math.max(
+                            0,
+                            Math.floor(Number(levantamiento.specialAccessoriesQty?.[specialAccessoryDetailItem.id]) || 0),
+                          ) <= 0
+                        }
+                        onClick={() => updateSpecialAccessoryQty(specialAccessoryDetailItem.id, -1)}
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-white text-primary transition hover:bg-primary/[0.06] disabled:opacity-35"
+                      >
+                        <Minus className="h-4 w-4" strokeWidth={2.5} />
+                      </button>
+                      <span className="min-w-[2rem] text-center text-sm font-semibold tabular-nums text-primary">
+                        {Math.max(
+                          0,
+                          Math.floor(
+                            Number(levantamiento.specialAccessoriesQty?.[specialAccessoryDetailItem.id]) || 0,
+                          ),
+                        )}
                       </span>
-                      <div className="flex w-[min(10.5rem,52vw)] shrink-0 flex-col items-stretch gap-2 sm:w-[min(12.5rem,38vw)]">
-                        <div
-                          className={`relative z-10 aspect-[2/3] w-full shrink-0 overflow-hidden rounded-lg bg-zinc-900 shadow-xl ring-1 ring-white/10`}
+                      <button
+                        type="button"
+                        aria-label={`Más unidades · ${specialAccessoryDetailItem.label}`}
+                        disabled={
+                          Math.max(
+                            0,
+                            Math.floor(Number(levantamiento.specialAccessoriesQty?.[specialAccessoryDetailItem.id]) || 0),
+                          ) >= 999
+                        }
+                        onClick={() => updateSpecialAccessoryQty(specialAccessoryDetailItem.id, 1)}
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-white text-primary transition hover:bg-primary/[0.06] disabled:opacity-35"
+                      >
+                        <Plus className="h-4 w-4" strokeWidth={2.5} />
+                      </button>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      {(["ancho", "alto", "fondo"] as const).map((field) => {
+                        const m =
+                          levantamiento.specialAccessoriesMeasures[specialAccessoryDetailItem.id] ?? {
+                            ancho: "",
+                            alto: "",
+                            fondo: "",
+                          };
+                        return (
+                          <label
+                            key={field}
+                            className="text-[10px] font-semibold uppercase tracking-[0.15em] text-secondary"
+                          >
+                            {field} (m)
+                            <input
+                              value={m[field]}
+                              onChange={(e) =>
+                                patchMedidasMap(
+                                  "specialAccessoriesMeasures",
+                                  specialAccessoryDetailItem.id,
+                                  field,
+                                  e.target.value,
+                                )
+                              }
+                              inputMode="decimal"
+                              className="mt-1.5 w-full rounded-2xl border border-primary/10 bg-white px-3 py-2.5 text-sm outline-none"
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+                    {specialAccessoryModalNavIds.length > 1 ? (
+                      <div className="flex flex-wrap gap-2 border-t border-primary/10 pt-4">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const pos = specialAccessoryModalNavIds.indexOf(specialAccessoriesFocusedId!);
+                            if (pos > 0) setSpecialAccessoriesFocusedId(specialAccessoryModalNavIds[pos - 1]!);
+                          }}
+                          disabled={
+                            !specialAccessoriesFocusedId ||
+                            specialAccessoryModalNavIds.indexOf(specialAccessoriesFocusedId) <= 0
+                          }
+                          className="inline-flex items-center gap-1 rounded-full border border-primary/15 px-3 py-2 text-xs font-semibold text-primary disabled:opacity-40"
                         >
-                          <img
-                            src={item.image}
-                            alt=""
-                            className="absolute inset-0 z-0 h-full w-full object-cover object-center"
-                          />
-                          <div className={streamPosterTitleOverlay}>
-                            <p className={streamPosterLabelClass}>{item.label}</p>
+                          <ChevronLeft className="h-4 w-4" />
+                          Anterior
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const pos = specialAccessoriesFocusedId
+                              ? specialAccessoryModalNavIds.indexOf(specialAccessoriesFocusedId)
+                              : -1;
+                            if (pos < specialAccessoryModalNavIds.length - 1) {
+                              setSpecialAccessoriesFocusedId(specialAccessoryModalNavIds[pos + 1]!);
+                            }
+                          }}
+                          disabled={
+                            !specialAccessoriesFocusedId ||
+                            specialAccessoryModalNavIds.indexOf(specialAccessoriesFocusedId) >=
+                              specialAccessoryModalNavIds.length - 1
+                          }
+                          className="inline-flex items-center gap-1 rounded-full border border-primary/15 px-3 py-2 text-xs font-semibold text-primary disabled:opacity-40"
+                        >
+                          Siguiente
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className={streamRowShell}>
+                <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+                  <div>
+                    <p className={streamRowHeading}>Accesorios de Organización y Tecnología</p>
+                    <p className={streamRowHint}>
+                      Cantidades con + / − · precios unitarios solo en configuración (interno)
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const el = lightingRowRefs.current.accesoriosCatalogo;
+                      if (el) el.scrollTo({ left: el.scrollWidth, behavior: "smooth" });
+                    }}
+                    className={streamVerTodosClass}
+                  >
+                    Ver todos
+                  </button>
+                </div>
+                <HorizontalScrollStrip
+                  scrollClassName={streamScrollClass}
+                  scrollContainerRef={(el) => {
+                    lightingRowRefs.current.accesoriosCatalogo = el;
+                  }}
+                >
+                  {SPECIAL_ACCESSORIES_ITEMS.map((item, rank) => {
+                    const qty = Math.max(
+                      0,
+                      Math.floor(Number(levantamiento.specialAccessoriesQty?.[item.id]) || 0),
+                    );
+                    return (
+                      <div key={item.id} className="flex shrink-0 items-end gap-1">
+                        <span className={streamRankClass} aria-hidden>
+                          {rank + 1}
+                        </span>
+                        <div className="flex w-[min(10.5rem,52vw)] shrink-0 flex-col items-stretch gap-2 sm:w-[min(12.5rem,38vw)]">
+                          <div
+                            className={`relative z-10 aspect-[2/3] w-full shrink-0 overflow-hidden rounded-lg bg-zinc-900 shadow-xl ring-1 ring-white/10`}
+                          >
+                            <img
+                              src={item.image}
+                              alt=""
+                              className="absolute inset-0 z-0 h-full w-full object-cover object-center"
+                            />
+                            <div className={streamPosterTitleOverlay}>
+                              <p className={streamPosterLabelClass}>{item.label}</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="text-[10px] font-semibold text-[#8B1C1C] underline-offset-2 hover:underline"
+                            onClick={() => {
+                              if (typeof window !== "undefined") {
+                                catalogScrollPositions.current.specialAccessories = window.scrollY;
+                              }
+                              setSpecialAccessoriesFocusedId(item.id);
+                              setSpecialAccessoriesBrowseMode(false);
+                              setTimeout(() => {
+                                if (typeof window !== "undefined" && lightingSectionRef.current) {
+                                  const absoluteY =
+                                    lightingSectionRef.current.getBoundingClientRect().top + window.scrollY;
+                                  window.scrollTo({ top: absoluteY - 80, behavior: "instant" as ScrollBehavior });
+                                }
+                              }, 10);
+                            }}
+                          >
+                            Medidas opcionales
+                          </button>
+                          <div className="flex items-center justify-between gap-1 rounded-xl border border-white/10 bg-zinc-900/90 px-1.5 py-1.5 shadow-inner">
+                            <button
+                              type="button"
+                              aria-label={`Menos ${item.label}`}
+                              disabled={qty <= 0}
+                              onClick={() => updateSpecialAccessoryQty(item.id, -1)}
+                              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-zinc-800 text-zinc-100 transition hover:bg-zinc-700 disabled:opacity-35"
+                            >
+                              <Minus className="h-4 w-4" strokeWidth={2.5} />
+                            </button>
+                            <span className="min-w-[2rem] text-center text-sm font-semibold tabular-nums text-white">
+                              {qty}
+                            </span>
+                            <button
+                              type="button"
+                              aria-label={`Más ${item.label}`}
+                              disabled={qty >= 999}
+                              onClick={() => updateSpecialAccessoryQty(item.id, 1)}
+                              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-zinc-800 text-zinc-100 transition hover:bg-zinc-700 disabled:opacity-35"
+                            >
+                              <Plus className="h-4 w-4" strokeWidth={2.5} />
+                            </button>
                           </div>
                         </div>
-                        <div className="flex items-center justify-between gap-1 rounded-xl border border-white/10 bg-zinc-900/90 px-1.5 py-1.5 shadow-inner">
-                          <button
-                            type="button"
-                            aria-label={`Menos ${item.label}`}
-                            disabled={qty <= 0}
-                            onClick={() => updateSpecialAccessoryQty(item.id, -1)}
-                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-zinc-800 text-zinc-100 transition hover:bg-zinc-700 disabled:opacity-35"
-                          >
-                            <Minus className="h-4 w-4" strokeWidth={2.5} />
-                          </button>
-                          <span className="min-w-[2rem] text-center text-sm font-semibold tabular-nums text-white">
-                            {qty}
-                          </span>
-                          <button
-                            type="button"
-                            aria-label={`Más ${item.label}`}
-                            disabled={qty >= 999}
-                            onClick={() => updateSpecialAccessoryQty(item.id, 1)}
-                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-zinc-800 text-zinc-100 transition hover:bg-zinc-700 disabled:opacity-35"
-                          >
-                            <Plus className="h-4 w-4" strokeWidth={2.5} />
-                          </button>
-                        </div>
-                        <p className="text-center text-[10px] font-medium tabular-nums text-zinc-400">
-                          {formatCurrency(
-                            levantamientoConfig.extrasPrecios.accesoriosEspeciales[item.id] ?? 0,
-                          )}{" "}
-                          c/u
-                        </p>
                       </div>
-                    </div>
-                  );
-                })}
-              </HorizontalScrollStrip>
-            </div>
+                    );
+                  })}
+                </HorizontalScrollStrip>
+              </div>
+            )}
             <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
               Comentarios de esta sección
               <textarea

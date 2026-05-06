@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { EXPERIENCE_STEP_MEDIA } from "@/lib/experience-steps-media";
 
 type ExperienceStep = {
   id: string;
@@ -13,46 +14,45 @@ type ExperienceStep = {
   imageFit?: "cover" | "contain";
 };
 
-const experienceSteps: ExperienceStep[] = [
+const EXPERIENCE_STEP_CONTENT: readonly Omit<ExperienceStep, "image" | "imageFit">[] = [
   {
     id: "paso-01",
     title: "Agenda tu Cita",
     description: "Vamos a tu domicilio, medimos y entendemos tu espacio.",
-    image: "/images/home/experiencia-3d/slide-01-cita-domicilio.jpg",
   },
   {
     id: "paso-02",
     title: "Diseño y Cotización",
     description: "Personalización total en tiempo real. Presupuesto transparente.",
-    image: "/images/home/experiencia-3d/slide-02-diseno-cotizacion.jpg",
   },
   {
     id: "paso-03",
     title: "Realidad Virtual (VR)",
     description: "Camina dentro de tu cocina antes de fabricarla. Inmersión total.",
-    image: "/images/home/experiencia-3d/slide-03-realidad-virtual.jpg",
   },
   {
     id: "paso-04",
     title: "Cortes CNC",
     description: "Precisión robótica milimétrica. Cero errores humanos.",
-    image: "/images/home/experiencia-3d/slide-04-cortes-cnc.jpg",
   },
   {
     id: "paso-05",
     title: "Seguimiento en línea",
     description:
       "Accede a tu portal privado para ver pagos, renders y avances en tiempo real.",
-    image: "/images/home/experiencia-3d/slide-05-seguimiento-portal.jpg",
-    imageFit: "contain",
   },
   {
     id: "paso-06",
     title: "Instalación y Entrega",
     description: "Montaje limpio y garantía de satisfacción.",
-    image: "/images/home/experiencia-3d/slide-06-instalacion-entrega.jpg",
   },
 ];
+
+const experienceSteps: ExperienceStep[] = EXPERIENCE_STEP_MEDIA.map((media, index) => ({
+  ...EXPERIENCE_STEP_CONTENT[index]!,
+  image: media.image,
+  imageFit: media.imageFit,
+}));
 
 function useAutoplayCarousel(length: number, delay: number) {
   const [activeIndex, setActiveIndex] = useState(0);
