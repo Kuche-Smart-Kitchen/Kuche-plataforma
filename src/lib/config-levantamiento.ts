@@ -126,6 +126,10 @@ export function getLevantamientoConfig(): LevantamientoConfig {
         typeof parsed.extrasIluminacionCantidades === "object" && parsed.extrasIluminacionCantidades
           ? parsed.extrasIluminacionCantidades
           : base.extrasIluminacionCantidades,
+      factorHastaTecho:
+        typeof parsed.factorHastaTecho === "number" && Number.isFinite(parsed.factorHastaTecho)
+          ? Math.min(1, Math.max(0, parsed.factorHastaTecho))
+          : base.factorHastaTecho,
     };
   } catch {
     return createDefaultLevantamientoConfig();
