@@ -102,3 +102,12 @@ export function hasWorkshopPdfActions(data: {
 export function createPreliminarSeguimientoPdfKey(taskId: string, index: number): string {
   return `preliminar-seg-${taskId}-${index}-${Date.now()}`;
 }
+
+// Backwards-compatible aliases expected by older imports
+export function createFormalPdfKey(taskId: string, index: number): string {
+  return createFormalWorkshopPdfKeys(taskId, index).formalPdfKey;
+}
+
+export function createWorkshopPdfKey(taskId: string, index: number): string {
+  return createFormalWorkshopPdfKeys(taskId, index).workshopPdfKey;
+}

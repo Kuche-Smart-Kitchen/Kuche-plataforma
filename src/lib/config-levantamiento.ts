@@ -125,3 +125,42 @@ export function getAveragePriceByTier(
   const sum = list.reduce((acc, m) => acc + (Number.isFinite(m.precioPorMetro) ? m.precioPorMetro : 0), 0);
   return sum / list.length;
 }
+
+export function parseFlexiblePercentInput(value: string | number): number {
+  if (typeof value === "number") return Math.max(0, Math.min(1, value));
+  const trimmed = String(value).trim();
+  if (trimmed.endsWith("%")) {
+    const n = parseFloat(trimmed.replace("%", ""));
+    if (Number.isFinite(n)) return Math.max(0, Math.min(1, n / 100));
+  }
+  const parsed = parseFloat(trimmed);
+  if (Number.isFinite(parsed)) return Math.max(0, Math.min(1, parsed));
+  return 0;
+}
+
+export function normalizeLevantamientoConfig(raw: Partial<LevantamientoConfig> | undefined): LevantamientoConfig {
+  const base = createDefaultLevantamientoConfig();
+  if (!raw) return base;
+  return {
+    scenarioPrices: {
+      esencial: Number(raw.scenarioPrices?.esencial) || base.scenarioPrices.esencial,
+      tendencia: Number(raw.scenarioPrices?.tendencia) || base.scenarioPrices.tendencia,
+      premium: Number(raw.scenarioPrices?.premium) || base.scenarioPrices.premium,
+    },
+    materiales:
+      Array.isArray(raw.materiales) && raw.materiales.length > 0
+        ? raw.materiales.map((m, i) => ({
+            id: typeof m.id === "string" ? m.id : `mat-${i}`,
+            nombre: typeof m.nombre === "string" ? m.nombre : "Material",
+            categoria:
+              m.categoria === "cubierta" || m.categoria === "frente" || m.categoria === "herraje"
+                ? m.categoria
+                : "cubierta",
+            gama: m.gama === "Estandar" || m.gama === "Tendencia" || m.gama === "Premium" ? m.gama : "Estandar",
+            precioPorMetro: Math.max(0, Number(m.precioPorMetro) || 0),
+          }))
+        : base.materiales,
+    ivaPercent: parseFlexiblePercentInput(raw.ivaPercent ?? base.ivaPercent),
+    marginPercent: parseFlexiblePercentInput(raw.marginPercent ?? base.marginPercent),
+  };
+}
