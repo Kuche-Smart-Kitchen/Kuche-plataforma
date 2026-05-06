@@ -114,11 +114,15 @@ function fmtMoneyMx(n: number | undefined): string {
 }
 
 function financeFromPreliminar(data: PreliminarData) {
-  const cb = data.costoBase;
-  const cm = data.costoMateriales;
-  const ci = data.costoIluminacion;
-  const sub =
-    data.subtotal ?? (cb != null && cm != null && ci != null ? cb + cm + ci : undefined);
+  const toNum = (v: unknown): number | undefined => {
+    if (v == null) return undefined;
+    const n = Number(v as any);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  const cb = toNum(data.costoBase);
+  const cm = toNum(data.costoMateriales);
+  const ci = toNum(data.costoIluminacion);
+  const sub = data.subtotal ?? (cb != null && cm != null && ci != null ? cb + cm + ci : undefined);
   const iva = data.iva ?? (sub != null ? sub * 0.16 : undefined);
   const total = data.total ?? (sub != null ? sub * 1.16 : undefined);
   return { cb, cm, ci, sub, iva, total };
