@@ -18,11 +18,11 @@ export interface LevantamientoConfig {
   materiales: MaterialConfig[];
   ivaPercent: number;
   marginPercent: number;
-  extrasPrecios?: {
+  extrasPrecios: {
     iluminacion: Record<string, number>;
     accesoriosEspeciales: Record<string, number>;
   };
-  extrasIluminacionCantidades?: Record<string, number>;
+  extrasIluminacionCantidades: Record<string, number>;
 }
 
 function defaultMateriales(): MaterialConfig[] {
