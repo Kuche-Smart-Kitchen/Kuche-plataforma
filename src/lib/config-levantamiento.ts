@@ -23,6 +23,7 @@ export interface LevantamientoConfig {
     accesoriosEspeciales: Record<string, number>;
   };
   extrasIluminacionCantidades: Record<string, number>;
+  factorHastaTecho?: number;
 }
 
 function defaultMateriales(): MaterialConfig[] {
@@ -69,6 +70,7 @@ export function createDefaultLevantamientoConfig(): LevantamientoConfig {
       accesoriosEspeciales: {},
     },
     extrasIluminacionCantidades: {},
+    factorHastaTecho: 0,
   };
 }
 
@@ -162,16 +164,21 @@ export function getAveragePriceByTier(
   return sum / list.length;
 }
 
-export function parseFlexiblePercentInput(value: string | number): number {
-  if (typeof value === "number") return Math.max(0, Math.min(1, value));
-  const trimmed = String(value).trim();
-  if (trimmed.endsWith("%")) {
-    const n = parseFloat(trimmed.replace("%", ""));
-    if (Number.isFinite(n)) return Math.max(0, Math.min(1, n / 100));
+export function parseFlexiblePercentInput(value: string | number, max = 1): number {
+  let v: number;
+  if (typeof value === "number") v = value;
+  else {
+    const trimmed = String(value).trim();
+    if (trimmed.endsWith("%")) {
+      const n = parseFloat(trimmed.replace("%", ""));
+      v = Number.isFinite(n) ? n / 100 : 0;
+    } else {
+      const parsed = parseFloat(trimmed);
+      v = Number.isFinite(parsed) ? parsed : 0;
+    }
   }
-  const parsed = parseFloat(trimmed);
-  if (Number.isFinite(parsed)) return Math.max(0, Math.min(1, parsed));
-  return 0;
+  v = Math.max(0, v);
+  return Math.min(max, v);
 }
 
 export function normalizeLevantamientoConfig(raw: Partial<LevantamientoConfig> | undefined): LevantamientoConfig {
