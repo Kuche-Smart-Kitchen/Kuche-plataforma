@@ -130,15 +130,16 @@ export function getLevantamientoConfig(): LevantamientoConfig {
   }
 }
 
-export function saveLevantamientoConfig(config: LevantamientoConfig): boolean {
-  if (typeof window === "undefined") return false;
+export function saveLevantamientoConfig(config: Partial<LevantamientoConfig> | LevantamientoConfig): LevantamientoConfig {
+  const normalized = normalizeLevantamientoConfig(config as Partial<LevantamientoConfig>);
+  if (typeof window === "undefined") return normalized;
   try {
-    runtimeStore.setItem(LEVANTAMIENTO_CONFIG_STORAGE_KEY, JSON.stringify(config));
+    runtimeStore.setItem(LEVANTAMIENTO_CONFIG_STORAGE_KEY, JSON.stringify(normalized));
     window.dispatchEvent(new CustomEvent("kuche:levantamiento-config-updated"));
-    return true;
   } catch {
-    return false;
+    // ignore
   }
+  return normalized;
 }
 
 export function resetLevantamientoConfigToDefault(): LevantamientoConfig {
