@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { loadTurnstileScript } from "@/lib/load-turnstile-script";
 
 type CaptchaProps = {
   onVerify: (token: string) => void;
@@ -60,7 +61,13 @@ export default function Captcha({
       }
     };
 
-    tick();
+    loadTurnstileScript()
+      .then(() => {
+        if (!cancelled) tick();
+      })
+      .catch(() => {
+        onError?.();
+      });
 
     return () => {
       cancelled = true;

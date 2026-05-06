@@ -12,8 +12,8 @@ type Props = {
 };
 
 /**
- * `object-contain`: se ve el aparato entero (sin recorte tipo zoom).
- * `object-cover` recortaba mucho en fotos verticales o con mucho margen.
+ * Por defecto: `object-contain` para vistas donde importa ver el aparato completo.
+ * En carruseles del levantamiento se pasa `className` con `object-cover` para miniaturas alineadas.
  */
 export default function ApplianceTypeImage({
   item,

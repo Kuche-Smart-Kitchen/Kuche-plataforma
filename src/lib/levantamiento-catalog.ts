@@ -13,67 +13,57 @@ export type ItemCatalogo = {
   categoria?: string;
   hint?: string;
   image: string;
+  /** Precio fijo (iluminación), no por metro. */
+  precioFijo?: number;
 };
 
 export const WALL_ITEMS: ItemCatalogo[] = [
   {
     id: "pared-recta",
-    label: "Pared recta (corrida)",
-    hint: "Muro principal sin cortes",
+    label: "Pared recta",
+    hint: "Muro corrido sin vanos",
     image: "/images/materiales/white_seamless_texture.jpg",
   },
   {
     id: "pared-ventana",
     label: "Pared con ventana",
-    hint: "Hueco ventana / vano",
+    hint: "Un vano de ventana",
     image: "/images/materiales/white_marble_texture.jpg",
   },
   {
     id: "pared-puerta",
     label: "Pared con puerta",
-    hint: "Acceso a otro espacio",
+    hint: "Un vano de puerta",
     image: "/images/materiales/walnut_wood_texture.jpg",
   },
   {
-    id: "esquina-90",
-    label: "Esquina 90°",
-    hint: "Encuentro de dos muros",
-    image: "/images/materiales/stone_texture.jpg",
+    id: "pared-2-ventanas",
+    label: "Pared con 2 ventanas",
+    hint: "Dos vanos de ventana; ancho de cada uno por separado",
+    image: "/images/materiales/white_marble_texture.jpg",
   },
   {
-    id: "pared-nicho",
-    label: "Pared con nicho",
-    hint: "Hueco empotrado",
-    image: "/images/materiales/smooth_stone.jpg",
+    id: "pared-puerta-ventana",
+    label: "Pared con puerta y ventana",
+    hint: "Puerta y ventana en el mismo muro",
+    image: "/images/materiales/walnut_wood_texture.jpg",
   },
   {
-    id: "pared-media-altura",
-    label: "Pared media altura / barra",
-    hint: "Desnivel o antepecho",
-    image: "/images/materiales/plywood_texture.jpg",
+    id: "pared-puerta-2-ventanas",
+    label: "Pared con puerta y 2 ventanas",
+    hint: "Una puerta y dos ventanas",
+    image: "/images/materiales/walnut_wood_texture.jpg",
   },
   {
-    id: "pared-divisoria",
-    label: "Pared divisoria",
-    hint: "Tabique interior",
-    image: "/images/materiales/dark_wood_background.jpg",
+    id: "pared-2-puertas",
+    label: "Pared con 2 puertas",
+    hint: "Dos vanos de puerta",
+    image: "/images/materiales/walnut_wood_texture.jpg",
   },
   {
-    id: "falso-muro",
-    label: "Falso muro / tabique liviano",
-    hint: "Espesor reducido",
-    image: "/images/materiales/white_seamless_texture.jpg",
-  },
-  {
-    id: "pared-salientes",
-    label: "Pared con salientes (ducto / bajante)",
-    hint: "Retrasos o desnivel",
-    image: "/images/materiales/terazzo_texture.jpg",
-  },
-  {
-    id: "pared-l",
-    label: "Pared en L / retorno",
-    hint: "Cambio de eje",
+    id: "pared-otro",
+    label: "Otro tipo de muro o situación especial",
+    hint: "Cuando ningún tipo anterior describe bien el muro; describe la situación y medidas de referencia.",
     image: "/images/materiales/quartz_texture.jpg",
   },
 ];
@@ -85,12 +75,6 @@ const WALL_IMAGE_BASENAME_BY_ID: Record<string, string> = {
   "pared-recta": "pared_recta",
   "pared-ventana": "pared-con-ventana",
   "pared-puerta": "pared-con-puerta",
-  "esquina-90": "esquina-90grados",
-  "pared-nicho": "pared-con-nicho",
-  "pared-media-altura": "pared-media-altura-barra",
-  "pared-divisoria": "pared-divisora",
-  "pared-salientes": "pared-con-salientes",
-  "pared-l": "pared-en-L",
 };
 
 /**
@@ -106,17 +90,20 @@ export function wallTypeImageSrc(id: string, ext: "jpg" | "png" | "webp" = "jpg"
 /** Lista de ids de pared (útil para la página de referencia y comprobar qué archivos faltan). */
 export const WALL_ITEM_IDS = WALL_ITEMS.map((w) => w.id);
 
-/** Páginas 1–3: índices en WALL_ITEMS; página 4 = “Otro”. */
-export const WALL_PAGE_INDICES: number[][] = [
-  [0, 1, 2],
-  [3, 4, 5],
-  [6, 7, 8, 9],
-];
+/** Una sola fila de catálogo: los 7 tipos estándar + «Otro». */
+export const WALL_PAGE_INDICES: number[][] = [[0, 1, 2, 3, 4, 5, 6, 7]];
 
 /** Definición de cada medida (clave estable + etiqueta en UI y PDF). */
 export type WallMeasureFieldDef = {
   key: string;
   label: string;
+  /**
+   * Dónde cae la medida en el dibujo y términos en palabras simples (validar que A,B… tienen sentido).
+   * No va al PDF salvo lo que ya dice `label`.
+   */
+  verifyHint?: string;
+  /** Si es false, el valor no es cota en metros (p. ej. descripción libre: no se añade " m" en PDF). */
+  isMetric?: boolean;
 };
 
 /**
@@ -124,71 +111,444 @@ export type WallMeasureFieldDef = {
  */
 export const WALL_MEASURE_SCHEMA: Record<string, WallMeasureFieldDef[]> = {
   "pared-recta": [
-    { key: "largo-corrido", label: "Largo corrido" },
-    { key: "altura-techo", label: "Altura hasta techo" },
-    { key: "espesor-muro", label: "Espesor del muro" },
+    {
+      key: "largo-corrido",
+      label: "Largo corrido del muro",
+      verifyHint: "Cota A: borde inferior del muro en alzado, de extremo a extremo.",
+    },
+    {
+      key: "altura-techo",
+      label: "Altura hasta techo",
+      verifyHint: "Cota B: vertical en el borde izquierdo, de piso a techo.",
+    },
   ],
   "pared-ventana": [
-    { key: "largo-muro", label: "Largo total del muro" },
-    { key: "ancho-vano", label: "Ancho del vano" },
-    { key: "alto-vano", label: "Alto del vano" },
-    { key: "antepecho", label: "Antepecho (suelo → inferior ventana)" },
-    { key: "dist-inicio-vano", label: "Dist. inicio corrido → vano" },
+    {
+      key: "largo-muro",
+      label: "Largo total del muro",
+      verifyHint: "Cota A: ancho total del muro en la línea inferior.",
+    },
+    {
+      key: "altura-techo",
+      label: "Altura hasta techo",
+      verifyHint: "Cota B: altura total del muro (piso a techo).",
+    },
+    {
+      key: "ancho-vano",
+      label: "Ancho del hueco de la ventana",
+      verifyHint: "Cota C: ancho del vano (jamba a jamba).",
+    },
+    {
+      key: "alto-vano",
+      label: "Alto del hueco de la ventana",
+      verifyHint: "Cota D: alto del vano.",
+    },
+    {
+      key: "antepecho",
+      label: "Antepecho (piso - parte baja del hueco)",
+      verifyHint: "Cota E: desde piso hasta inicio inferior del hueco.",
+    },
+    {
+      key: "dist-inicio-vano",
+      label: "Distancia desde inicio del muro hasta el hueco",
+      verifyHint: "Cota F: desde el extremo de referencia hasta el inicio del vano.",
+    },
   ],
   "pared-puerta": [
-    { key: "largo-muro", label: "Largo total del muro" },
-    { key: "ancho-vano", label: "Ancho del vano / hoja" },
-    { key: "alto-vano", label: "Alto del vano" },
-    { key: "dist-marco-referencia", label: "Dist. marco a esquina o referencia" },
+    {
+      key: "largo-muro",
+      label: "Largo total del muro",
+      verifyHint: "Cota A: ancho total del muro.",
+    },
+    {
+      key: "altura-techo",
+      label: "Altura hasta techo",
+      verifyHint: "Cota B: altura total del muro (piso a techo).",
+    },
+    {
+      key: "ancho-vano",
+      label: "Ancho del hueco de la puerta",
+      verifyHint: "Cota C: ancho del vano de la puerta.",
+    },
+    {
+      key: "alto-vano",
+      label: "Alto del hueco de la puerta",
+      verifyHint: "Cota D: alto del vano.",
+    },
+    {
+      key: "dist-marco-referencia",
+      label: "Distancia desde inicio del muro hasta el hueco",
+      verifyHint: "Cota E: desde el extremo de referencia hasta el inicio del vano.",
+    },
   ],
-  "esquina-90": [
-    { key: "pata-1", label: "Longitud pata 1" },
-    { key: "pata-2", label: "Longitud pata 2" },
-    { key: "altura-techo", label: "Altura hasta techo" },
-    { key: "espesor-muro", label: "Espesor del muro" },
+  "pared-2-ventanas": [
+    {
+      key: "largo-muro",
+      label: "Largo total del muro",
+      verifyHint: "Cota A: ancho total del muro.",
+    },
+    {
+      key: "altura-techo",
+      label: "Altura hasta techo",
+      verifyHint: "Cota B: altura total del muro.",
+    },
+    {
+      key: "ancho-ventana-1",
+      label: "Ancho ventana 1",
+      verifyHint: "Cota C: ancho del vano de la primera ventana.",
+    },
+    {
+      key: "ancho-ventana-2",
+      label: "Ancho ventana 2",
+      verifyHint: "Cota D: ancho del vano de la segunda ventana.",
+    },
+    {
+      key: "alto-vano",
+      label: "Alto del hueco (ventanas)",
+      verifyHint: "Cota E: alto común de los vanos (si aplica).",
+    },
+    {
+      key: "antepecho",
+      label: "Antepecho (piso - parte baja del hueco)",
+      verifyHint: "Cota F: antepecho hasta el inicio del vano.",
+    },
+    {
+      key: "dist-extremo-ventana-1",
+      label: "Distancia desde extremo del muro al inicio de ventana 1",
+      verifyHint: "Cota G: alineación desde el extremo al primer vano.",
+    },
+    {
+      key: "dist-entre-ventanas",
+      label: "Distancia entre ventana 1 y ventana 2",
+      verifyHint: "Cota H: tramo libre entre vanos (eje a eje o jamba según tu criterio).",
+    },
   ],
-  "pared-nicho": [
-    { key: "largo-muro", label: "Largo del muro" },
-    { key: "ancho-nicho", label: "Ancho del nicho" },
-    { key: "profundidad-nicho", label: "Profundidad del nicho" },
-    { key: "alto-nicho", label: "Alto del nicho" },
-    { key: "altura-suelo-nicho", label: "Suelo → piso del nicho" },
+  "pared-puerta-ventana": [
+    {
+      key: "largo-muro",
+      label: "Largo total del muro",
+      verifyHint: "Cota A: ancho total del muro.",
+    },
+    {
+      key: "altura-techo",
+      label: "Altura hasta techo",
+      verifyHint: "Cota B: altura total del muro.",
+    },
+    {
+      key: "ancho-vano-puerta",
+      label: "Ancho del hueco de la puerta",
+      verifyHint: "Cota C: ancho del vano de la puerta.",
+    },
+    {
+      key: "ancho-vano-ventana",
+      label: "Ancho del hueco de la ventana",
+      verifyHint: "Cota D: ancho del vano de la ventana.",
+    },
+    {
+      key: "alto-vano-puerta",
+      label: "Alto del hueco de la puerta",
+      verifyHint: "Cota E: alto del vano de la puerta.",
+    },
+    {
+      key: "alto-vano-ventana",
+      label: "Alto del hueco de la ventana",
+      verifyHint: "Cota F: alto del vano de la ventana.",
+    },
+    {
+      key: "dist-extremo-a-puerta",
+      label: "Distancia desde extremo del muro al inicio de la puerta",
+      verifyHint: "Cota G: desde el extremo de referencia al vano de la puerta.",
+    },
   ],
-  "pared-media-altura": [
-    { key: "largo-tramo", label: "Largo del tramo" },
-    { key: "altura-muro-bajo", label: "Altura muro bajo / antepecho" },
-    { key: "fondo-barra", label: "Fondo / voladizo barra" },
-    { key: "altura-techo", label: "Altura libre hasta techo" },
+  "pared-puerta-2-ventanas": [
+    {
+      key: "largo-muro",
+      label: "Largo total del muro",
+      verifyHint: "Cota A: ancho total del muro.",
+    },
+    {
+      key: "altura-techo",
+      label: "Altura hasta techo",
+      verifyHint: "Cota B: altura total del muro.",
+    },
+    {
+      key: "ancho-vano-puerta",
+      label: "Ancho del hueco de la puerta",
+      verifyHint: "Cota C: ancho del vano de la puerta.",
+    },
+    {
+      key: "ancho-ventana-1",
+      label: "Ancho ventana 1",
+      verifyHint: "Cota D: ancho del primer vano de ventana.",
+    },
+    {
+      key: "ancho-ventana-2",
+      label: "Ancho ventana 2",
+      verifyHint: "Cota E: ancho del segundo vano de ventana.",
+    },
+    {
+      key: "alto-vano-puerta",
+      label: "Alto del hueco de la puerta",
+      verifyHint: "Cota F: alto del vano de la puerta.",
+    },
+    {
+      key: "alto-vano-ventana",
+      label: "Alto del hueco de las ventanas",
+      verifyHint: "Cota G: alto común de los vanos de ventana (si aplica).",
+    },
+    {
+      key: "dist-extremo-a-puerta",
+      label: "Distancia desde extremo del muro al inicio de la puerta",
+      verifyHint: "Cota H: desde el extremo al vano de la puerta.",
+    },
   ],
-  "pared-divisoria": [
-    { key: "largo", label: "Largo" },
-    { key: "altura", label: "Altura" },
-    { key: "espesor", label: "Espesor" },
+  "pared-2-puertas": [
+    {
+      key: "largo-muro",
+      label: "Largo total del muro",
+      verifyHint: "Cota A: ancho total del muro.",
+    },
+    {
+      key: "altura-techo",
+      label: "Altura hasta techo",
+      verifyHint: "Cota B: altura total del muro.",
+    },
+    {
+      key: "ancho-puerta-1",
+      label: "Ancho puerta 1",
+      verifyHint: "Cota C: ancho del vano de la primera puerta.",
+    },
+    {
+      key: "ancho-puerta-2",
+      label: "Ancho puerta 2",
+      verifyHint: "Cota D: ancho del vano de la segunda puerta.",
+    },
+    {
+      key: "alto-vano",
+      label: "Alto del hueco (puertas)",
+      verifyHint: "Cota E: alto común de los vanos.",
+    },
+    {
+      key: "dist-extremo-a-puerta-1",
+      label: "Distancia desde extremo del muro al inicio de puerta 1",
+      verifyHint: "Cota F: desde el extremo al primer vano.",
+    },
   ],
-  "falso-muro": [
-    { key: "largo", label: "Largo" },
-    { key: "altura", label: "Altura" },
-    { key: "espesor", label: "Espesor" },
-  ],
-  "pared-salientes": [
-    { key: "largo-tramo", label: "Largo del tramo afectado" },
-    { key: "profundidad-saliente", label: "Profundidad del saliente" },
-    { key: "ancho-saliente", label: "Ancho del saliente" },
-    { key: "altura-saliente", label: "Altura del saliente" },
-    { key: "dist-desde-inicio", label: "Dist. saliente desde inicio corrido" },
-  ],
-  "pared-l": [
-    { key: "tramo-a", label: "Longitud tramo A" },
-    { key: "tramo-b", label: "Longitud tramo B" },
-    { key: "altura-techo", label: "Altura hasta techo" },
-    { key: "espesor-muro", label: "Espesor del muro" },
+  "pared-otro": [
+    {
+      key: "descripcion",
+      label: "Descripción de la situación",
+      isMetric: false,
+      verifyHint: "Explica con tus palabras qué muro o condición especial es (no encaja en los tipos anteriores).",
+    },
+    {
+      key: "ancho",
+      label: "Ancho",
+      verifyHint: "Referencia en planta o ancho útil (metros).",
+    },
+    {
+      key: "alto",
+      label: "Alto",
+      verifyHint: "Referencia vertical o altura (metros).",
+    },
+    {
+      key: "fondo",
+      label: "Fondo / espesor",
+      verifyHint: "Profundidad o espesor del muro si aplica (metros).",
+    },
   ],
 };
 
 export type WallMeasuresMap = Record<string, Record<string, string>>;
 
+/** Clave persistida por pared en flujo dinámico: wall-0, wall-1, … */
+export const WALL_SLOT_META_TYPE = "__typeId";
+
+/** Alias opcional de obra (ej. «pared del refri») por slot; no afecta cotas ni completitud. */
+export const WALL_SLOT_META_ALIAS = "__wallAlias";
+
+export function isWallSlotKey(key: string): boolean {
+  return /^wall-\d+$/.test(key);
+}
+
+export function wallSlotKey(index: number): string {
+  return `wall-${index}`;
+}
+
 export function getWallMeasureFieldDefs(wallId: string): WallMeasureFieldDef[] {
   return WALL_MEASURE_SCHEMA[wallId] ?? [];
+}
+
+/** Letra de referencia en diagrama (A, B, C…) alineada al orden del formulario. */
+export function wallMeasureLetter(index: number): string {
+  const i = ((index % 26) + 26) % 26;
+  return String.fromCharCode(65 + i);
+}
+
+/**
+ * Línea de medición en el overlay. Coords en viewBox 120×120 (alineado a `WallTypeIcons`).
+ * Orden = mismo que `WALL_MEASURE_SCHEMA[wallId]` (A, B, C…).
+ */
+export type WallDimensionSegment = {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  /** Desplazamiento del badge (letra) respecto al punto medio del segmento, en unidades del viewBox. */
+  labelDx?: number;
+  labelDy?: number;
+};
+
+/** Alzado: rect exterior ~ (12,22) 96×74; base y≈96. */
+export const WALL_MEASURE_DIMENSION_LINES: Partial<
+  Record<string, readonly WallDimensionSegment[]>
+> = {
+  "pared-recta": [
+    { x1: 12, y1: 102, x2: 108, y2: 102, labelDx: 0, labelDy: 4 },
+    { x1: 8, y1: 96, x2: 8, y2: 22, labelDx: -4, labelDy: 0 },
+  ],
+  "pared-ventana": [
+    { x1: 12, y1: 102, x2: 108, y2: 102, labelDx: 0, labelDy: 4 },
+    { x1: 8, y1: 96, x2: 8, y2: 22, labelDx: -4, labelDy: 0 },
+    { x1: 38, y1: 72, x2: 82, y2: 72 },
+    { x1: 84, y1: 44, x2: 84, y2: 70 },
+    { x1: 60, y1: 70, x2: 60, y2: 96 },
+    { x1: 12, y1: 98, x2: 38, y2: 98 },
+  ],
+  "pared-puerta": [
+    { x1: 12, y1: 102, x2: 108, y2: 102, labelDx: 0, labelDy: 4 },
+    { x1: 8, y1: 96, x2: 8, y2: 22, labelDx: -4, labelDy: 0 },
+    { x1: 44, y1: 70, x2: 76, y2: 70 },
+    { x1: 78, y1: 38, x2: 78, y2: 96 },
+    { x1: 12, y1: 98, x2: 44, y2: 98 },
+  ],
+  "pared-2-ventanas": [
+    { x1: 12, y1: 102, x2: 108, y2: 102, labelDx: 0, labelDy: 4 },
+    { x1: 8, y1: 96, x2: 8, y2: 22, labelDx: -4, labelDy: 0 },
+    { x1: 22, y1: 68, x2: 46, y2: 68 },
+    { x1: 74, y1: 68, x2: 98, y2: 68 },
+    { x1: 34, y1: 42, x2: 34, y2: 66 },
+    { x1: 60, y1: 66, x2: 60, y2: 96 },
+    { x1: 12, y1: 96, x2: 22, y2: 96 },
+    { x1: 46, y1: 96, x2: 74, y2: 96 },
+  ],
+  "pared-puerta-ventana": [
+    { x1: 12, y1: 102, x2: 108, y2: 102, labelDx: 0, labelDy: 4 },
+    { x1: 8, y1: 96, x2: 8, y2: 22, labelDx: -4, labelDy: 0 },
+    { x1: 14, y1: 72, x2: 44, y2: 72 },
+    { x1: 62, y1: 70, x2: 98, y2: 70 },
+    { x1: 46, y1: 40, x2: 46, y2: 96 },
+    { x1: 100, y1: 36, x2: 100, y2: 66 },
+    { x1: 12, y1: 98, x2: 14, y2: 98 },
+  ],
+  "pared-puerta-2-ventanas": [
+    { x1: 12, y1: 102, x2: 108, y2: 102, labelDx: 0, labelDy: 4 },
+    { x1: 8, y1: 96, x2: 8, y2: 22, labelDx: -4, labelDy: 0 },
+    { x1: 44, y1: 72, x2: 76, y2: 72 },
+    { x1: 14, y1: 66, x2: 34, y2: 66 },
+    { x1: 86, y1: 66, x2: 106, y2: 66 },
+    { x1: 78, y1: 38, x2: 78, y2: 96 },
+    { x1: 24, y1: 40, x2: 24, y2: 64 },
+    { x1: 12, y1: 98, x2: 44, y2: 98 },
+  ],
+  "pared-2-puertas": [
+    { x1: 12, y1: 102, x2: 108, y2: 102, labelDx: 0, labelDy: 4 },
+    { x1: 8, y1: 96, x2: 8, y2: 22, labelDx: -4, labelDy: 0 },
+    { x1: 18, y1: 70, x2: 46, y2: 70 },
+    { x1: 74, y1: 70, x2: 102, y2: 70 },
+    { x1: 48, y1: 38, x2: 48, y2: 96 },
+    { x1: 12, y1: 98, x2: 18, y2: 98 },
+  ],
+};
+
+export function getWallMeasureDimensionLines(wallId: string): WallDimensionSegment[] | null {
+  const defs = getWallMeasureFieldDefs(wallId);
+  const seg = WALL_MEASURE_DIMENSION_LINES[wallId];
+  if (!seg || seg.length !== defs.length) return null;
+  return [...seg];
+}
+
+/**
+ * Posiciones opcionales (top/left en %) para badges A,B,… sobre la foto del tipo de muro.
+ * Si falta o no coincide el número de campos, se reparten en una cuadrícula automática.
+ */
+export const WALL_MEASURE_BADGE_POSITIONS: Partial<
+  Record<string, readonly { top: string; left: string }[]>
+> = {
+  "pared-recta": [
+    { top: "82%", left: "50%" },
+    { top: "48%", left: "10%" },
+  ],
+  "pared-ventana": [
+    { top: "84%", left: "50%" },
+    { top: "48%", left: "10%" },
+    { top: "58%", left: "52%" },
+    { top: "38%", left: "68%" },
+    { top: "62%", left: "48%" },
+    { top: "86%", left: "24%" },
+  ],
+  "pared-puerta": [
+    { top: "84%", left: "50%" },
+    { top: "48%", left: "10%" },
+    { top: "56%", left: "52%" },
+    { top: "42%", left: "62%" },
+    { top: "86%", left: "28%" },
+  ],
+  "pared-2-ventanas": [
+    { top: "84%", left: "50%" },
+    { top: "48%", left: "10%" },
+    { top: "54%", left: "30%" },
+    { top: "54%", left: "78%" },
+    { top: "40%", left: "28%" },
+    { top: "62%", left: "48%" },
+    { top: "88%", left: "18%" },
+    { top: "88%", left: "58%" },
+  ],
+  "pared-puerta-ventana": [
+    { top: "84%", left: "50%" },
+    { top: "48%", left: "10%" },
+    { top: "56%", left: "28%" },
+    { top: "54%", left: "78%" },
+    { top: "40%", left: "36%" },
+    { top: "38%", left: "82%" },
+    { top: "88%", left: "12%" },
+  ],
+  "pared-puerta-2-ventanas": [
+    { top: "84%", left: "50%" },
+    { top: "48%", left: "10%" },
+    { top: "56%", left: "52%" },
+    { top: "52%", left: "22%" },
+    { top: "52%", left: "82%" },
+    { top: "42%", left: "62%" },
+    { top: "38%", left: "22%" },
+    { top: "88%", left: "28%" },
+  ],
+  "pared-2-puertas": [
+    { top: "84%", left: "50%" },
+    { top: "48%", left: "10%" },
+    { top: "54%", left: "28%" },
+    { top: "54%", left: "78%" },
+    { top: "42%", left: "38%" },
+    { top: "88%", left: "18%" },
+  ],
+};
+
+export function getWallMeasureBadgePositions(wallId: string): { top: string; left: string }[] {
+  const defs = getWallMeasureFieldDefs(wallId);
+  const n = defs.length;
+  const custom = WALL_MEASURE_BADGE_POSITIONS[wallId];
+  if (custom && custom.length === n) {
+    return custom.map((p) => ({ top: p.top, left: p.left }));
+  }
+  const cols = n <= 4 ? Math.min(2, n) : Math.min(3, Math.max(2, n));
+  const rows = Math.ceil(n / cols);
+  return Array.from({ length: n }, (_, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const topPct = 14 + ((row + 0.5) / rows) * 68;
+    const leftPct = 12 + ((col + 0.5) / cols) * 76;
+    return { top: `${topPct}%`, left: `${leftPct}%` };
+  });
 }
 
 export function emptyWallMeasuresForId(wallId: string): Record<string, string> {
@@ -208,6 +568,12 @@ export function migrateWallMeasuresEntry(wallId: string, raw: unknown): Record<s
   const base = emptyWallMeasuresForId(wallId);
   const keys = Object.keys(base);
   if (isLegacyMedidasCampos(raw)) {
+    if (wallId === "pared-otro") {
+      if (keys[1]) base[keys[1]] = raw.ancho;
+      if (keys[2]) base[keys[2]] = raw.alto;
+      if (keys[3]) base[keys[3]] = raw.fondo;
+      return base;
+    }
     if (keys[0]) base[keys[0]] = raw.ancho;
     if (keys[1]) base[keys[1]] = raw.alto;
     if (keys[2]) base[keys[2]] = raw.fondo;
@@ -240,11 +606,49 @@ export function normalizeWallMeasuresPayload(raw: unknown): WallMeasuresMap {
       out[w.id] = migrateWallMeasuresEntry(w.id, obj[w.id]);
     }
   }
+  for (const key of Object.keys(obj)) {
+    if (!isWallSlotKey(key)) continue;
+    const entry = obj[key];
+    if (typeof entry !== "object" || entry === null) continue;
+    const o = entry as Record<string, unknown>;
+    const typeIdRaw = o[WALL_SLOT_META_TYPE];
+    const typeId = typeof typeIdRaw === "string" ? typeIdRaw.trim() : "";
+    if (!typeId || !WALL_ITEMS.some((w) => w.id === typeId)) {
+      const aliasRaw = o[WALL_SLOT_META_ALIAS];
+      const alias = typeof aliasRaw === "string" ? aliasRaw : "";
+      out[key] = {
+        [WALL_SLOT_META_TYPE]: typeId,
+        ...(alias.trim() ? { [WALL_SLOT_META_ALIAS]: alias } : {}),
+      };
+      continue;
+    }
+    const base = emptyWallMeasuresForId(typeId);
+    base[WALL_SLOT_META_TYPE] = typeId;
+    for (const k of Object.keys(base)) {
+      if (k === WALL_SLOT_META_TYPE) continue;
+      const v = o[k];
+      if (typeof v === "string") base[k] = v;
+    }
+    const aliasRaw = o[WALL_SLOT_META_ALIAS];
+    if (typeof aliasRaw === "string" && aliasRaw.trim()) base[WALL_SLOT_META_ALIAS] = aliasRaw;
+    out[key] = base;
+  }
   return out;
 }
 
 export function wallMeasuresTieneValor(m: Record<string, string>): boolean {
-  return Object.values(m).some((v) => (v ?? "").trim() !== "");
+  for (const [k, v] of Object.entries(m)) {
+    if (k.startsWith("__")) continue;
+    if ((v ?? "").trim() !== "") return true;
+  }
+  return false;
+}
+
+export function wallSlotIsComplete(m: Record<string, string> | undefined): boolean {
+  if (!m) return false;
+  const t = (m[WALL_SLOT_META_TYPE] ?? "").trim();
+  if (!t) return false;
+  return wallMeasuresTieneValor(m);
 }
 
 /** Texto para PDF: solo pares etiqueta–valor rellenados. */
@@ -257,9 +661,9 @@ export function formatWallMeasuresForPdf(wallId: string, values: Record<string, 
       .join("; ");
   }
   const parts: string[] = [];
-  for (const { key, label } of defs) {
-    const v = (values[key] ?? "").trim();
-    if (v) parts.push(`${label}: ${v} m`);
+  for (const def of defs) {
+    const v = (values[def.key] ?? "").trim();
+    if (v) parts.push(`${def.label}: ${v}${def.isMetric === false ? "" : " m"}`);
   }
   return parts.join("; ");
 }
@@ -388,6 +792,118 @@ export const APPLIANCE_ITEMS: ItemCatalogo[] = [
     hint: "Módulos pequeños combinables para personalizar la cocción.",
     image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
   },
+  {
+    id: "tarja-simple",
+    categoria: "Tarjas",
+    label: "Tarja seno único",
+    hint: "Una cubeta; la más común en cocinas compactas.",
+    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+  },
+  {
+    id: "tarja-doble",
+    categoria: "Tarjas",
+    label: "Tarja doble taza",
+    hint: "Dos cubetas para lavar y escurrir por separado.",
+    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+  },
+  {
+    id: "tarja-farmhouse",
+    categoria: "Tarjas",
+    label: "Tarja tipo granja (apron front)",
+    hint: "Frente visto; estilo rústico o escandinavo.",
+    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+  },
+  {
+    id: "tarja-trabajo",
+    categoria: "Tarjas",
+    label: "Tarja de gran formato / estación de trabajo",
+    hint: "Mayor profundidad o ancho para preparación intensa.",
+    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+  },
+  {
+    id: "campana-telescopica",
+    categoria: "Campanas",
+    label: "Campana telescópica o extraíble",
+    hint: "Se oculta en el mueble alto; buena opción si el espacio es limitado.",
+    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+  },
+  {
+    id: "campana-decorativa-pared",
+    categoria: "Campanas",
+    label: "Campana decorativa de pared",
+    hint: "Visible como elemento de diseño sobre la parrilla.",
+    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+  },
+  {
+    id: "campana-isla",
+    categoria: "Campanas",
+    label: "Campana de isla o colgante",
+    hint: "Instalación central sobre parrilla en isla o península.",
+    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+  },
+  {
+    id: "campana-integrada",
+    categoria: "Campanas",
+    label: "Campana integrada o empotrable al mueble",
+    hint: "Línea limpia; el motor queda oculto tras frentes.",
+    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+  },
+  {
+    id: "otro-cafetera",
+    categoria: "Otros",
+    label: "Cafetera",
+    hint: "Café espresso, americano u oficina según espacio asignado.",
+    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+  },
+  {
+    id: "otro-lavavajillas",
+    categoria: "Otros",
+    label: "Lavavajillas",
+    hint: "Integrado, semi-integrado o de libre instalación.",
+    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+  },
+  {
+    id: "otro-freidora-aire",
+    categoria: "Otros",
+    label: "Freidora de aire",
+    hint: "Sobremesa o hueco dedicado en torre o mueble bajo.",
+    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+  },
+  {
+    id: "otro-horno-gas",
+    categoria: "Otros",
+    label: "Horno de gas",
+    hint: "Independiente o columna de cocción; validar toma de gas y ventilación.",
+    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+  },
+  {
+    id: "otro-tostadora",
+    categoria: "Otros",
+    label: "Tostadora",
+    hint: "Pequeño electro de apoyo en encimera o cajón.",
+    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+  },
+  {
+    id: "otro-dispensador-agua",
+    categoria: "Otros",
+    label: "Dispensador de agua",
+    hint: "Filtrada, fría/caliente; fijo o sobre cubierta.",
+    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+  },
+  {
+    id: "otro-enfriador-vinos",
+    categoria: "Otros",
+    label: "Enfriador de vinos",
+    hint: "Columna o bajo cubierta según capacidad de botellas.",
+    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+  },
+  {
+    id: "otro-tarja-extra",
+    categoria: "Otros",
+    label: "Tarja extra",
+    hint: "Segunda tarja en barista, isla o área de apoyo (distinta de la tarja principal de la cocina).",
+    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+  },
 ];
 
 /**
@@ -402,7 +918,7 @@ const APPLIANCE_LEVANTAMIENTO_IMAGE_BY_ID: Record<string, string> = {
   "estufa-piso-material": "/images/electrodomesticos/estufa-de-piso-diseno.jpg",
   "estufa-compacta": "/images/electrodomesticos/estufa-piso-compactas.JPG",
   "refri-top-mount": "/images/electrodomesticos/top-mount2.jpg",
-  "refri-bottom-mount": "/images/electrodomesticos/bottom-mount.png",
+  "refri-bottom-mount": "/images/electrodomesticos/botton-mount1.jpg",
   "refri-side-side": "/images/electrodomesticos/side-by-side.png",
   "refri-french-door": "/images/electrodomesticos/french-door.jpg",
   "refri-frigobar": "/images/electrodomesticos/frigobar1.jpg",
@@ -483,6 +999,9 @@ export const APPLIANCE_CATEGORIAS: readonly string[] = [
   "Estufas",
   "Refrigeradores",
   "Parrillas",
+  "Tarjas",
+  "Campanas",
+  "Otros",
 ];
 
 /** Primer índice en `APPLIANCE_ITEMS` para una categoría (para saltar desde la UI). */
@@ -491,104 +1010,118 @@ export function applianceFirstIndexForCategory(categoria: string): number {
   return i === -1 ? 0 : i;
 }
 
-/** Fotos en `public/images/levantamiento/iluminacion/` (nombres al exportar desde Documentos). */
-const LIGHTING_LEVANTAMIENTO_IMAGE_BY_ID: Record<string, string> = {
-  "led-bajo": "/images/levantamiento/iluminacion/led-bajo.jpg",
-  spots: "/images/levantamiento/iluminacion/spots-empotrados-techo-cocina.jpg",
-  colgante: "/images/levantamiento/iluminacion/lampara-colgante-isla-cocina.jpg",
-  "perfil-led": "/images/levantamiento/iluminacion/perfil-led.jpg",
-  indirecta: "/images/levantamiento/iluminacion/luz-indirecta-cornisa.jpg",
-  sensor: "/images/levantamiento/iluminacion/sensor-led-interior.jpg",
-  sink: "/images/levantamiento/iluminacion/luz-focal-fregadero.jpg",
-  "foco-ajustable": "/images/levantamiento/iluminacion/foco-ajustable-riel.jpg",
-  "tira-vitrina": "/images/levantamiento/iluminacion/tira-led-vitrina.jpg",
+/**
+ * Fotos en `public/images/levantamiento/iluminacion/`. Pueden no coincidir al 100% con la etiqueta; sirven como referencia visual.
+ */
+const LIGHTING_IMAGE_BY_ID: Record<string, string> = {
+  "spots-copete": "/images/levantamiento/iluminacion/spots-empotrados-techo-cocina.jpg",
+  "tira-led-copete": "/images/levantamiento/iluminacion/perfil-led.jpg",
+  "tira-led-alacenas": "/images/levantamiento/iluminacion/led-bajo.jpg",
+  "led-golas": "/images/levantamiento/iluminacion/luz-indirecta-cornisa.jpg",
+  "led-zoclos": "/images/levantamiento/iluminacion/tira-led-vitrina.jpg",
+  "led-interiores": "/images/levantamiento/iluminacion/sensor-led-interior.jpg",
+};
+
+/**
+ * `object-position` en CSS (se aplica como estilo inline en `LightingTypeImage` para que no dependa de Tailwind).
+ * La foto de spots suele ser panorámica: el foco queda arriba-derecha.
+ */
+export const LIGHTING_CATALOG_OBJECT_POSITION: Partial<Record<string, string>> = {
+  "spots-copete": "68% 18%",
 };
 
 export function lightingLevantamientoImageCandidates(item: ItemCatalogo): string[] {
-  const primary = LIGHTING_LEVANTAMIENTO_IMAGE_BY_ID[item.id] ?? item.image;
+  const primary = LIGHTING_IMAGE_BY_ID[item.id] ?? item.image;
   const raw = [primary, APPLIANCE_CATALOGO_IMAGE_FALLBACK].filter((u): u is string => Boolean(u?.trim()));
   return [...new Set(raw)];
 }
 
+/** Catálogo fijo: 6 tipos + «Otro» en UI (7.ª opción). */
 export const LIGHTING_ITEMS: ItemCatalogo[] = [
   {
-    id: "led-bajo",
-    label: "LED bajo alacena",
-    image: LIGHTING_LEVANTAMIENTO_IMAGE_BY_ID["led-bajo"]!,
+    id: "spots-copete",
+    label: "Spots en copete",
+    categoria: "Iluminación",
+    image: LIGHTING_IMAGE_BY_ID["spots-copete"]!,
+    precioFijo: 2000,
   },
   {
-    id: "spots",
-    label: "Spots empotrados techo",
-    image: LIGHTING_LEVANTAMIENTO_IMAGE_BY_ID.spots!,
+    id: "tira-led-copete",
+    label: "Tira LED en copete",
+    categoria: "Iluminación",
+    image: LIGHTING_IMAGE_BY_ID["tira-led-copete"]!,
+    precioFijo: 1500,
   },
   {
-    id: "colgante",
-    label: "Colgante isla / mesón",
-    image: LIGHTING_LEVANTAMIENTO_IMAGE_BY_ID.colgante!,
+    id: "tira-led-alacenas",
+    label: "Tira LED abajo de alacenas",
+    categoria: "Iluminación",
+    image: LIGHTING_IMAGE_BY_ID["tira-led-alacenas"]!,
+    precioFijo: 1800,
   },
   {
-    id: "perfil-led",
-    label: "Perfil LED lineal",
-    image: LIGHTING_LEVANTAMIENTO_IMAGE_BY_ID["perfil-led"]!,
+    id: "led-golas",
+    label: "LED en golas",
+    categoria: "Iluminación",
+    image: LIGHTING_IMAGE_BY_ID["led-golas"]!,
+    precioFijo: 2500,
   },
   {
-    id: "indirecta",
-    label: "Luz indirecta / cornisa",
-    image: LIGHTING_LEVANTAMIENTO_IMAGE_BY_ID.indirecta!,
+    id: "led-zoclos",
+    label: "LED en zoclos",
+    categoria: "Iluminación",
+    image: LIGHTING_IMAGE_BY_ID["led-zoclos"]!,
+    precioFijo: 2000,
   },
   {
-    id: "sensor",
-    label: "Sensor / LED gabinete interior",
-    image: LIGHTING_LEVANTAMIENTO_IMAGE_BY_ID.sensor!,
-  },
-  {
-    id: "sink",
-    label: "Luz focal tarja",
-    image: LIGHTING_LEVANTAMIENTO_IMAGE_BY_ID.sink!,
-  },
-  {
-    id: "foco-ajustable",
-    label: "Foco ajustable riel",
-    image: LIGHTING_LEVANTAMIENTO_IMAGE_BY_ID["foco-ajustable"]!,
-  },
-  {
-    id: "tira-vitrina",
-    label: "Tira LED vitrina",
-    image: LIGHTING_LEVANTAMIENTO_IMAGE_BY_ID["tira-vitrina"]!,
+    id: "led-interiores",
+    label: "LED interiores",
+    categoria: "Iluminación",
+    image: LIGHTING_IMAGE_BY_ID["led-interiores"]!,
+    precioFijo: 3000,
   },
 ];
 
-export const LIGHTING_PAGE_INDICES: number[][] = [
-  [0, 1, 2],
-  [3, 4, 5],
-  [6, 7, 8],
-];
+/** Un solo grupo (compatibilidad); la UI mapea `LIGHTING_ITEMS` directamente. */
+export const LIGHTING_PAGE_INDICES: number[][] = [[0, 1, 2, 3, 4, 5]];
 
-export type OtroMedidas = MedidasCampos & { descripcion: string; precioEstimado?: number };
+export type OtroMedidas = MedidasCampos & {
+  descripcion: string;
+  /** Solo iluminación «Otro»: precio manual opcional (MXN). */
+  precioEstimado?: number;
+};
+
+/** Respuesta «¿con isla?» en Sección A (cocina). Vacío = sin indicar. */
+export type ConIslaRespuesta = "" | "si" | "no";
 
 /** Payload opcional guardado con la cotización preliminar / PDF. */
 export type LevantamientoDetalle = {
-  [key: string]: any;
-  sectionComments: Partial<Record<"a" | "b" | "c" | "d" | "e" | "f", string>>;
+  /** Solo aplica de forma relevante a cocina; en otros tipos puede quedar vacío. */
+  conIsla?: ConIslaRespuesta;
+  /** Medidas generales del espacio (m), formulario preliminar / PDF. */
+  largo?: string;
+  alto?: string;
+  sectionComments: Partial<Record<"a" | "b" | "c" | "d" | "e", string>>;
+  /** Cantidad de paredes del flujo dinámico (wall-0 … wall-N-1). 0 = sin definir. */
+  wallSlotCount: number;
   wallMeasures: WallMeasuresMap;
   wallOtro: OtroMedidas;
+  /** Electrodomésticos del catálogo a incluir en PDF; las medidas son opcionales. */
+  applianceDocumentIds: string[];
+  /** Incluir bloque «Otro electrodoméstico» en PDF. */
+  applianceOtroInDocument: boolean;
   applianceMeasures: Record<string, MedidasCampos>;
   applianceOtro: OtroMedidas;
+  /** Luminarios del catálogo elegidos para el proyecto/PDF (varios a la vez; medidas opcionales). */
+  lightingSelectedIds: string[];
+  /** Incluir bloque «Otro luminario» en PDF. */
+  lightingOtroInDocument: boolean;
   lightingMeasures: Record<string, MedidasCampos>;
   lightingOtro: OtroMedidas;
-  wallSlotCount: number;
-  applianceDocumentIds: string[];
-  applianceOtroInDocument: boolean;
-  lightingSelectedIds: string[];
-  lightingOtroInDocument: boolean;
-  lightingQty: Record<string, number>;
-  specialAccessoriesQty: Record<string, number>;
-  medidasGenerales: { hastaTecho: boolean };
-  conIsla: "si" | "no" | "";
 };
 
 export function emptyOtro(): OtroMedidas {
-  return { ...emptyMedidas(), descripcion: "", precioEstimado: 0 };
+  return { ...emptyMedidas(), descripcion: "", precioEstimado: undefined };
 }
 
 export function emptyMedidas(): MedidasCampos {
@@ -597,6 +1130,55 @@ export function emptyMedidas(): MedidasCampos {
 
 export function medidasCamposTieneValor(m: MedidasCampos): boolean {
   return [m.ancho, m.alto, m.fondo].some((v) => (v ?? "").trim() !== "");
+}
+
+/** PDF: ítem de catálogo si está marcado o tenía medidas (datos antiguos). */
+export function applianceAppearsInPdf(lev: LevantamientoDetalle, applianceId: string): boolean {
+  const ids = lev.applianceDocumentIds ?? [];
+  if (ids.includes(applianceId)) return true;
+  const m = lev.applianceMeasures[applianceId];
+  return m ? medidasCamposTieneValor(m) : false;
+}
+
+/** PDF: bloque Otro electro si está marcado o tenía contenido (datos antiguos). */
+export function applianceOtroAppearsInPdf(lev: LevantamientoDetalle): boolean {
+  if (lev.applianceOtroInDocument) return true;
+  const o = lev.applianceOtro;
+  return o.descripcion.trim() !== "" || medidasCamposTieneValor(o);
+}
+
+/** PDF: luminario de catálogo si está seleccionado o tenía medidas (datos antiguos). */
+export function lightingAppearsInPdf(lev: LevantamientoDetalle, lightingId: string): boolean {
+  const ids = lev.lightingSelectedIds ?? [];
+  if (ids.includes(lightingId)) return true;
+  const m = lev.lightingMeasures[lightingId];
+  return m ? medidasCamposTieneValor(m) : false;
+}
+
+/** PDF: bloque Otro luminario si está marcado o tenía contenido (datos antiguos). */
+export function lightingOtroAppearsInPdf(lev: LevantamientoDetalle): boolean {
+  if (lev.lightingOtroInDocument) return true;
+  const o = lev.lightingOtro;
+  return (
+    o.descripcion.trim() !== "" ||
+    medidasCamposTieneValor(o) ||
+    (typeof o.precioEstimado === "number" && o.precioEstimado > 0)
+  );
+}
+
+/** Suma precios fijos de iluminación seleccionada + precio manual «Otro». */
+export function cotizacionIluminacionTotal(lev: LevantamientoDetalle): number {
+  let sum = 0;
+  for (const item of LIGHTING_ITEMS) {
+    if (lightingAppearsInPdf(lev, item.id)) {
+      sum += item.precioFijo ?? 0;
+    }
+  }
+  const extra = lev.lightingOtro.precioEstimado;
+  if (typeof extra === "number" && Number.isFinite(extra) && extra > 0) {
+    sum += extra;
+  }
+  return sum;
 }
 
 export function initMeasuresMap(ids: string[]): Record<string, MedidasCampos> {
@@ -608,51 +1190,21 @@ export function initMeasuresMap(ids: string[]): Record<string, MedidasCampos> {
 }
 
 export function defaultLevantamientoDetalle(): LevantamientoDetalle {
-  const lightingQty = Object.fromEntries(LIGHTING_ITEMS.map((item) => [item.id, 0]));
   return {
+    conIsla: "",
     sectionComments: {},
+    wallSlotCount: 0,
     wallMeasures: initWallMeasuresMap(),
     wallOtro: emptyOtro(),
-    applianceMeasures: initMeasuresMap(APPLIANCE_ITEMS.map((a) => a.id)),
-    applianceOtro: emptyOtro(),
-    lightingMeasures: initMeasuresMap(LIGHTING_ITEMS.map((l) => l.id)),
-    lightingOtro: emptyOtro(),
-    wallSlotCount: 0,
     applianceDocumentIds: [],
     applianceOtroInDocument: false,
+    applianceMeasures: initMeasuresMap(APPLIANCE_ITEMS.map((a) => a.id)),
+    applianceOtro: emptyOtro(),
     lightingSelectedIds: [],
     lightingOtroInDocument: false,
-    lightingQty,
-    specialAccessoriesQty: {},
-    medidasGenerales: { hastaTecho: false },
-    conIsla: "",
+    lightingMeasures: initMeasuresMap(LIGHTING_ITEMS.map((l) => l.id)),
+    lightingOtro: emptyOtro(),
   };
-}
-
-/**
- * Heurística para el rango preliminar: más secciones con texto, tipos con medidas u «Otro»
- * implican más alcance de diseño/taller. No sustituye partidas ni cotización formal.
- * ~1.2% por unidad de alcance, tope +18%.
- */
-export function levantamientoDetalleScopeMultiplier(lev: LevantamientoDetalle): number {
-  let n = 0;
-  const com = lev.sectionComments;
-  for (const k of ["a", "b", "c", "d", "e", "f"] as const) {
-    if (com[k]?.trim()) n += 1;
-  }
-  for (const m of Object.values(lev.wallMeasures)) {
-    if (wallMeasuresTieneValor(m)) n += 1;
-  }
-  if (lev.wallOtro.descripcion.trim() || medidasCamposTieneValor(lev.wallOtro)) n += 1;
-  for (const m of Object.values(lev.applianceMeasures)) {
-    if (medidasCamposTieneValor(m)) n += 1;
-  }
-  if (lev.applianceOtro.descripcion.trim() || medidasCamposTieneValor(lev.applianceOtro)) n += 1;
-  for (const m of Object.values(lev.lightingMeasures)) {
-    if (medidasCamposTieneValor(m)) n += 1;
-  }
-  if (lev.lightingOtro.descripcion.trim() || medidasCamposTieneValor(lev.lightingOtro)) n += 1;
-  return 1 + Math.min(0.18, n * 0.012);
 }
 
 function mergeMeasuresMapFromRaw(
@@ -678,6 +1230,9 @@ export function normalizeLevantamientoDetalle(raw: unknown): LevantamientoDetall
   const d = defaultLevantamientoDetalle();
   if (typeof raw !== "object" || raw === null) return d;
   const r = raw as Partial<LevantamientoDetalle>;
+  const conIslaRaw = r.conIsla;
+  const conIsla: ConIslaRespuesta =
+    conIslaRaw === "si" || conIslaRaw === "no" ? conIslaRaw : "";
   const sectionComments =
     typeof r.sectionComments === "object" && r.sectionComments !== null
       ? { ...d.sectionComments, ...r.sectionComments }
@@ -689,7 +1244,6 @@ export function normalizeLevantamientoDetalle(raw: unknown): LevantamientoDetall
           ancho: String(r.wallOtro.ancho ?? ""),
           alto: String(r.wallOtro.alto ?? ""),
           fondo: String(r.wallOtro.fondo ?? ""),
-          precioEstimado: Number((r.wallOtro as any).precioEstimado ?? 0) || 0,
         }
       : d.wallOtro;
   const applianceOtro =
@@ -699,121 +1253,97 @@ export function normalizeLevantamientoDetalle(raw: unknown): LevantamientoDetall
           ancho: String(r.applianceOtro.ancho ?? ""),
           alto: String(r.applianceOtro.alto ?? ""),
           fondo: String(r.applianceOtro.fondo ?? ""),
-          precioEstimado: Number((r.applianceOtro as any).precioEstimado ?? 0) || 0,
         }
       : d.applianceOtro;
+  const lightingOtroRaw = r.lightingOtro;
   const lightingOtro =
-    typeof r.lightingOtro === "object" && r.lightingOtro !== null
+    typeof lightingOtroRaw === "object" && lightingOtroRaw !== null
       ? {
-          descripcion: String(r.lightingOtro.descripcion ?? ""),
-          ancho: String(r.lightingOtro.ancho ?? ""),
-          alto: String(r.lightingOtro.alto ?? ""),
-          fondo: String(r.lightingOtro.fondo ?? ""),
-          precioEstimado: Number((r.lightingOtro as any).precioEstimado ?? 0) || 0,
+          descripcion: String(lightingOtroRaw.descripcion ?? ""),
+          ancho: String(lightingOtroRaw.ancho ?? ""),
+          alto: String(lightingOtroRaw.alto ?? ""),
+          fondo: String(lightingOtroRaw.fondo ?? ""),
+          precioEstimado: (() => {
+            const p = (lightingOtroRaw as { precioEstimado?: unknown }).precioEstimado;
+            if (typeof p === "number" && Number.isFinite(p)) {
+              const v = Math.max(0, p);
+              return v === 0 ? undefined : v;
+            }
+            return undefined;
+          })(),
         }
       : d.lightingOtro;
 
+  const wallSlotCountRaw = r.wallSlotCount;
+  const wallSlotCount =
+    typeof wallSlotCountRaw === "number" && Number.isFinite(wallSlotCountRaw)
+      ? Math.min(20, Math.max(0, Math.floor(wallSlotCountRaw)))
+      : d.wallSlotCount;
+
+  const applianceMeasures = mergeMeasuresMapFromRaw(r.applianceMeasures, APPLIANCE_ITEMS.map((a) => a.id));
+
+  const rawDocIds = r.applianceDocumentIds;
+  let applianceDocumentIds: string[] = Array.isArray(rawDocIds)
+    ? [
+        ...new Set(
+          (rawDocIds as unknown[]).filter(
+            (x): x is string => typeof x === "string" && APPLIANCE_ITEMS.some((a) => a.id === x),
+          ),
+        ),
+      ]
+    : [];
+  for (const a of APPLIANCE_ITEMS) {
+    if (medidasCamposTieneValor(applianceMeasures[a.id]) && !applianceDocumentIds.includes(a.id)) {
+      applianceDocumentIds = [...applianceDocumentIds, a.id];
+    }
+  }
+
+  let applianceOtroInDocument = r.applianceOtroInDocument === true;
+  if (!applianceOtroInDocument && (applianceOtro.descripcion.trim() !== "" || medidasCamposTieneValor(applianceOtro))) {
+    applianceOtroInDocument = true;
+  }
+
+  const lightingMeasures = mergeMeasuresMapFromRaw(r.lightingMeasures, LIGHTING_ITEMS.map((l) => l.id));
+
+  const rawLightIds = r.lightingSelectedIds;
+  let lightingSelectedIds: string[] = Array.isArray(rawLightIds)
+    ? [
+        ...new Set(
+          (rawLightIds as unknown[]).filter(
+            (x): x is string => typeof x === "string" && LIGHTING_ITEMS.some((l) => l.id === x),
+          ),
+        ),
+      ]
+    : [];
+  for (const l of LIGHTING_ITEMS) {
+    if (medidasCamposTieneValor(lightingMeasures[l.id]) && !lightingSelectedIds.includes(l.id)) {
+      lightingSelectedIds = [...lightingSelectedIds, l.id];
+    }
+  }
+
+  let lightingOtroInDocument = r.lightingOtroInDocument === true;
+  if (!lightingOtroInDocument && (lightingOtro.descripcion.trim() !== "" || medidasCamposTieneValor(lightingOtro))) {
+    lightingOtroInDocument = true;
+  }
+
+  const largoGen = typeof r.largo === "string" ? r.largo : undefined;
+  const altoGen = typeof r.alto === "string" ? r.alto : undefined;
+
   return {
+    conIsla,
+    largo: largoGen,
+    alto: altoGen,
     sectionComments,
+    wallSlotCount,
     wallMeasures: normalizeWallMeasuresPayload(r.wallMeasures),
     wallOtro,
-    applianceMeasures: mergeMeasuresMapFromRaw(r.applianceMeasures, APPLIANCE_ITEMS.map((a) => a.id)),
+    applianceDocumentIds,
+    applianceOtroInDocument,
+    applianceMeasures,
     applianceOtro,
-    lightingMeasures: mergeMeasuresMapFromRaw(r.lightingMeasures, LIGHTING_ITEMS.map((l) => l.id)),
+    lightingSelectedIds,
+    lightingOtroInDocument,
+    lightingMeasures,
     lightingOtro,
-    wallSlotCount: typeof (r as any).wallSlotCount === "number" ? Math.max(0, (r as any).wallSlotCount) : 0,
-    applianceDocumentIds: Array.isArray((r as any).applianceDocumentIds) ? (r as any).applianceDocumentIds : [],
-    applianceOtroInDocument: Boolean((r as any).applianceOtroInDocument),
-    lightingSelectedIds: Array.isArray((r as any).lightingSelectedIds) ? (r as any).lightingSelectedIds : [],
-    lightingOtroInDocument: Boolean((r as any).lightingOtroInDocument),
-    lightingQty:
-      typeof (r as any).lightingQty === "object" && (r as any).lightingQty !== null
-        ? Object.fromEntries(
-            Object.entries((r as any).lightingQty as Record<string, unknown>).map(([id, qty]) => [
-              id,
-              Number.isFinite(Number(qty)) ? Math.max(0, Math.floor(Number(qty))) : 0,
-            ]),
-          )
-        : d.lightingQty,
-    specialAccessoriesQty:
-      typeof (r as any).specialAccessoriesQty === "object" && (r as any).specialAccessoriesQty !== null
-        ? Object.fromEntries(
-            Object.entries((r as any).specialAccessoriesQty as Record<string, unknown>).map(([id, qty]) => [
-              id,
-              Number.isFinite(Number(qty)) ? Math.max(0, Math.floor(Number(qty))) : 0,
-            ]),
-          )
-        : d.specialAccessoriesQty,
-    medidasGenerales:
-      typeof (r as any).medidasGenerales === "object" && (r as any).medidasGenerales !== null
-        ? { hastaTecho: Boolean((r as any).medidasGenerales.hastaTecho) }
-        : d.medidasGenerales,
-    conIsla: (r as any).conIsla === "si" || (r as any).conIsla === "no" ? (r as any).conIsla : "",
   };
-}
-
-/** Compatibilidad Front_plataforna */
-export const WALL_SLOT_META_TYPE = "__typeId";
-export const WALL_SLOT_META_ALIAS = "__alias";
-
-export function wallSlotKey(index: number): string {
-  return `wall-${index}`;
-}
-
-export function isWallSlotKey(key: string): boolean {
-  return /^wall-\d+$/.test(key);
-}
-
-export function wallMeasureLetter(index: number): string {
-  return String.fromCharCode(65 + index);
-}
-
-export function wallSlotIsComplete(values: Record<string, string> | undefined): boolean {
-  if (!values) return false;
-  const wallId = (values[WALL_SLOT_META_TYPE] ?? "").trim();
-  if (!wallId) return false;
-  const defs = getWallMeasureFieldDefs(wallId);
-  if (!defs.length) return false;
-  return defs.every((field) => (values[field.key] ?? "").trim() !== "");
-}
-
-const DEFAULT_LIGHTING_PRICE_BY_ID: Record<string, number> = Object.fromEntries(
-  LIGHTING_ITEMS.map((item) => [item.id, 1800]),
-);
-
-export function cotizacionIluminacionTotal(
-  lev: LevantamientoDetalle,
-  extrasPreciosIluminacion?: Record<string, number>,
-): number {
-  const selected = Array.isArray(lev.lightingSelectedIds) ? lev.lightingSelectedIds : [];
-  const selectedSet = new Set(selected);
-  const qtyMap = (lev as any).lightingQty as Record<string, unknown> | undefined;
-  const bySelected = LIGHTING_ITEMS.reduce((acc, item) => {
-    const rawQty = qtyMap ? Number(qtyMap[item.id]) : 0;
-    const clampedQty = Number.isFinite(rawQty) ? Math.max(0, Math.min(999, Math.floor(rawQty))) : 0;
-    const legacyQty = selectedSet.has(item.id) || medidasCamposTieneValor(lev.lightingMeasures[item.id] ?? emptyMedidas()) ? 1 : 0;
-    const qty = clampedQty > 0 ? clampedQty : legacyQty;
-    if (qty <= 0) return acc;
-    const configUnit = Number(extrasPreciosIluminacion?.[item.id]);
-    const fallbackUnit = DEFAULT_LIGHTING_PRICE_BY_ID[item.id] ?? 0;
-    const unit = Number.isFinite(configUnit) && configUnit > 0 ? configUnit : fallbackUnit;
-    return acc + qty * unit;
-  }, 0);
-  const otro = Number((lev.lightingOtro as any)?.precioEstimado ?? 0) || 0;
-  return Math.max(0, bySelected + otro);
-}
-
-export function cotizacionAccesoriosEspecialesTotal(
-  lev: LevantamientoDetalle,
-  extrasPreciosAccesorios?: Record<string, number>,
-): number {
-  const qtyMap = (lev as any).specialAccessoriesQty as Record<string, unknown> | undefined;
-  const source = qtyMap ?? {};
-  return Object.entries(source).reduce((acc, [id, rawQty]) => {
-    const q = Number.isFinite(Number(rawQty)) ? Math.max(0, Math.floor(Number(rawQty))) : 0;
-    if (q <= 0) return acc;
-    const unit = Number(extrasPreciosAccesorios?.[id]);
-    const safeUnit = Number.isFinite(unit) && unit > 0 ? unit : 0;
-    return acc + q * safeUnit;
-  }, 0);
 }

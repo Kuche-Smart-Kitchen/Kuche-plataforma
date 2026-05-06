@@ -3,6 +3,14 @@
 import { useCallback, useRef, useState } from "react";
 import { ArrowUp, FlipHorizontal, RotateCw } from "lucide-react";
 
+/**
+ * Croquis top-down alineado a los pictogramas de cantidad de paredes (viewBox 24×24).
+ * Cada trazo = una pared del proyecto (índice 0…wallCount−1).
+ *
+ * Selección: no dependemos de hitboxes SVG (strokes transparentes / opacidad suelen fallar en hit-test).
+ * Un rectángulo casi invisible captura puntero; resolvemos qué pared es por distancia punto→segmento en
+ * coordenadas del viewBox.
+ */
 export const CROQUIS_WALL_SEGMENTS: Record<number, Array<[number, number, number, number]>> = {
   1: [[4, 12, 20, 12]],
   2: [
@@ -56,7 +64,10 @@ export const CROQUIS_WALL_SEGMENTS: Record<number, Array<[number, number, number
   ],
 };
 
+/** Trazo visible: más grueso si está activa para coincidir con la referencia visual. */
 const VISIBLE_STROKE = { active: 6, default: 4 } as const;
+
+/** Distancia máxima (unidades viewBox 24×24) del clic al segmento para contar como “sobre la pared”. */
 const PICK_RADIUS = 3.2;
 
 function clientToSvgUser(svg: SVGSVGElement, clientX: number, clientY: number): { x: number; y: number } | null {
@@ -69,6 +80,7 @@ function clientToSvgUser(svg: SVGSVGElement, clientX: number, clientY: number): 
   return { x: p.x, y: p.y };
 }
 
+/** Distancia mínima del punto (px,py) al segmento (x1,y1)-(x2,y2). */
 function distPointToSegment(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
   const dx = x2 - x1;
   const dy = y2 - y1;
@@ -81,7 +93,11 @@ function distPointToSegment(px: number, py: number, x1: number, y1: number, x2: 
   return Math.hypot(px - nx, py - ny);
 }
 
-function pickWallIndex(px: number, py: number, segments: Array<[number, number, number, number]>): number {
+function pickWallIndex(
+  px: number,
+  py: number,
+  segments: Array<[number, number, number, number]>,
+): number {
   let bestIdx = -1;
   let bestD = Infinity;
   for (let i = 0; i < segments.length; i++) {
@@ -174,20 +190,30 @@ export function InteractiveCroquis({
               fill="none"
               role="img"
               aria-label={`Croquis de ${wallCount} paredes; selecciona un trazo para editar sus medidas.`}
-              onPointerDown={(event) => {
-                if (event.pointerType === "mouse" && event.button !== 0) return;
-                handlePointer(event.clientX, event.clientY);
+              onPointerDown={(e) => {
+                if (e.pointerType === "mouse" && e.button !== 0) return;
+                handlePointer(e.clientX, e.clientY);
               }}
             >
               <title>Croquis interactivo</title>
-              <rect x={0} y={0} width={24} height={24} fill="#ffffff" fillOpacity={0.02} pointerEvents="all" />
 
-              {segments.map((segment, wallIdx) => {
-                const [x1, y1, x2, y2] = segment;
+              {/* Capa inferior: recibe el puntero (trazos encima tienen pointer-events none → el clic llega aquí). */}
+              <rect
+                x={0}
+                y={0}
+                width={24}
+                height={24}
+                fill="#ffffff"
+                fillOpacity={0.02}
+                pointerEvents="all"
+              />
+
+              {segments.map((seg, wallIdx) => {
+                const [x1, y1, x2, y2] = seg;
                 const complete = isWallComplete(wallIdx);
                 const active = wallIdx === activeWallIndex;
                 const stroke = active ? STROKE.active : complete ? STROKE.complete : STROKE.pending;
-                const strokeWidth = active ? VISIBLE_STROKE.active : VISIBLE_STROKE.default;
+                const sw = active ? VISIBLE_STROKE.active : VISIBLE_STROKE.default;
                 return (
                   <line
                     key={`croquis-vis-${wallIdx}`}
@@ -197,7 +223,7 @@ export function InteractiveCroquis({
                     y2={y2}
                     fill="none"
                     stroke={stroke}
-                    strokeWidth={strokeWidth}
+                    strokeWidth={sw}
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     pointerEvents="none"

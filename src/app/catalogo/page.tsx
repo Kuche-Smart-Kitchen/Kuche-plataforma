@@ -5,14 +5,9 @@ import { useMemo, useState } from "react";
 import CatalogFilters from "@/components/catalogo/CatalogFilters";
 import ProjectCard, { type Project } from "@/components/catalogo/ProjectCard";
 import Footer from "@/components/Footer";
+import { CATALOG_PROJECT_TYPES } from "@/lib/catalog-project-types";
 
-const primaryCategories = [
-  "Cocinas",
-  "Closets",
-  "Baños",
-  "Muebles a medida",
-  "Centro de entretenimiento",
-];
+const primaryCategories = [...CATALOG_PROJECT_TYPES];
 
 const secondaryCategoriesByPrimary: Record<string, string[]> = {
   Cocinas: [
@@ -24,9 +19,14 @@ const secondaryCategoriesByPrimary: Record<string, string[]> = {
     "Inteligentes",
   ],
   Closets: ["Todos", "Walk-in", "Lineal", "En L", "Con isla"],
-  Baños: ["Todos", "Moderno", "Minimalista", "Clásico", "Spa"],
-  "Muebles a medida": ["Todos", "Oficina", "Sala", "Recámara", "Comedor"],
-  "Centro de entretenimiento": ["Todos", "Mural", "Flotante", "Integrado"],
+  Baños: ["Todos", "Con ovalín", "Con piedras"],
+  "Muebles a medida": [
+    "Todos",
+    "Oficina",
+    "Recámara",
+    "Consultorio",
+    "Centro de entretenimiento",
+  ],
 };
 
 const projects: Project[] = [
@@ -375,15 +375,17 @@ const fadeUp = {
   initial: { opacity: 0, y: 24 },
   animate: { opacity: 1, y: 0 },
   exit: { opacity: 0, y: 24 },
-};
+} as const;
 
 export default function CatalogoPage() {
-  const [activePrimary, setActivePrimary] = useState(primaryCategories[0]);
-  const [activeSecondary, setActiveSecondary] = useState(
-    secondaryCategoriesByPrimary[primaryCategories[0]][0],
+  const [activePrimary, setActivePrimary] = useState<string>(
+    primaryCategories[0] ?? "",
+  );
+  const [activeSecondary, setActiveSecondary] = useState<string>(
+    secondaryCategoriesByPrimary[primaryCategories[0] ?? ""]?.[0] ?? "Todos",
   );
 
-  const filteredProjects = useMemo(() => {
+  const filteredProjects = useMemo<Project[]>(() => {
     const primaryFiltered = projects.filter(
       (project) => project.mainCategory === activePrimary,
     );

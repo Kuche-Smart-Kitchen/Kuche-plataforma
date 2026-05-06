@@ -1,6 +1,6 @@
 /**
- * Almacena los PDFs formales en IndexedDB para no exceder la cuota de localStorage.
- * La tarjeta solo guarda la clave (formalPdfKey); el PDF se lee desde aquí al ver/descargar.
+ * Almacena PDFs en IndexedDB (no saturar localStorage): formal, taller y levantamiento→seguimiento.
+ * Tarjeta / seguimiento guardan claves; el blob se lee aquí al ver/descargar.
  */
 
 const DB_NAME = "kuche-formal-pdfs";
@@ -57,17 +57,48 @@ export function getFormalPdf(key: string): Promise<string | null> {
     .catch(() => null);
 }
 
-/** Genera una clave única para un PDF formal de una tarea (para usar al guardar). */
-export function createFormalPdfKey(taskId: string, index: number): string {
-  return `formal-${taskId}-${index}-${Date.now()}`;
+/**
+ * Genera claves emparejadas (mismo sufijo) para formal y taller.
+ * Así, si `workshopPdfKey` no llegó en JSON, se puede recuperar desde `formalPdfKey`.
+ */
+export function createFormalWorkshopPdfKeys(
+  taskId: string,
+  index: number,
+): { formalPdfKey: string; workshopPdfKey: string } {
+  const suffix = `${taskId}-${index}-${Date.now()}`;
+  return {
+    formalPdfKey: `formal-${suffix}`,
+    workshopPdfKey: `workshop-${suffix}`,
+  };
 }
 
-/** Genera una clave única para la hoja de taller PDF asociada a una cotización formal. */
-export function createWorkshopPdfKey(taskId: string, index: number): string {
-  return `workshop-${taskId}-${index}-${Date.now()}`;
+/** Deriva la clave de taller emparejada con una clave formal (mismo sufijo tras el prefijo). */
+export function inferWorkshopPdfKeyFromFormalPdfKey(formalPdfKey: string): string {
+  return formalPdfKey.replace(/^formal-/, "workshop-");
 }
 
-/** Compatibilidad con Front_plataforna. */
+export function resolveWorkshopPdfKeysToTry(data: {
+  formalPdfKey?: string;
+  workshopPdfKey?: string;
+}): string[] {
+  const keys: string[] = [];
+  if (data.workshopPdfKey) keys.push(data.workshopPdfKey);
+  if (data.formalPdfKey) {
+    const inferred = inferWorkshopPdfKeyFromFormalPdfKey(data.formalPdfKey);
+    if (!keys.includes(inferred)) keys.push(inferred);
+  }
+  return keys;
+}
+
+/** Hay acciones Ver/Descargar taller si podemos intentar al menos una clave en IndexedDB. */
+export function hasWorkshopPdfActions(data: {
+  formalPdfKey?: string;
+  workshopPdfKey?: string;
+}): boolean {
+  return resolveWorkshopPdfKeysToTry(data).length > 0;
+}
+
+/** PDF de levantamiento detallado guardado para la vista de seguimiento (prospecto). */
 export function createPreliminarSeguimientoPdfKey(taskId: string, index: number): string {
-  return createFormalPdfKey(taskId, index);
+  return `preliminar-seg-${taskId}-${index}-${Date.now()}`;
 }
