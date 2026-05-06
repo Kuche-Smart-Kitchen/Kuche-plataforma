@@ -18,6 +18,11 @@ export interface LevantamientoConfig {
   materiales: MaterialConfig[];
   ivaPercent: number;
   marginPercent: number;
+  extrasPrecios?: {
+    iluminacion: Record<string, number>;
+    accesoriosEspeciales: Record<string, number>;
+  };
+  extrasIluminacionCantidades?: Record<string, number>;
 }
 
 function defaultMateriales(): MaterialConfig[] {
@@ -49,6 +54,21 @@ export function createDefaultLevantamientoConfig(): LevantamientoConfig {
     materiales: defaultMateriales(),
     ivaPercent: 0.16,
     marginPercent: 0.08,
+    extrasPrecios: {
+      iluminacion: {
+        "led-bajo": 250,
+        spots: 120,
+        colgante: 450,
+        "perfil-led": 300,
+        indirecta: 180,
+        sensor: 220,
+        sink: 180,
+        "foco-ajustable": 160,
+        "tira-vitrina": 140,
+      },
+      accesoriosEspeciales: {},
+    },
+    extrasIluminacionCantidades: {},
   };
 }
 
@@ -89,6 +109,21 @@ export function getLevantamientoConfig(): LevantamientoConfig {
         typeof parsed.marginPercent === "number" && Number.isFinite(parsed.marginPercent)
           ? Math.min(0.5, Math.max(0, parsed.marginPercent))
           : base.marginPercent,
+      extrasPrecios:
+        typeof parsed.extrasPrecios === "object" && parsed.extrasPrecios
+          ? {
+              iluminacion: typeof parsed.extrasPrecios?.iluminacion === "object"
+                ? parsed.extrasPrecios.iluminacion
+                : base.extrasPrecios!.iluminacion,
+              accesoriosEspeciales: typeof parsed.extrasPrecios?.accesoriosEspeciales === "object"
+                ? parsed.extrasPrecios.accesoriosEspeciales
+                : base.extrasPrecios!.accesoriosEspeciales,
+            }
+          : base.extrasPrecios,
+      extrasIluminacionCantidades:
+        typeof parsed.extrasIluminacionCantidades === "object" && parsed.extrasIluminacionCantidades
+          ? parsed.extrasIluminacionCantidades
+          : base.extrasIluminacionCantidades,
     };
   } catch {
     return createDefaultLevantamientoConfig();
