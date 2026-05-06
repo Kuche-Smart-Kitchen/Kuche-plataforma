@@ -76,7 +76,7 @@ export default function ClientesEnProcesoPage() {
     }
 
     if (!nextSrc && args.preliminarData) {
-      nextSrc = buildPreliminarPdfDataUrl(args.preliminarData);
+      nextSrc = await buildPreliminarPdfDataUrl(args.preliminarData);
     }
 
     setPreviewSrc(nextSrc);
