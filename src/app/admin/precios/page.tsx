@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, Plus, RefreshCw, Save, Search, Trash2, Upload } from "lucide-react";
+import { Check, Download, MoreVertical, PencilLine, Plus, RefreshCw, Save, Search, Trash2, Upload } from "lucide-react";
 
 import {
   UNIDADES_MEDIDA,
@@ -150,6 +150,9 @@ export default function PreciosPage() {
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [hasPendingChanges, setHasPendingChanges] = useState(false);
+  const [selectedItemKeys, setSelectedItemKeys] = useState<string[]>([]);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newIdCotizador, setNewIdCotizador] = useState("");
@@ -201,6 +204,9 @@ export default function PreciosPage() {
       setItems(loadedItems);
       initialItemsRef.current = new Map(loadedItems.map((item) => [buildItemKey(item), item]));
       setHasPendingChanges(false);
+      setSelectedItemKeys([]);
+      setOpenMenuId(null);
+      setEditingItemId(null);
     } catch (currentError) {
       setError(currentError instanceof Error ? currentError.message : "No se pudo cargar el catálogo");
     } finally {
@@ -208,6 +214,49 @@ export default function PreciosPage() {
     }
   };
 
+  const toggleSelected = (item: CatalogItem) => {
+    const key = buildItemKey(item);
+    setSelectedItemKeys((current) =>
+      current.includes(key) ? current.filter((currentKey) => currentKey !== key) : [...current, key],
+    );
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedItemKeys.length === 0) return;
+    if (!window.confirm(`Se eliminaran ${selectedItemKeys.length} materiales. Deseas continuar?`)) return;
+
+    const selectedSet = new Set(selectedItemKeys);
+    const selectedRows = items.filter((item) => selectedSet.has(buildItemKey(item)));
+
+    setSavingId("bulk-delete");
+    try {
+      let needsReload = false;
+      for (const item of selectedRows) {
+        if (item._id.startsWith("tmp-csv-")) {
+          setItems((current) => current.filter((row) => buildItemKey(row) !== buildItemKey(item)));
+          setHasPendingChanges(true);
+          continue;
+        }
+
+        const response = item.kind === "material" ? await eliminarMaterial(item._id) : await eliminarHerraje(item._id);
+        if (!response.success) {
+          throw new Error(formatApiErrorMessage(response as any, `No se pudo eliminar ${item.nombre}`));
+        }
+        needsReload = true;
+      }
+
+      if (needsReload) {
+        await loadCatalogs();
+      }
+      setSelectedItemKeys([]);
+      setOpenMenuId(null);
+      setEditingItemId(null);
+    } catch (currentError) {
+      setError(currentError instanceof Error ? currentError.message : "No se pudieron eliminar los materiales seleccionados");
+    } finally {
+      setSavingId(null);
+    }
+  };
   useEffect(() => {
     void loadCatalogs();
   }, []);
@@ -309,6 +358,9 @@ export default function PreciosPage() {
     setItems(mergedItems);
     setHasPendingChanges(true);
     setError(null);
+    setSelectedItemKeys([]);
+    setOpenMenuId(null);
+    setEditingItemId(null);
   };
 
   const handleExportCsv = () => {
@@ -626,31 +678,78 @@ export default function PreciosPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-3xl border border-gray-100 bg-white p-4 shadow-sm">
-        <div className="relative flex w-full max-w-md items-center gap-2 rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2">
-          <Search className="h-4 w-4 text-gray-400" />
-          <input
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Buscar material..."
-            className="w-full bg-transparent text-sm text-gray-700 outline-none"
-          />
+      <div className="rounded-3xl border border-gray-100 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative flex w-full max-w-md items-center gap-2 rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2">
+            <Search className="h-4 w-4 text-gray-400" />
+            <input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Buscar material..."
+              className="w-full bg-transparent text-sm text-gray-700 outline-none"
+            />
+          </div>
         </div>
-        <select
-          value={selectedCategory}
-          onChange={(event) => setSelectedCategory(event.target.value)}
-          className="rounded-2xl border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 shadow-sm outline-none"
-        >
-          {categories.map((category) => (
-            <option key={category} value={category}>
-              {category}
-            </option>
-          ))}
-        </select>
+        <div className="mt-4 flex flex-wrap gap-2 overflow-x-auto pb-1">
+          {categories.map((category) => {
+            const isActive = selectedCategory === category;
+            return (
+              <button
+                key={category}
+                type="button"
+                onClick={() => setSelectedCategory(category)}
+                className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  isActive
+                    ? "bg-[#8B1C1C] text-white shadow-sm"
+                    : "border border-gray-200 bg-white text-gray-600 hover:border-[#8B1C1C]/20 hover:bg-[#8B1C1C]/5 hover:text-[#8B1C1C]"
+                }`}
+              >
+                {category}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {error ? (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600">
+
+      {selectedItemKeys.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-primary/10 bg-primary/[0.04] px-4 py-3 shadow-sm">
+          <p className="text-sm font-semibold text-primary">{selectedItemKeys.length} materiales seleccionados</p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void handleDeleteSelected()}
+              disabled={savingId === "bulk-delete"}
+              className="inline-flex items-center gap-2 rounded-2xl bg-accent px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+            >
+              <Trash2 className="h-4 w-4" />
+              Eliminar seleccionados
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedItemKeys([])}
+              className="rounded-2xl border border-primary/10 bg-white px-4 py-2 text-xs font-semibold text-secondary"
+            >
+              Limpiar selección
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {editingItemId ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-accent/20 bg-accent/5 px-4 py-3 shadow-sm">
+          <p className="text-sm font-semibold text-primary">Estás editando una fila. Guarda los cambios arriba cuando termines.</p>
+          <button
+            type="button"
+            onClick={() => setEditingItemId(null)}
+            className="rounded-2xl border border-primary/10 bg-white px-4 py-2 text-xs font-semibold text-secondary"
+          >
+            Cerrar edición
+          </button>
+        </div>
+      ) : null}
           {error}
         </div>
       ) : null}
@@ -662,7 +761,8 @@ export default function PreciosPage() {
       ) : null}
 
       <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white p-1 shadow-sm">
-        <div className="grid grid-cols-[2.6fr_1fr_0.7fr_1fr_0.5fr] gap-2 px-6 py-4 text-xs font-semibold uppercase tracking-[0.2em] text-gray-400">
+        <div className="grid grid-cols-[0.45fr_2.35fr_1fr_0.7fr_1fr_0.62fr] gap-2 px-6 py-4 text-xs font-semibold uppercase tracking-[0.2em] text-gray-400">
+          <span />
           <span>Material</span>
           <span>Categoría</span>
           <span>Unidad</span>
@@ -678,55 +778,190 @@ export default function PreciosPage() {
             filteredItems.map((item) => (
               <div
                 key={buildItemKey(item)}
-                className="grid grid-cols-[2.6fr_1fr_0.7fr_1fr_0.5fr] items-center gap-2 px-6 py-4"
+                className={`grid grid-cols-[0.45fr_2.35fr_1fr_0.7fr_1fr_0.62fr] items-center gap-2 px-6 py-4 ${editingItemId === buildItemKey(item) ? "bg-primary/[0.03]" : ""}`}
               >
+                <button
+                  type="button"
+                  onClick={() => toggleSelected(item)}
+                  className={`mx-auto inline-flex h-6 w-6 items-center justify-center rounded-full border transition ${
+                    selectedItemKeys.includes(buildItemKey(item))
+                      ? "border-accent bg-accent text-white"
+                      : "border-primary/20 bg-white text-transparent hover:border-primary/40"
+                  }`}
+                  aria-label={selectedItemKeys.includes(buildItemKey(item)) ? "Quitar selección" : "Seleccionar material"}
+                >
+                  <Check className="h-3.5 w-3.5" />
+                </button>
+
                 <div>
-                  <input
-                    value={item.nombre}
-                    onChange={(event) => {
-                      setItems((current) =>
-                        current.map((row) =>
-                          buildItemKey(row) === buildItemKey(item) ? { ...row, nombre: event.target.value } : row,
-                        ),
-                      );
-                      setHasPendingChanges(true);
-                    }}
-                    className="w-full bg-transparent text-sm font-semibold text-gray-900 outline-none"
-                  />
+                  {editingItemId === buildItemKey(item) ? (
+                    <input
+                      value={item.nombre}
+                      onChange={(event) => {
+                        setItems((current) =>
+                          current.map((row) =>
+                            buildItemKey(row) === buildItemKey(item) ? { ...row, nombre: event.target.value } : row,
+                          ),
+                        );
+                        setHasPendingChanges(true);
+                      }}
+                      className="w-full rounded-xl border border-primary/10 bg-white px-3 py-2 text-sm font-semibold text-primary outline-none"
+                    />
+                  ) : (
+                    <div className="text-sm font-semibold text-primary">{item.nombre}</div>
+                  )}
                   <p className="text-xs text-gray-400">{item.idCotizador || item._id}</p>
                 </div>
-                <span className="w-fit rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-600">{item.categoria}</span>
-                <span className="text-sm text-gray-600">{item.unidadMedida}</span>
-                <div className="text-right">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={item.precioUnitario ?? ""}
-                    onChange={(event) => {
-                      setItems((current) =>
-                        current.map((row) =>
-                          buildItemKey(row) === buildItemKey(item)
-                            ? { ...row, precioUnitario: toNumberOrUndefined(event.target.value) }
-                            : row,
-                        ),
-                      );
-                      setHasPendingChanges(true);
-                    }}
-                    className="w-24 justify-self-end border-b border-transparent bg-transparent text-right text-sm font-semibold text-gray-900 transition-colors hover:border-gray-300 focus:border-[#8B1C1C] focus:outline-none"
-                  />
-                  <p className="text-xs text-gray-400">{currencyFormatter.format(item.precioUnitario ?? 0)}</p>
+
+                <div>
+                  {editingItemId === buildItemKey(item) ? (
+                    <select
+                      value={item.categoria}
+                      onChange={(event) => {
+                        setItems((current) =>
+                          current.map((row) =>
+                            buildItemKey(row) === buildItemKey(item) ? { ...row, categoria: event.target.value } : row,
+                          ),
+                        );
+                        setHasPendingChanges(true);
+                      }}
+                      className="w-full rounded-xl border border-primary/10 bg-white px-3 py-2 text-sm text-primary outline-none"
+                    >
+                      {ALL_CATALOG_CATEGORIES.map((category) => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="w-fit rounded-full bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">{item.categoria}</span>
+                  )}
                 </div>
-                <div className="flex justify-center">
-                  <button
-                    type="button"
-                    onClick={() => void handleDeleteItem(item)}
-                    disabled={savingId === buildItemKey(item)}
-                    className="inline-flex items-center justify-center rounded-xl border border-rose-200 p-2 text-rose-600 transition hover:bg-rose-50 disabled:opacity-50"
-                    title="Eliminar material"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+
+                <div>
+                  {editingItemId === buildItemKey(item) ? (
+                    <select
+                      value={item.unidadMedida}
+                      onChange={(event) => {
+                        setItems((current) =>
+                          current.map((row) =>
+                            buildItemKey(row) === buildItemKey(item)
+                              ? { ...row, unidadMedida: event.target.value as UnidadMedida }
+                              : row,
+                          ),
+                        );
+                        setHasPendingChanges(true);
+                      }}
+                      className="w-full rounded-xl border border-primary/10 bg-white px-3 py-2 text-sm text-primary outline-none"
+                    >
+                      {UNIDADES_MEDIDA.map((unidad) => (
+                        <option key={unidad} value={unidad}>
+                          {unidad}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="text-sm text-secondary">{item.unidadMedida}</span>
+                  )}
+                </div>
+
+                <div className="text-right">
+                  {editingItemId === buildItemKey(item) ? (
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={item.precioUnitario ?? ""}
+                      onChange={(event) => {
+                        setItems((current) =>
+                          current.map((row) =>
+                            buildItemKey(row) === buildItemKey(item)
+                              ? { ...row, precioUnitario: toNumberOrUndefined(event.target.value) }
+                              : row,
+                          ),
+                        );
+                        setHasPendingChanges(true);
+                      }}
+                      className="w-28 rounded-xl border border-primary/10 bg-white px-3 py-2 text-right text-sm font-semibold text-primary outline-none"
+                    />
+                  ) : null}
+                  <p className={`text-xs ${editingItemId === buildItemKey(item) ? "mt-1 text-secondary" : "font-semibold text-primary"}`}>
+                    {currencyFormatter.format(item.precioUnitario ?? 0)}
+                  </p>
+                </div>
+
+                <div className="relative flex justify-center">
+                  {editingItemId === buildItemKey(item) ? (
+                    <div className="flex flex-col gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleSaveChanges()}
+                        disabled={savingId === "bulk" || !hasPendingChanges}
+                        className="inline-flex items-center justify-center rounded-xl bg-[#8B1C1C] px-3 py-2 text-xs font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Save className="mr-1.5 h-4 w-4" />
+                        Guardar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingItemId(null);
+                          setOpenMenuId(null);
+                        }}
+                        className="inline-flex items-center justify-center rounded-xl border border-primary/10 bg-white px-3 py-2 text-xs font-semibold text-secondary transition hover:bg-primary/5"
+                      >
+                        Cerrar
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setOpenMenuId((current) => (current === buildItemKey(item) ? null : buildItemKey(item)))}
+                      className="inline-flex items-center justify-center rounded-xl border border-primary/10 bg-white p-2 text-primary transition hover:bg-primary/5"
+                      title="Más acciones"
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </button>
+                  )}
+
+                  {editingItemId !== buildItemKey(item) && openMenuId === buildItemKey(item) ? (
+                    <div className="absolute right-0 top-11 z-10 w-48 rounded-2xl border border-primary/10 bg-white p-2 shadow-lg">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          toggleSelected(item);
+                          setOpenMenuId(null);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-secondary hover:bg-primary/5 hover:text-primary"
+                      >
+                        <Check className="h-4 w-4" />
+                        {selectedItemKeys.includes(buildItemKey(item)) ? "Quitar selección" : "Seleccionar"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingItemId((current) => (current === buildItemKey(item) ? null : buildItemKey(item)));
+                          setOpenMenuId(null);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-secondary hover:bg-primary/5 hover:text-primary"
+                      >
+                        <PencilLine className="h-4 w-4" />
+                        Modificar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleDeleteItem(item);
+                          setOpenMenuId(null);
+                        }}
+                        disabled={savingId === buildItemKey(item)}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Eliminar
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ))

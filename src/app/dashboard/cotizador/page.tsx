@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Minus, Plus } from "lucide-react";
+import { Heart, Minus, Plus } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
@@ -17,6 +17,7 @@ import {
   activeCitaTaskStorageKey,
   activeCotizacionFormalTaskStorageKey,
   citaReturnUrlStorageKey,
+  getPreliminarList,
   getCotizacionesFormalesList,
   type CotizacionFormalData,
 } from "@/lib/kanban";
@@ -297,6 +298,15 @@ function catalogItemUnitLabel(item: { unitType?: string }): string {
   return u || "pieza";
 }
 
+const parseNumericValue = (value: unknown): number => {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value.replace(/,/g, "."));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+};
+
 function extractList<T>(input: unknown, keys: string[]): T[] {
   if (Array.isArray(input)) return input as T[];
   if (input && typeof input === "object") {
@@ -449,6 +459,8 @@ export default function CotizadorPage() {
   const [activeCitaTaskId, setActiveCitaTaskId] = useState<string | null>(null);
   const [activeCotizacionFormalTaskId, setActiveCotizacionFormalTaskId] = useState<string | null>(null);
   const [finishFormalError, setFinishFormalError] = useState("");
+  const [preliminarCarryOverSubtotal, setPreliminarCarryOverSubtotal] = useState(0);
+  const [highlightedMaterialIds, setHighlightedMaterialIds] = useState<string[]>([]);
   const [referenceImages, setReferenceImages] = useState<
     Array<{ id: string; name: string; dataUrl: string }>
   >([]);
@@ -471,6 +483,8 @@ export default function CotizadorPage() {
   >([]);
   const clientModalRef = useRef<HTMLDivElement | null>(null);
   const addItemModalRef = useRef<HTMLDivElement | null>(null);
+  const hydratedFromTaskRef = useRef<string | null>(null);
+  const hydratedHighlightsFromTaskRef = useRef<string | null>(null);
 
   useEscapeClose(isClientModalOpen, () => setIsClientModalOpen(false));
   useEscapeClose(isAddModalOpen, () => {
@@ -502,6 +516,125 @@ export default function CotizadorPage() {
       setClient(activeCotizacionFormalTask.project);
     }
   }, [activeCotizacionFormalTask?.project]);
+
+  useEffect(() => {
+    if (!activeCotizacionFormalTask) return;
+    if (hydratedHighlightsFromTaskRef.current === activeCotizacionFormalTask.id) return;
+
+    const latestFormal = getCotizacionesFormalesList(activeCotizacionFormalTask).at(-1) as Record<string, unknown> | undefined;
+    const highlightedFromTask = Array.isArray(latestFormal?.destacadosPdf)
+      ? latestFormal.destacadosPdf.filter((entry): entry is string => typeof entry === "string")
+      : [];
+
+    setHighlightedMaterialIds(highlightedFromTask);
+    hydratedHighlightsFromTaskRef.current = activeCotizacionFormalTask.id;
+  }, [activeCotizacionFormalTask]);
+
+  useEffect(() => {
+    if (!activeCotizacionFormalTask || catalogoKuche.length === 0) return;
+    if (hydratedFromTaskRef.current === activeCotizacionFormalTask.id) return;
+
+    const lastPreliminar = getPreliminarList(activeCotizacionFormalTask).at(-1);
+    if (!lastPreliminar) {
+      hydratedFromTaskRef.current = activeCotizacionFormalTask.id;
+      return;
+    }
+
+    const rawPreliminar = lastPreliminar as Record<string, unknown>;
+    const rawLevantamiento =
+      rawPreliminar.levantamiento && typeof rawPreliminar.levantamiento === "object"
+        ? (rawPreliminar.levantamiento as Record<string, unknown>)
+        : null;
+
+    if (!client.trim() && typeof lastPreliminar.client === "string") {
+      setClient(lastPreliminar.client);
+    }
+
+    if (
+      (projectType === projectTypes[0] || !projectType.trim())
+      && typeof lastPreliminar.projectType === "string"
+      && lastPreliminar.projectType.trim()
+    ) {
+      setProjectType(lastPreliminar.projectType.trim());
+    }
+
+    if (!location.trim() && typeof lastPreliminar.location === "string") {
+      setLocation(lastPreliminar.location);
+    }
+
+    const preliminarLargo = parseNumericValue(rawPreliminar.largo);
+    const preliminarAlto = parseNumericValue(rawPreliminar.alto);
+    if (preliminarLargo > 0) setLargo(preliminarLargo.toString());
+    if (preliminarAlto > 0) setAlto(preliminarAlto.toString());
+
+    const qtySeed: Record<string, number> = {};
+    const normalizedLabel = (value: string) =>
+      value
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+
+    const addByLabel = (label: string) => {
+      const normalized = normalizedLabel(label);
+      if (!normalized) return;
+
+      const found = catalogoKuche
+        .flatMap((category) => category.items)
+        .find((item) => {
+          const itemLabel = normalizedLabel(item.label);
+          return itemLabel.includes(normalized) || normalized.includes(itemLabel);
+        });
+
+      if (found) {
+        qtySeed[found.id] = Math.max(1, qtySeed[found.id] ?? 0);
+      }
+    };
+
+    if (typeof lastPreliminar.cubierta === "string") addByLabel(lastPreliminar.cubierta);
+    if (typeof lastPreliminar.herraje === "string") addByLabel(lastPreliminar.herraje);
+    if (typeof lastPreliminar.frente === "string") {
+      lastPreliminar.frente
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .forEach(addByLabel);
+    }
+
+    const preloadIdGroups = [
+      rawLevantamiento?.applianceDocumentIds,
+      rawLevantamiento?.lightingSelectedIds,
+      rawLevantamiento?.extrasSelectedIds,
+    ];
+    for (const group of preloadIdGroups) {
+      if (!Array.isArray(group)) continue;
+      for (const id of group) {
+        if (typeof id !== "string") continue;
+        const match = catalogoKuche.flatMap((category) => category.items).find((item) => item.id === id);
+        if (match) qtySeed[match.id] = Math.max(1, qtySeed[match.id] ?? 0);
+      }
+    }
+
+    if (Object.keys(qtySeed).length > 0) {
+      setQuantities((prev) => ({ ...qtySeed, ...prev }));
+    }
+
+    const seededSubtotal = Object.entries(qtySeed).reduce((acc, [id, qty]) => {
+      const item = catalogoKuche.flatMap((category) => category.items).find((candidate) => candidate.id === id);
+      if (!item) return acc;
+      return acc + item.unitPrice * qty;
+    }, 0);
+
+    const preliminarSubtotal = parseNumericValue(rawPreliminar.subtotal);
+    const carryOver = Math.max(0, preliminarSubtotal - seededSubtotal);
+    setPreliminarCarryOverSubtotal(carryOver);
+    hydratedFromTaskRef.current = activeCotizacionFormalTask.id;
+  }, [
+    activeCotizacionFormalTask,
+    catalogoKuche,
+    client,
+    location,
+    projectType,
+  ]);
 
   const loadCatalogoFromBackend = useCallback(async () => {
     try {
@@ -656,7 +789,8 @@ export default function CotizadorPage() {
   }, [catalogoKuche, quantities]);
 
   const totales = useMemo(() => {
-    const costoBaseDirecto = baseCost;
+    // Referencia técnica por metro (materialSubtotal) no se cobra en el total comercial.
+    const costoBaseDirecto = baseCost + preliminarCarryOverSubtotal;
     const montoUtilidad = costoBaseDirecto * (utilidadPct / 100);
     const montoFlete = costoBaseDirecto * (fletePct / 100);
     const subtotalComercial = costoBaseDirecto + montoUtilidad + montoFlete;
@@ -670,8 +804,9 @@ export default function CotizadorPage() {
       subtotalComercial,
       montoIva,
       totalNeto,
+      materialSubtotalReferencia: materialSubtotal,
     };
-  }, [baseCost, utilidadPct, fletePct]);
+  }, [baseCost, materialSubtotal, preliminarCarryOverSubtotal, utilidadPct, fletePct]);
 
   const precioTotalSinIva = totales.subtotalComercial;
   const montoIva = totales.montoIva;
@@ -722,6 +857,54 @@ export default function CotizadorPage() {
       [id]: Math.max(value, 0),
     }));
   };
+
+  const toggleHighlightForPdf = (itemId: string, qty: number) => {
+    const isHighlighted = highlightedMaterialIds.includes(itemId);
+    if (!isHighlighted && qty <= 0) {
+      handleQuantityChange(itemId, 1);
+    }
+    setHighlightedMaterialIds((prev) =>
+      prev.includes(itemId) ? prev.filter((id) => id !== itemId) : [...prev, itemId],
+    );
+  };
+
+  const selectedCatalogLines = useMemo(
+    () =>
+      catalogoKuche.flatMap((category) =>
+        category.items
+          .map((item) => {
+            const qty = Math.max(quantities[item.id] ?? 0, 0);
+            if (!qty) return null;
+            return {
+              id: item.id,
+              category: category.category,
+              label: item.label,
+              qty,
+              total: item.unitPrice * qty,
+            };
+          })
+          .filter(
+            (line): line is { id: string; category: string; label: string; qty: number; total: number } =>
+              line !== null,
+          ),
+      ),
+    [catalogoKuche, quantities],
+  );
+
+  const selectedItemsByCategory = useMemo(() => {
+    const grouped = new Map<string, Array<{ id: string; label: string; qty: number }>>();
+    selectedCatalogLines.forEach((line) => {
+      const current = grouped.get(line.category) ?? [];
+      current.push({ id: line.id, label: line.label, qty: line.qty });
+      grouped.set(line.category, current);
+    });
+    return Array.from(grouped.entries()).map(([category, items]) => ({ category, items }));
+  }, [selectedCatalogLines]);
+
+  useEffect(() => {
+    const validIds = new Set(selectedCatalogLines.map((line) => line.id));
+    setHighlightedMaterialIds((prev) => prev.filter((id) => validIds.has(id)));
+  }, [selectedCatalogLines]);
 
   const activeCategory =
     catalogoKuche.find((category) => category.category === activeTab) ?? catalogoKuche[0];
@@ -1190,6 +1373,7 @@ export default function CotizadorPage() {
     cubierta: baseMaterialLabel || "—",
     frente: colorLabel || "—",
     herraje: "—",
+    destacadosPdf: highlightedMaterialIds,
   });
 
   const saveFormalInActiveTask = async (data: CotizacionFormalData) => {
@@ -1463,6 +1647,7 @@ export default function CotizadorPage() {
     setAlto("2.4");
     setFondo("0.6");
     setQuantities({});
+    setHighlightedMaterialIds([]);
     setMaterialBaseItemId(getDefaultMaterialBaseItemId);
     setColorItemId(getDefaultColorItemId);
     setThicknessItemId(getDefaultThicknessItemId);
@@ -1544,17 +1729,32 @@ export default function CotizadorPage() {
             return null;
           }
           return {
+            id: item.id,
             category: category.category,
             label: item.label,
+            unit: catalogItemUnitLabel(item),
             qty,
             total: item.unitPrice * qty,
           };
         })
         .filter(
-          (line): line is { category: string; label: string; qty: number; total: number } =>
+          (line): line is { id: string; category: string; label: string; unit: string; qty: number; total: number } =>
             line !== null,
         ),
     );
+
+    const highlightedLines = selectedLines.filter((line) => highlightedMaterialIds.includes(line.id));
+    const summaryLines = highlightedLines.length > 0 ? highlightedLines : selectedLines.slice(0, 4);
+
+    const toHumanUnit = (unitRaw: string, qty: number) => {
+      const unit = unitRaw.trim().toLowerCase();
+      if (qty === 1) return unitRaw;
+      if (unit === "pie") return "pies";
+      if (unit === "metro lineal") return "metros lineales";
+      if (unit === "m²" || unit === "m2" || unit === "mm") return unitRaw;
+      if (unit.endsWith("s")) return unitRaw;
+      return `${unitRaw}s`;
+    };
 
     const drawersQty = selectedLines
       .filter((line) => /caj[oó]n/i.test(line.label))
@@ -1565,10 +1765,8 @@ export default function CotizadorPage() {
     const spotsQty = selectedLines
       .filter((line) => /spot/i.test(line.label))
       .reduce((acc, line) => acc + line.qty, 0);
-    const extrasSummary = selectedLines
-      .slice(0, 4)
-      .map((line) => `${line.label} (${line.qty})`)
-      .join(", ");
+    const highlightedSpecLines = summaryLines
+      .map((line) => `Este proyecto cuenta con ${line.qty} ${toHumanUnit(line.unit, line.qty)} de ${line.label}.`);
     const hasElectroCategorySelections = selectedLines.some((line) =>
       /extra[ií]bles|electrodom/i.test(line.category),
     );
@@ -1598,9 +1796,9 @@ export default function CotizadorPage() {
       spotsQty
         ? `Este proyecto considera ${spotsQty} spots de iluminación.`
         : "Este proyecto no considera spots de iluminación.",
-      extrasSummary
-        ? `Accesorios y conceptos principales: ${extrasSummary}.`
-        : "Accesorios y conceptos principales por definir en visita técnica.",
+      ...(highlightedSpecLines.length > 0
+        ? highlightedSpecLines
+        : ["Accesorios y conceptos principales por definir en visita técnica."]),
     ];
 
     const legalNotes = [
@@ -1869,24 +2067,6 @@ export default function CotizadorPage() {
       setFinishFormalError("No se pudo generar la hoja de taller. Intenta de nuevo.");
     }
   };
-
-  const selectedItemsByCategory = useMemo(() => {
-    const result: Array<{ category: string; items: Array<{ item: CatalogoItem; qty: number }> }> = [];
-    
-    catalogoKuche.forEach((category) => {
-      const categoryItems: Array<{ item: CatalogoItem; qty: number }> = [];
-      category.items.forEach((item) => {
-        const qty = quantities[item.id] ?? 0;
-        if (qty > 0) {
-          categoryItems.push({ item, qty });
-        }
-      });
-      if (categoryItems.length > 0) {
-        result.push({ category: category.category, items: categoryItems });
-      }
-    });
-    return result;
-  }, [catalogoKuche, quantities]);
 
   const showCotizadorBottomBar = Boolean(activeCotizacionFormalTaskId || activeCitaTaskId);
 
@@ -2256,6 +2436,7 @@ export default function CotizadorPage() {
           <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
             {visibleItems.map(({ item, category }) => {
               const qty = quantities[item.id] ?? 0;
+              const isHighlighted = highlightedMaterialIds.includes(item.id);
               return (
                 <div
                   key={item.id}
@@ -2271,7 +2452,24 @@ export default function CotizadorPage() {
                         {formatCurrency(item.unitPrice)}/{catalogItemUnitLabel(item)}
                       </p>
                     </div>
-                    <div className="relative" ref={openMenuId === item.id ? openMenuRef : null}>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          toggleHighlightForPdf(item.id, qty);
+                        }}
+                        className={`flex h-7 w-7 items-center justify-center rounded-full border transition ${
+                          isHighlighted
+                            ? "border-rose-300 bg-rose-50 text-rose-600"
+                            : "border-primary/10 text-secondary hover:border-primary/30"
+                        }`}
+                        title={isHighlighted ? "Quitar destacado del PDF" : "Destacar en PDF"}
+                        aria-label={isHighlighted ? "Quitar destacado del PDF" : "Destacar en PDF"}
+                      >
+                        <Heart className={`h-3.5 w-3.5 ${isHighlighted ? "fill-current" : ""}`} />
+                      </button>
+                      <div className="relative" ref={openMenuId === item.id ? openMenuRef : null}>
                       <button
                         type="button"
                         onClick={(event) => {
@@ -2309,6 +2507,7 @@ export default function CotizadorPage() {
                           </button>
                         </div>
                       ) : null}
+                    </div>
                     </div>
                   </div>
                   <div className="flex items-center justify-center gap-1.5">
@@ -2469,7 +2668,10 @@ export default function CotizadorPage() {
         <section className="space-y-6 rounded-3xl border border-primary/10 bg-white p-8 shadow-xl">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-secondary">RESUMEN</p>
-            <h2 className="mt-2 text-2xl font-semibold">Items en Cotización</h2>
+            <h2 className="mt-2 text-2xl font-semibold">Selección actual</h2>
+            <p className="mt-2 text-sm text-secondary">
+              Marca los materiales que quieres destacar explícitamente dentro del PDF formal.
+            </p>
           </div>
           <div className="space-y-6">
             {selectedItemsByCategory.map((catGroup) => (
@@ -2478,14 +2680,28 @@ export default function CotizadorPage() {
                   {catGroup.category}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-3">
-                  {catGroup.items.map(({ item, qty }) => (
-                    <span
-                      key={item.id}
-                      className="rounded-full border border-primary/10 bg-primary/5 px-4 py-2 text-sm font-semibold text-secondary"
-                    >
-                      {qty} {item.label}
-                    </span>
-                  ))}
+                  {catGroup.items.map((item) => {
+                    const isHighlighted = highlightedMaterialIds.includes(item.id);
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() =>
+                          setHighlightedMaterialIds((prev) =>
+                            prev.includes(item.id) ? prev.filter((id) => id !== item.id) : [...prev, item.id],
+                          )
+                        }
+                        className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                          isHighlighted
+                            ? "border-accent bg-accent/10 text-accent"
+                            : "border-primary/10 bg-primary/5 text-secondary hover:border-primary/30"
+                        }`}
+                        title={isHighlighted ? "Quitar de destacados PDF" : "Destacar en PDF"}
+                      >
+                        {isHighlighted ? "Destacado" : "Normal"} - {item.qty} {item.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             ))}

@@ -245,19 +245,6 @@ export default function OperacionesPage() {
   }, [refresh]);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setClockNow(Date.now());
-      void refresh();
-    }, 60_000);
-
-    return () => clearInterval(interval);
-  }, [refresh]);
-
-  useEffect(() => {
-    console.log("[Operaciones] tasks JSON:\n", prettyJson(tasks));
-  }, [tasks]);
-
-  useEffect(() => {
     const finishedTaskId = runtimeStore.getItem(finishedCitaTaskStorageKey);
     if (!finishedTaskId || isApplyingFinishedCita) return;
 
@@ -501,6 +488,13 @@ export default function OperacionesPage() {
       task.assignedToIds.includes(selectedEmployeeFilter)
     );
   }, [selectedEmployeeFilter, tasks]);
+
+  const inProgressTasks = useMemo(() => tasks.filter(isTaskInProgress).length, [tasks]);
+  const contractFollowUpTasks = useMemo(
+    () => tasks.filter((task) => task.stage === "contrato" && task.followUpStatus === "pendiente").length,
+    [tasks],
+  );
+  const teamSize = employees.length;
 
   const columns = kanbanColumns.map((column) => ({
     ...column,
@@ -870,41 +864,45 @@ export default function OperacionesPage() {
         }}
       />
 
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-secondary">Operaciones y taller</p>
-        <h1 className="mt-2 text-2xl font-semibold text-gray-900">Control de tareas y citas</h1>
-        <p className="mt-2 text-sm text-secondary">Flujo: Citas → Diseño → Cotización formal → Seguimiento.</p>
-      </div>
+      <section className="rounded-[2rem] border border-white/70 bg-white/85 p-5 shadow-[0_20px_60px_-35px_rgba(15,23,42,0.28)] backdrop-blur-md md:p-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-secondary">Operaciones y taller</p>
+            <h1 className="text-2xl font-semibold text-gray-900 md:text-[2rem]">Control de tareas y citas</h1>
+          </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <select
-          value={selectedEmployeeFilter}
-          onChange={(e) => setSelectedEmployeeFilter(e.target.value)}
-          className="rounded-2xl border border-primary/10 bg-white px-4 py-2.5 text-sm font-medium text-secondary shadow-sm outline-none"
-        >
-          <option value="Todos">Ver todo</option>
-          {employees.map((emp) => (
-            <option key={emp._id} value={emp._id}>
-              {emp.nombre}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          onClick={openTeamModal}
-          className="flex items-center gap-2 rounded-2xl border border-primary/10 bg-white px-4 py-2.5 text-sm font-semibold text-secondary shadow-sm transition hover:bg-primary/5"
-        >
-          <UserPlus className="h-4 w-4" />
-          Integrantes
-        </button>
-        <button
-          type="button"
-          onClick={openAssignModal}
-          className="rounded-2xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-90"
-        >
-          Asignar pendiente
-        </button>
-      </div>
+          <div className="flex flex-wrap items-center justify-start gap-3 lg:justify-end">
+          <select
+            value={selectedEmployeeFilter}
+            onChange={(e) => setSelectedEmployeeFilter(e.target.value)}
+            className="rounded-2xl border border-primary/10 bg-white px-4 py-2.5 text-sm font-medium text-secondary shadow-sm outline-none"
+          >
+            <option value="Todos">Ver todo</option>
+            {employees.map((emp) => (
+              <option key={emp._id} value={emp._id}>
+                {emp.nombre}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={openTeamModal}
+            className="flex items-center gap-2 rounded-2xl border border-primary/10 bg-white px-4 py-2.5 text-sm font-semibold text-secondary shadow-sm transition hover:bg-primary/5"
+          >
+            <UserPlus className="h-4 w-4" />
+            Integrantes
+          </button>
+          <button
+            type="button"
+            onClick={openAssignModal}
+            className="rounded-2xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-90"
+          >
+            Asignar pendiente
+          </button>
+          </div>
+        </div>
+
+      </section>
 
       {isLoading ? (
         <motion.section

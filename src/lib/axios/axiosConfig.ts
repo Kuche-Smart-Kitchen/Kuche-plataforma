@@ -9,10 +9,34 @@ import { runtimeStore } from '@/lib/runtime-store';
 type AxiosInternalFlags = {
   skipAuthToken?: boolean;
   skipAuthRedirect?: boolean;
+  skipNotFoundLog?: boolean;
+  skipNetworkLog?: boolean;
+};
+
+const resolveBaseUrl = () => {
+  const raw = (process.env.NEXT_PUBLIC_API_URL || '').trim();
+  if (!raw) return 'http://localhost:3001';
+
+  const candidates = raw
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (!candidates.length) return 'http://localhost:3001';
+  if (candidates.length === 1) return candidates[0];
+
+  if (process.env.NODE_ENV !== 'production') {
+    const localCandidate = candidates.find(
+      (value) => value.includes('localhost') || value.includes('127.0.0.1'),
+    );
+    if (localCandidate) return localCandidate;
+  }
+
+  return candidates[0];
 };
 
 // URL base del backend
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const BASE_URL = resolveBaseUrl();
 
 // Crear instancia de axios
 const axiosInstance: AxiosInstance = axios.create({
@@ -66,6 +90,7 @@ axiosInstance.interceptors.response.use(
       const { status, data } = error.response;
       const flags = (error.config ?? {}) as AxiosInternalFlags;
       const skipAuthRedirect = flags.skipAuthRedirect === true;
+      const skipNotFoundLog = flags.skipNotFoundLog === true;
       
       // Token expirado o no autorizado
       if (status === 401 && !skipAuthRedirect) {
@@ -84,7 +109,7 @@ axiosInstance.interceptors.response.use(
       }
       
       // Not found
-      if (status === 404) {
+      if (status === 404 && !skipNotFoundLog) {
         console.error('Recurso no encontrado:', data?.message || 'No encontrado');
       }
       
@@ -94,7 +119,11 @@ axiosInstance.interceptors.response.use(
       }
     } else if (error.request) {
       // Request hecho pero no hay respuesta
-      console.error('No se recibió respuesta del servidor');
+      const flags = (error.config ?? {}) as AxiosInternalFlags;
+      const skipNetworkLog = flags.skipNetworkLog === true;
+      if (!skipNetworkLog) {
+        console.error('No se recibio respuesta del servidor');
+      }
     } else {
       // Error al configurar el request
       console.error('Error al configurar la petición:', error.message);

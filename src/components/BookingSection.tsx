@@ -283,11 +283,7 @@ export default function BookingSection() {
         informacionAdicional: `Horario solicitado: ${selectedTime}`,
       };
 
-      console.log("[BookingSection] citaData JSON (payload):\n", prettyJson(citaData));
-
       const response = await crearCita(citaData, captchaToken);
-
-      console.log("[BookingSection] crearCita response JSON:\n", prettyJson(response));
 
       const responseData = response && "data" in response ? ((response.data as unknown) as Record<string, unknown> | undefined) : undefined;
       const payload =
@@ -330,7 +326,6 @@ export default function BookingSection() {
       }
     } catch (error) {
       console.error("Error al crear la cita:", error);
-      console.error("[BookingSection] error JSON:", prettyJson(error));
       setErrorMessage(
         "Ocurrió un error al procesar tu solicitud. Por favor, intenta de nuevo."
       );

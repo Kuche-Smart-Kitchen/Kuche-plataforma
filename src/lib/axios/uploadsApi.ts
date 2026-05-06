@@ -167,9 +167,9 @@ export const subirArchivoConMetadata = async (
 
     const uploadInfo = extractUploadInfo(response.data);
     if (!uploadInfo) {
-      console.error("[subirArchivoConMetadata] respuesta sin URL:", response.data);
+      console.error("respuesta sin URL:", response.data);
       throw new Error(
-        "El backend de upload no devolvio una URL valida. Configura NEXT_PUBLIC_FILE_UPLOAD_ENDPOINT o ajusta el response para incluir url.",
+        "El backend de upload no devolvio una URL valida.",
       );
     }
 

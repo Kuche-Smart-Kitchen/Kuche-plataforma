@@ -110,3 +110,18 @@ export type {
   ClienteArchivo,
   PanelArchivosResponse,
 } from './archivosClienteApi';
+
+// Exportar APIs de electrodomesticos y extras
+export * as equipamientoApi from './equipamientoApi';
+export type {
+  Electrodomestico,
+  ElectrodomesticoPayload,
+  Extra,
+  ExtraPayload,
+  ExtraCategoria,
+  ExtraCategoriaPayload,
+  CloudinaryUploadResponse,
+} from './equipamientoApi';
+
+// Exportar API de configuración de levantamiento
+export * as levantamientoConfigApi from './levantamientoConfigApi';

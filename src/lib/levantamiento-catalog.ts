@@ -569,7 +569,7 @@ export type OtroMedidas = MedidasCampos & { descripcion: string; precioEstimado?
 /** Payload opcional guardado con la cotización preliminar / PDF. */
 export type LevantamientoDetalle = {
   [key: string]: any;
-  sectionComments: Partial<Record<"a" | "b" | "c" | "d" | "e", string>>;
+  sectionComments: Partial<Record<"a" | "b" | "c" | "d" | "e" | "f", string>>;
   wallMeasures: WallMeasuresMap;
   wallOtro: OtroMedidas;
   applianceMeasures: Record<string, MedidasCampos>;
@@ -581,6 +581,9 @@ export type LevantamientoDetalle = {
   applianceOtroInDocument: boolean;
   lightingSelectedIds: string[];
   lightingOtroInDocument: boolean;
+  lightingQty: Record<string, number>;
+  specialAccessoriesQty: Record<string, number>;
+  medidasGenerales: { hastaTecho: boolean };
   conIsla: "si" | "no" | "";
 };
 
@@ -605,6 +608,7 @@ export function initMeasuresMap(ids: string[]): Record<string, MedidasCampos> {
 }
 
 export function defaultLevantamientoDetalle(): LevantamientoDetalle {
+  const lightingQty = Object.fromEntries(LIGHTING_ITEMS.map((item) => [item.id, 0]));
   return {
     sectionComments: {},
     wallMeasures: initWallMeasuresMap(),
@@ -618,6 +622,9 @@ export function defaultLevantamientoDetalle(): LevantamientoDetalle {
     applianceOtroInDocument: false,
     lightingSelectedIds: [],
     lightingOtroInDocument: false,
+    lightingQty,
+    specialAccessoriesQty: {},
+    medidasGenerales: { hastaTecho: false },
     conIsla: "",
   };
 }
@@ -630,7 +637,7 @@ export function defaultLevantamientoDetalle(): LevantamientoDetalle {
 export function levantamientoDetalleScopeMultiplier(lev: LevantamientoDetalle): number {
   let n = 0;
   const com = lev.sectionComments;
-  for (const k of ["a", "b", "c", "d", "e"] as const) {
+  for (const k of ["a", "b", "c", "d", "e", "f"] as const) {
     if (com[k]?.trim()) n += 1;
   }
   for (const m of Object.values(lev.wallMeasures)) {
@@ -719,6 +726,28 @@ export function normalizeLevantamientoDetalle(raw: unknown): LevantamientoDetall
     applianceOtroInDocument: Boolean((r as any).applianceOtroInDocument),
     lightingSelectedIds: Array.isArray((r as any).lightingSelectedIds) ? (r as any).lightingSelectedIds : [],
     lightingOtroInDocument: Boolean((r as any).lightingOtroInDocument),
+    lightingQty:
+      typeof (r as any).lightingQty === "object" && (r as any).lightingQty !== null
+        ? Object.fromEntries(
+            Object.entries((r as any).lightingQty as Record<string, unknown>).map(([id, qty]) => [
+              id,
+              Number.isFinite(Number(qty)) ? Math.max(0, Math.floor(Number(qty))) : 0,
+            ]),
+          )
+        : d.lightingQty,
+    specialAccessoriesQty:
+      typeof (r as any).specialAccessoriesQty === "object" && (r as any).specialAccessoriesQty !== null
+        ? Object.fromEntries(
+            Object.entries((r as any).specialAccessoriesQty as Record<string, unknown>).map(([id, qty]) => [
+              id,
+              Number.isFinite(Number(qty)) ? Math.max(0, Math.floor(Number(qty))) : 0,
+            ]),
+          )
+        : d.specialAccessoriesQty,
+    medidasGenerales:
+      typeof (r as any).medidasGenerales === "object" && (r as any).medidasGenerales !== null
+        ? { hastaTecho: Boolean((r as any).medidasGenerales.hastaTecho) }
+        : d.medidasGenerales,
     conIsla: (r as any).conIsla === "si" || (r as any).conIsla === "no" ? (r as any).conIsla : "",
   };
 }
@@ -748,9 +777,43 @@ export function wallSlotIsComplete(values: Record<string, string> | undefined): 
   return defs.every((field) => (values[field.key] ?? "").trim() !== "");
 }
 
-export function cotizacionIluminacionTotal(lev: LevantamientoDetalle): number {
+const DEFAULT_LIGHTING_PRICE_BY_ID: Record<string, number> = Object.fromEntries(
+  LIGHTING_ITEMS.map((item) => [item.id, 1800]),
+);
+
+export function cotizacionIluminacionTotal(
+  lev: LevantamientoDetalle,
+  extrasPreciosIluminacion?: Record<string, number>,
+): number {
   const selected = Array.isArray(lev.lightingSelectedIds) ? lev.lightingSelectedIds : [];
-  const bySelected = selected.length * 1800;
+  const selectedSet = new Set(selected);
+  const qtyMap = (lev as any).lightingQty as Record<string, unknown> | undefined;
+  const bySelected = LIGHTING_ITEMS.reduce((acc, item) => {
+    const rawQty = qtyMap ? Number(qtyMap[item.id]) : 0;
+    const clampedQty = Number.isFinite(rawQty) ? Math.max(0, Math.min(999, Math.floor(rawQty))) : 0;
+    const legacyQty = selectedSet.has(item.id) || medidasCamposTieneValor(lev.lightingMeasures[item.id] ?? emptyMedidas()) ? 1 : 0;
+    const qty = clampedQty > 0 ? clampedQty : legacyQty;
+    if (qty <= 0) return acc;
+    const configUnit = Number(extrasPreciosIluminacion?.[item.id]);
+    const fallbackUnit = DEFAULT_LIGHTING_PRICE_BY_ID[item.id] ?? 0;
+    const unit = Number.isFinite(configUnit) && configUnit > 0 ? configUnit : fallbackUnit;
+    return acc + qty * unit;
+  }, 0);
   const otro = Number((lev.lightingOtro as any)?.precioEstimado ?? 0) || 0;
   return Math.max(0, bySelected + otro);
+}
+
+export function cotizacionAccesoriosEspecialesTotal(
+  lev: LevantamientoDetalle,
+  extrasPreciosAccesorios?: Record<string, number>,
+): number {
+  const qtyMap = (lev as any).specialAccessoriesQty as Record<string, unknown> | undefined;
+  const source = qtyMap ?? {};
+  return Object.entries(source).reduce((acc, [id, rawQty]) => {
+    const q = Number.isFinite(Number(rawQty)) ? Math.max(0, Math.floor(Number(rawQty))) : 0;
+    if (q <= 0) return acc;
+    const unit = Number(extrasPreciosAccesorios?.[id]);
+    const safeUnit = Number.isFinite(unit) && unit > 0 ? unit : 0;
+    return acc + q * safeUnit;
+  }, 0);
 }

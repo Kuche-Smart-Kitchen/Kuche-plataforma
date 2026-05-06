@@ -22,6 +22,7 @@ type WorkflowTaskPatch = Partial<AdminWorkflowTask>;
 type AdminWorkflowContextValue = {
   tasks: AdminWorkflowTask[];
   isLoading: boolean;
+  isMutating: boolean;
   error: string | null;
   refresh: () => Promise<AdminWorkflowTask[]>;
   moveTask: (task: AdminWorkflowTask, stage: TaskStage) => Promise<void>;
@@ -51,6 +52,7 @@ const getResponseMessage = (response: unknown): string | undefined => {
 export function AdminWorkflowProvider({ children }: { children: React.ReactNode }) {
   const [tasks, setTasks] = useState<AdminWorkflowTask[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isMutating, setIsMutating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -67,6 +69,8 @@ export function AdminWorkflowProvider({ children }: { children: React.ReactNode 
 
   const moveTask = useCallback(
     async (task: AdminWorkflowTask, stage: TaskStage) => {
+      setIsMutating(true);
+      try {
       if (task.stage === stage) return;
 
       if (task.stage === "disenos" && stage !== "disenos") {
@@ -101,12 +105,17 @@ export function AdminWorkflowProvider({ children }: { children: React.ReactNode 
         throw new Error(getResponseMessage(response) || "No se pudo mover la tarea");
       }
       await refresh();
+      } finally {
+        setIsMutating(false);
+      }
     },
     [refresh],
   );
 
   const updateTask = useCallback(
     async (task: AdminWorkflowTask, patch: WorkflowTaskPatch) => {
+      setIsMutating(true);
+      try {
       const patchKeys = Object.keys(patch);
       const isFollowUpOnlyPatch =
         patchKeys.length > 0 &&
@@ -265,36 +274,38 @@ export function AdminWorkflowProvider({ children }: { children: React.ReactNode 
       if (payloadForApi.sourceId == null) {
         delete payloadForApi.sourceId;
       }
-      console.log("[AdminWorkflowContext] updateTask payload:", {
-        taskId: task.id,
-        sourceId: task.sourceId,
-        backendSource: task.backendSource,
-        patch,
-        payload: payloadForApi,
-      });
       const response = await actualizarTarjetaTarea(task.sourceId, payloadForApi as ActualizarTareaData);
-      console.log("[AdminWorkflowContext] updateTask response:", response);
       if (!response.success) {
         throw new Error(getResponseMessage(response) || "No se pudo actualizar la tarea");
       }
       await refresh();
+      } finally {
+        setIsMutating(false);
+      }
     },
     [moveTask, refresh],
   );
 
   const createTask = useCallback(
     async (data: CrearTareaData) => {
+      setIsMutating(true);
+      try {
       const response = await crearTareaWorkflow(data);
       if (!response.success) {
         throw new Error(getResponseMessage(response) || "No se pudo crear la tarea");
       }
       await refresh();
+      } finally {
+        setIsMutating(false);
+      }
     },
     [refresh],
   );
 
   const deleteTask = useCallback(
     async (task: AdminWorkflowTask) => {
+      setIsMutating(true);
+      try {
       const response = task.backendSource === "cita"
         ? await eliminarTarjetaCita(task.sourceId)
         : await eliminarTarjetaTarea(task.sourceId);
@@ -303,6 +314,9 @@ export function AdminWorkflowProvider({ children }: { children: React.ReactNode 
         throw new Error(getResponseMessage(response) || "No se pudo eliminar la tarjeta");
       }
       await refresh();
+      } finally {
+        setIsMutating(false);
+      }
     },
     [refresh],
   );
@@ -346,6 +360,7 @@ export function AdminWorkflowProvider({ children }: { children: React.ReactNode 
     () => ({
       tasks,
       isLoading,
+      isMutating,
       error,
       refresh,
       moveTask,
@@ -355,7 +370,7 @@ export function AdminWorkflowProvider({ children }: { children: React.ReactNode 
       reactivateTask,
       markFollowUpAlerts,
     }),
-    [createTask, deleteTask, error, isLoading, markFollowUpAlerts, moveTask, reactivateTask, refresh, tasks, updateTask],
+    [createTask, deleteTask, error, isLoading, isMutating, markFollowUpAlerts, moveTask, reactivateTask, refresh, tasks, updateTask],
   );
 
   return <AdminWorkflowContext.Provider value={value}>{children}</AdminWorkflowContext.Provider>;

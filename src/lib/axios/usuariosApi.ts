@@ -5,6 +5,8 @@
 
 import axiosInstance, { ApiResponse } from './axiosConfig';
 
+let employeesRequest: Promise<ApiResponse<Usuario[]>> | null = null;
+
 // Tipos de datos para Usuario
 export interface Usuario {
   _id: string;
@@ -35,8 +37,26 @@ export const listarUsuarios = async (): Promise<ApiResponse<Usuario[]>> => {
  * Listar empleados activos (alias para asignación)
  */
 export const listarEmpleados = async (): Promise<ApiResponse<Usuario[]>> => {
-  const response = await axiosInstance.get<ApiResponse<Usuario[]>>('/api/usuarios/empleados');
-  return response.data;
+  if (employeesRequest) {
+    return employeesRequest;
+  }
+
+  employeesRequest = (async () => {
+    try {
+      const response = await axiosInstance.get<ApiResponse<Usuario[]>>('/api/usuarios/empleados');
+      return response.data;
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Error al listar empleados',
+        error: error instanceof Error ? error.message : 'Error desconocido',
+      };
+    } finally {
+      employeesRequest = null;
+    }
+  })();
+
+  return employeesRequest;
 };
 
 /**

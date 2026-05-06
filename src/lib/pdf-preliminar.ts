@@ -1,119 +1,310 @@
-import type { CotizacionFormalData, PreliminarData } from "@/lib/kanban";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+
+import type { CotizacionFormalData, PreliminarData, PreliminarWallSpec } from "@/lib/kanban";
 import { getFormalPdf } from "@/lib/formal-pdf-storage";
+import {
+  WALL_ITEMS,
+  WALL_SLOT_META_TYPE,
+  getWallMeasureFieldDefs,
+  isWallSlotKey,
+  wallMeasureLetter,
+} from "@/lib/levantamiento-catalog";
 
-const escapePdfText = (value: string) =>
-  value.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
-
-const sanitizePdfText = (value: string) =>
-  escapePdfText(value.normalize("NFD").replace(/\p{Diacritic}/gu, ""));
-
-const wallTypeLabel: Record<string, string> = {
-  pared_lisa: "Pared lisa",
-  pared_con_ventana: "Pared con ventana",
-  pared_con_puerta: "Pared con puerta",
-  pared_mixta: "Pared mixta",
+type WallSection = {
+  title: string;
+  rows: Array<[string, string, string]>;
 };
 
-/** Genera el PDF de cotización preliminar a partir de los datos guardados. */
-export function buildPreliminarPdf(data: PreliminarData): string {
-  const drawRect = (x: number, y: number, w: number, h: number, color: string) =>
-    `q\n${color} rg\n${x} ${y} ${w} ${h} re\nf\nQ`;
+const COLOR = {
+  black: [19, 19, 19] as const,
+  darkGray: [76, 76, 76] as const,
+  red: [149, 25, 28] as const,
+  softGray: [235, 235, 235] as const,
+  text: [35, 35, 35] as const,
+  muted: [90, 90, 90] as const,
+};
 
-  const drawText = (x: number, y: number, size: number, color: string, text: string) =>
-    `BT\n/F1 ${size} Tf\n${color} rg\n${x} ${y} Td\n(${sanitizePdfText(text)}) Tj\nET`;
+const toNumber = (value: unknown): number => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+};
 
-  const wallSpecs = Array.isArray(data.wallSpecs) ? data.wallSpecs : [];
-  const wallSummary = wallSpecs.length
-    ? `${wallSpecs.length} pared(es) capturadas`
-    : "Sin captura de paredes";
-  const wallDetail = wallSpecs
-    .slice(0, 2)
-    .map((wall, index) => `${index + 1}. ${wallTypeLabel[wall.type] ?? wall.type}`)
-    .join(" | ");
+const formatCurrency = (value: number): string =>
+  new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
+    maximumFractionDigits: 0,
+  }).format(value);
 
-  const content = [
-    drawRect(0, 732, 612, 60, "0.55 0.11 0.11"),
-    drawText(48, 755, 18, "1 1 1", "Cotizacion Preliminar"),
-    drawText(48, 738, 10, "1 1 1", "Kuche | Estimacion no vinculante"),
-    drawText(48, 700, 11, "0.15 0.15 0.15", "Resumen ejecutivo"),
-    drawRect(40, 610, 532, 90, "0.96 0.96 0.96"),
-    drawText(60, 670, 10, "0.45 0.45 0.45", "Rango estimado"),
-    drawText(60, 642, 20, "0.55 0.11 0.11", data.rangeLabel),
-    drawText(60, 618, 9, "0.35 0.35 0.35", "Sujeto a visita tecnica y definicion final."),
-    drawText(48, 575, 11, "0.15 0.15 0.15", "Datos del proyecto"),
-    drawText(48, 555, 10, "0.35 0.35 0.35", `Cliente: ${data.client || "Sin nombre"}`),
-    drawText(48, 538, 10, "0.35 0.35 0.35", `Tipo: ${data.projectType}`),
-    drawText(48, 521, 10, "0.35 0.35 0.35", `Ubicacion: ${data.location || "Por definir"}`),
-    drawText(48, 504, 10, "0.35 0.35 0.35", `Fecha tentativa: ${data.date || "Por definir"}`),
-    drawText(330, 575, 11, "0.15 0.15 0.15", "Materiales seleccionados"),
-    drawText(330, 555, 10, "0.35 0.35 0.35", `Cubierta: ${data.cubierta}`),
-    drawText(330, 538, 10, "0.35 0.35 0.35", `Frente: ${data.frente}`),
-    drawText(330, 521, 10, "0.35 0.35 0.35", `Herraje: ${data.herraje}`),
-    drawText(330, 504, 10, "0.35 0.35 0.35", `Paredes: ${wallSummary}`),
-    drawText(
-      330,
-      487,
-      9,
-      "0.35 0.35 0.35",
-      wallDetail || "Sin detalle adicional de paredes",
-    ),
-    drawText(
-      330,
-      470,
-      9,
-      "0.35 0.35 0.35",
-      `Costo estimado por paredes: $${(data.wallCostEstimate ?? 0).toLocaleString("es-MX")}`,
-    ),
-    drawRect(40, 455, 532, 1, "0.85 0.85 0.85"),
-    drawText(
-      48,
-      430,
-      9,
-      "0.4 0.4 0.4",
-      "Este documento es preliminar. Los costos finales pueden variar segun medidas,",
-    ),
-    drawText(
-      48,
-      417,
-      9,
-      "0.4 0.4 0.4",
-      "materiales y complejidad del proyecto. Valido como guia inicial.",
-    ),
-  ].join("\n");
+const isEspesor = (label: string) => label.toLowerCase().includes("espesor");
 
-  const objects = [
-    "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj",
-    "2 0 obj\n<< /Type /Pages /Count 1 /Kids [3 0 R] >>\nendobj",
-    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj",
-    `4 0 obj\n<< /Length ${content.length} >>\nstream\n${content}\nendstream\nendobj`,
-    "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj",
-  ];
+const readLevantamientoWallSections = (data: PreliminarData): WallSection[] => {
+  const lev = (data.levantamiento ?? {}) as {
+    wallSlotCount?: number;
+    wallMeasures?: Record<string, Record<string, string>>;
+  };
 
-  let offset = 0;
-  const offsets = objects.map((obj) => {
-    const current = offset;
-    offset += obj.length + 2;
-    return current;
+  const wallMeasures = lev.wallMeasures ?? {};
+  const count = Math.max(0, toNumber(lev.wallSlotCount));
+
+  const orderedIndices =
+    count > 0
+      ? Array.from({ length: count }, (_, i) => i)
+      : Object.keys(wallMeasures)
+          .filter((k) => isWallSlotKey(k))
+          .map((k) => Number(k.slice(5)))
+          .filter((n) => Number.isFinite(n))
+          .sort((a, b) => a - b);
+
+  const sections: WallSection[] = [];
+
+  for (const idx of orderedIndices) {
+    const key = `wall-${idx}`;
+    const slot = wallMeasures[key];
+    if (!slot) continue;
+
+    const wallId = (slot[WALL_SLOT_META_TYPE] ?? "").trim();
+    const wallItem = wallId ? WALL_ITEMS.find((item) => item.id === wallId) : undefined;
+    const defs = wallId
+      ? getWallMeasureFieldDefs(wallId).filter((def) => !isEspesor(`${def.key} ${def.label}`))
+      : [];
+
+    const rows = defs
+      .map((def, defIdx): [string, string, string] => {
+        const raw = (slot[def.key] ?? "").trim();
+        return [wallMeasureLetter(defIdx), def.label, raw || "-"];
+      })
+      .filter((row) => row[2] !== "-");
+
+    if (!rows.length) continue;
+
+    sections.push({
+      title: `Pared ${idx + 1} - ${wallItem?.label ?? "Pared"}`,
+      rows,
+    });
+  }
+
+  return sections;
+};
+
+const readLegacyWallSections = (data: PreliminarData): WallSection[] => {
+  const wallSpecs = Array.isArray(data.wallSpecs) ? (data.wallSpecs as PreliminarWallSpec[]) : [];
+  return wallSpecs.map((wall, idx) => {
+    const rows: Array<[string, string, string]> = [
+      ["A", "Largo total del muro", String(wall.totalWidthCm / 100)],
+      ["B", "Altura hasta techo", String(wall.totalHeightCm / 100)],
+    ];
+
+    if (wall.openingWidthCm) rows.push(["C", "Ancho de vano", String(wall.openingWidthCm / 100)]);
+    if (wall.openingHeightCm) rows.push(["D", "Alto de vano", String(wall.openingHeightCm / 100)]);
+    if (wall.leftSpanCm) rows.push(["E", "Distancia desde extremo", String(wall.leftSpanCm / 100)]);
+
+    return {
+      title: `Pared ${idx + 1}`,
+      rows,
+    };
   });
+};
 
-  const xrefEntries = offsets
-    .map((entry) => entry.toString().padStart(10, "0") + " 00000 n ")
-    .join("\n");
+const getWallSections = (data: PreliminarData): WallSection[] => {
+  const dynamic = readLevantamientoWallSections(data);
+  if (dynamic.length) return dynamic;
+  return readLegacyWallSections(data);
+};
 
-  const xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${xrefEntries}`;
-  const trailer = `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${
-    offset + xref.length + 2
-  }\n%%EOF`;
-  return `%PDF-1.4\n${objects.join("\n\n")}\n${xref}\n${trailer}`;
+const drawTopHeader = (doc: jsPDF) => {
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  doc.setFillColor(...COLOR.black);
+  doc.rect(0, 0, pageWidth, 48, "F");
+
+  doc.setFillColor(255, 255, 255);
+  doc.rect(36, 6, 40, 36, "F");
+  doc.setTextColor(...COLOR.red);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text("KUCHE", 40, 27);
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(25);
+  doc.text("LEVANTAMIENTO", pageWidth - 36, 18, { align: "right" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text("ESTIMACION PRELIMINAR", pageWidth - 36, 35, { align: "right" });
+};
+
+const drawMetaBlock = (doc: jsPDF, data: PreliminarData) => {
+  const leftX = 36;
+  const rightX = 310;
+
+  const subtotal = toNumber(data.subtotal);
+  const iva = toNumber(data.iva);
+  const total = toNumber(data.total);
+
+  doc.setTextColor(...COLOR.text);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+
+  doc.text("FECHA", leftX, 66);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+  doc.text(String(data.date || "Por definir"), leftX, 80);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("TIPO DE PROYECTO", leftX, 102);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+  doc.text(String(data.projectType || "Sin definir"), leftX, 116);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("CLIENTE", leftX, 138);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+  doc.text(String(data.client || "Sin nombre"), leftX, 152);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("DIRECCION", leftX, 174);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+  doc.text(String(data.location || "Por definir"), leftX, 188);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("ACABADOS", leftX, 210);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text(`Cubierta: ${String(data.cubierta || "Sin definir")}`, leftX, 224);
+  doc.text(`Frente: ${String(data.frente || "Sin definir")}`, leftX, 237);
+  doc.text(`Herrajes: ${String(data.herraje || "Sin definir")}`, leftX, 250);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("ESTIMACION", rightX, 66);
+  doc.setFontSize(13);
+  doc.text("RANGO ESTIMADO", rightX, 82);
+
+  doc.setTextColor(...COLOR.red);
+  doc.setFontSize(29);
+  doc.text(String(data.rangeLabel || "-"), rightX, 108);
+
+  doc.setTextColor(...COLOR.muted);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text("Subtotal", rightX + 118, 128, { align: "right" });
+  doc.text("IVA (16%)", rightX + 118, 145, { align: "right" });
+  doc.text("Total", rightX + 118, 163, { align: "right" });
+
+  doc.setTextColor(...COLOR.text);
+  doc.setFont("helvetica", "normal");
+  doc.text(formatCurrency(subtotal), rightX + 255, 128, { align: "right" });
+  doc.text(formatCurrency(iva), rightX + 255, 145, { align: "right" });
+
+  doc.setTextColor(...COLOR.red);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text(formatCurrency(total), rightX + 255, 164, { align: "right" });
+};
+
+const drawSectionBar = (doc: jsPDF, y: number, text: string) => {
+  doc.setFillColor(...COLOR.red);
+  doc.rect(36, y, 540, 26, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.text(text, 46, y + 17);
+};
+
+const buildPreliminarPdfDoc = (data: PreliminarData): jsPDF => {
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+
+  drawTopHeader(doc);
+  drawMetaBlock(doc, data);
+
+  drawSectionBar(doc, 302, "Especificaciones para arquitectura e instalacion");
+
+  const largo = String(data.largo || "0");
+  const alto = String(data.alto || "0");
+
+  doc.setTextColor(...COLOR.text);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text("Medidas generales", 36, 348);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text(`Largo total: ${largo} m   |   Alto total: ${alto} m`, 36, 366);
+
+  drawSectionBar(doc, 388, "Muros");
+
+  const sections = getWallSections(data);
+  let cursorY = 430;
+
+  if (!sections.length) {
+    doc.setTextColor(...COLOR.muted);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text("Sin medidas de muros capturadas.", 36, cursorY);
+    return doc;
+  }
+
+  for (const section of sections) {
+    if (cursorY > 720) {
+      doc.addPage();
+      cursorY = 48;
+    }
+
+    doc.setTextColor(...COLOR.text);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(section.title, 36, cursorY);
+
+    autoTable(doc, {
+      startY: cursorY + 10,
+      margin: { left: 36, right: 36 },
+      head: [["Ref.", "Medida", "Valor (m)"]],
+      body: section.rows,
+      styles: {
+        font: "helvetica",
+        fontSize: 9,
+        textColor: [35, 35, 35],
+        lineColor: [190, 190, 190],
+        lineWidth: 0.6,
+      },
+      headStyles: {
+        fillColor: COLOR.darkGray,
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+      },
+      columnStyles: {
+        0: { cellWidth: 40 },
+        1: { cellWidth: 300 },
+        2: { cellWidth: 140, halign: "right" },
+      },
+      alternateRowStyles: {
+        fillColor: COLOR.softGray,
+      },
+    });
+
+    const finalY = (doc as jsPDF & { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? cursorY + 10;
+    cursorY = finalY + 24;
+  }
+
+  return doc;
+};
+
+/** Genera el PDF de cotizacion preliminar (estilo levantamiento detallado). */
+export function buildPreliminarPdf(data: PreliminarData): string {
+  return buildPreliminarPdfDoc(data).output();
 }
 
-/** Compatibilidad con Front_plataforna: data URL para persistencia temporal. */
+/** Data URL del PDF para persistencia temporal/subida. */
 export function buildPreliminarPdfDataUrl(data: PreliminarData): string {
-  const pdf = buildPreliminarPdf(data);
-  const encoded = typeof window !== "undefined"
-    ? window.btoa(unescape(encodeURIComponent(pdf)))
-    : Buffer.from(pdf, "utf8").toString("base64");
-  return `data:application/pdf;base64,${encoded}`;
+  return buildPreliminarPdfDoc(data).output("datauristring");
 }
 
 const openRemotePdf = (url: string): void => {
@@ -126,8 +317,7 @@ export function openPreliminarPdfInNewTab(data: PreliminarData): void {
     openRemotePdf(data.levantamientoPdfUrl);
     return;
   }
-  const pdf = buildPreliminarPdf(data);
-  const blob = new Blob([pdf], { type: "application/pdf" });
+  const blob = buildPreliminarPdfDoc(data).output("blob");
   const url = URL.createObjectURL(blob);
   window.open(url, "_blank", "noopener,noreferrer");
   URL.revokeObjectURL(url);
@@ -142,8 +332,7 @@ export function downloadPreliminarPdf(data: PreliminarData, filename?: string): 
     link.click();
     return;
   }
-  const pdf = buildPreliminarPdf(data);
-  const blob = new Blob([pdf], { type: "application/pdf" });
+  const blob = buildPreliminarPdfDoc(data).output("blob");
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -152,7 +341,7 @@ export function downloadPreliminarPdf(data: PreliminarData, filename?: string): 
   URL.revokeObjectURL(url);
 }
 
-/** Abre el PDF formal en una nueva pestaña. Busca en IndexedDB por formalPdfKey, o usa pdfDataUrl si existe; si no, genera el PDF preliminar como fallback. */
+/** Abre el PDF formal en una nueva pestaña. */
 export function openFormalPdfInNewTab(data: CotizacionFormalData): void {
   if (data.formalPdfUrl) {
     openRemotePdf(data.formalPdfUrl);
@@ -172,7 +361,7 @@ export function openFormalPdfInNewTab(data: CotizacionFormalData): void {
   openPreliminarPdfInNewTab(data);
 }
 
-/** Descarga el PDF formal. Busca en IndexedDB por formalPdfKey, o usa pdfDataUrl si existe; si no, genera el PDF preliminar como fallback. */
+/** Descarga el PDF formal. */
 export function downloadFormalPdf(data: CotizacionFormalData, filename?: string): void {
   if (data.formalPdfUrl) {
     const link = document.createElement("a");

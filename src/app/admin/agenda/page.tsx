@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
@@ -113,6 +114,11 @@ const citaToAppointment = (cita: Cita): Appointment => {
 };
 
 export default function AgendaPage() {
+  const searchParams = useSearchParams();
+  const selectedDateFromQuery = useMemo(() => {
+    const date = searchParams.get("date");
+    return date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
+  }, [searchParams]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState("Todos");
@@ -127,7 +133,7 @@ export default function AgendaPage() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [selectedDateForDayView, setSelectedDateForDayView] = useState<string | null>(null);
+  const [selectedDateForDayView, setSelectedDateForDayView] = useState<string | null>(selectedDateFromQuery);
   const [formState, setFormState] = useState<Appointment>({
     id: "",
     title: "",
@@ -183,6 +189,12 @@ export default function AgendaPage() {
   useEffect(() => {
     void loadData();
   }, []);
+
+  useEffect(() => {
+    if (selectedDateFromQuery) {
+      setSelectedDateForDayView(selectedDateFromQuery);
+    }
+  }, [selectedDateFromQuery]);
 
   useEffect(() => {
     if (!isModalOpen) return;

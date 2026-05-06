@@ -46,6 +46,12 @@ export type AdminWorkflowTask = KanbanTask & {
   sourceCitaId?: string;
   sourceDisenoId?: string;
   clientFiles?: TaskFile[];
+  pagos?: {
+    anticipo: { amount: number; date?: string; receiptLabel?: string; receiptImage?: string };
+    segundoPago: { amount: number; date?: string; receiptLabel?: string; receiptImage?: string };
+    liquidacion: { amount: number; date?: string; receiptLabel?: string; receiptImage?: string };
+  };
+  seguimientoNota?: string;
 };
 
 export type AdminWorkflowLoadResult = {
@@ -142,6 +148,31 @@ const toIsoString = (value: unknown): string | undefined => {
     return value;
   }
   return undefined;
+};
+
+const normalizePago = (value: unknown) => {
+  const raw = asRecord(value);
+  if (!raw) {
+    return { amount: 0, date: "", receiptLabel: "Ver recibo", receiptImage: "" };
+  }
+
+  return {
+    amount: Math.max(0, Math.round(Number(raw.amount) || 0)),
+    date: typeof raw.date === "string" ? raw.date : "",
+    receiptLabel: typeof raw.receiptLabel === "string" ? raw.receiptLabel : "Ver recibo",
+    receiptImage: typeof raw.receiptImage === "string" ? raw.receiptImage : "",
+  };
+};
+
+const extractPagosPayload = (raw: Record<string, unknown>) => {
+  const pagosRecord = asRecord(raw.pagos);
+  if (!pagosRecord) return undefined;
+
+  return {
+    anticipo: normalizePago(pagosRecord.anticipo),
+    segundoPago: normalizePago(pagosRecord.segundoPago),
+    liquidacion: normalizePago(pagosRecord.liquidacion),
+  };
 };
 
 const extractVisitaPayload = (raw: Record<string, unknown>) => {
@@ -301,6 +332,8 @@ export const mapKanbanItemToAdminTask = (item: KanbanItem): AdminWorkflowTask =>
   const visitaPayload = extractVisitaPayload(raw);
   const fallbackTitle = toString((item as unknown as Record<string, unknown>).title) ?? "Cita";
   const clientName = getCitaClientName(raw, citaPayload) ?? fallbackTitle;
+  const pagosPayload = extractPagosPayload(raw);
+  const seguimientoNota = toString(raw.seguimientoNota ?? raw.notaSeguimiento ?? raw.notaPublica);
 
   if (isCitaCard(item, raw, citaPayload)) {
     const stage = normalizeStage(raw.etapa ?? item.etapa ?? "citas");
@@ -376,6 +409,8 @@ export const mapKanbanItemToAdminTask = (item: KanbanItem): AdminWorkflowTask =>
       scheduledAt,
       sourceCitaId: toString(raw.sourceCitaId) ?? citaSourceId,
       sourceDisenoId: toString(raw.sourceDisenoId),
+      pagos: pagosPayload,
+      seguimientoNota,
     };
   }
 
@@ -451,6 +486,8 @@ export const mapKanbanItemToAdminTask = (item: KanbanItem): AdminWorkflowTask =>
     scheduledAt: undefined,
     sourceCitaId: toString(raw.sourceCitaId),
     sourceDisenoId: toString(raw.sourceDisenoId),
+    pagos: pagosPayload,
+    seguimientoNota,
   };
 };
 
@@ -523,6 +560,9 @@ export const buildTaskUpdatePayload = (task: AdminWorkflowTask): Partial<KanbanI
     codigoProyecto: task.codigoProyecto,
     sourceType: task.sourceType ?? undefined,
     sourceId: task.sourceType ? task.sourceId : undefined,
+    pagos: (task as any).pagos,
+    seguimientoNota: (task as any).seguimientoNota,
+    notaSeguimiento: (task as any).seguimientoNota,
     cita: task.sourceType === "cita" && task.cita
       ? {
           ...task.cita,
@@ -545,22 +585,66 @@ export async function fetchAdminWorkflowTasksSequentially(): Promise<AdminWorkfl
   const tasks: AdminWorkflowTask[] = [];
   const errors: string[] = [];
 
-  for (const request of requests) {
-    try {
-      const response = await request.load();
-      if (response.success && response.data) {
-        tasks.push(...response.data.map(mapKanbanItemToAdminTask));
-      } else if (response.message) {
-        errors.push(`${request.label}: ${response.message}`);
+  const responses = await Promise.all(
+    requests.map(async (request) => {
+      try {
+        const response = await request.load();
+        return { label: request.label, response };
+      } catch (error) {
+        return {
+          label: request.label,
+          response: {
+            success: false,
+            message: error instanceof Error ? error.message : "Error desconocido",
+          },
+        };
       }
-    } catch (error) {
-      errors.push(
-        `${request.label}: ${error instanceof Error ? error.message : "Error desconocido"}`,
-      );
+    }),
+  );
+
+  for (const { label, response } of responses) {
+    if (response.success && response.data) {
+      tasks.push(...response.data.map(mapKanbanItemToAdminTask));
+    } else if (response.message) {
+      errors.push(`${label}: ${response.message}`);
     }
   }
 
   const clientFilesCache = new Map<string, TaskFile[]>();
+  const clientFilesRequests = new Map<string, Promise<TaskFile[]>>();
+
+  const getClientFiles = async (clientId: string) => {
+    const cached = clientFilesCache.get(clientId);
+    if (cached) {
+      return cached;
+    }
+
+    const pending = clientFilesRequests.get(clientId);
+    if (pending) {
+      return pending;
+    }
+
+    const request = (async () => {
+      try {
+        const clientFilesResponse = await obtenerArchivosCliente(clientId);
+        const files = clientFilesResponse.success
+          ? (clientFilesResponse.data ?? []).map(mapClienteArchivoToTaskFile)
+          : [];
+        clientFilesCache.set(clientId, files);
+        return files;
+      } catch (error) {
+        errors.push(
+          `cliente-archivos (${clientId}): ${error instanceof Error ? error.message : "Error desconocido"}`,
+        );
+        return [] as TaskFile[];
+      } finally {
+        clientFilesRequests.delete(clientId);
+      }
+    })();
+
+    clientFilesRequests.set(clientId, request);
+    return request;
+  };
 
   const hydratedTasks = await Promise.all(
     tasks.map(async (task) => {
@@ -568,15 +652,7 @@ export async function fetchAdminWorkflowTasksSequentially(): Promise<AdminWorkfl
 
       if (task.clientId) {
         try {
-          let cached = clientFilesCache.get(task.clientId);
-          if (!cached) {
-            const clientFilesResponse = await obtenerArchivosCliente(task.clientId);
-            cached = clientFilesResponse.success
-              ? (clientFilesResponse.data ?? []).map(mapClienteArchivoToTaskFile)
-              : [];
-            clientFilesCache.set(task.clientId, cached);
-          }
-
+          const cached = await getClientFiles(task.clientId);
           nextTask = {
             ...nextTask,
             clientFiles: cached,

@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowLeft, User, FileText, Eye, Download } from "lucide-react";
+import { ArrowLeft, User, FileText, Eye, Download, X } from "lucide-react";
 import { getCotizacionesFormalesList, getPreliminarList, type KanbanTask } from "@/lib/kanban";
-import { openPreliminarPdfInNewTab, downloadPreliminarPdf, openFormalPdfInNewTab, downloadFormalPdf } from "@/lib/pdf-preliminar";
+import { buildPreliminarPdfDataUrl, downloadPreliminarPdf, downloadFormalPdf } from "@/lib/pdf-preliminar";
+import { getFormalPdf } from "@/lib/formal-pdf-storage";
 import { fetchAdminWorkflowTasksSequentially } from "@/lib/admin-workflow";
 
 const CURRENT_USER = "Valeria";
@@ -35,6 +36,10 @@ function getTasksInProgress(tasks: KanbanTask[], filterByUser: string | null): K
 export default function ClientesEnProcesoPage() {
   const [tasks, setTasks] = useState<KanbanTask[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewTitle, setPreviewTitle] = useState("");
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
+  const [previewDownloadName, setPreviewDownloadName] = useState<string>("documento.pdf");
 
   useEffect(() => {
     const load = async () => {
@@ -51,6 +56,38 @@ export default function ClientesEnProcesoPage() {
   }, []);
 
   const inProgress = getTasksInProgress(tasks, CURRENT_USER);
+
+  const openPreview = async (args: {
+    title: string;
+    downloadName: string;
+    preliminarData?: Parameters<typeof buildPreliminarPdfDataUrl>[0];
+    formalData?: any;
+  }) => {
+    setPreviewTitle(args.title);
+    setPreviewDownloadName(args.downloadName);
+
+    let nextSrc: string | null = null;
+    if (args.formalData?.formalPdfUrl) {
+      nextSrc = args.formalData.formalPdfUrl;
+    } else if (args.formalData?.pdfDataUrl) {
+      nextSrc = args.formalData.pdfDataUrl;
+    } else if (args.formalData?.formalPdfKey) {
+      nextSrc = (await getFormalPdf(args.formalData.formalPdfKey)) ?? null;
+    }
+
+    if (!nextSrc && args.preliminarData) {
+      nextSrc = buildPreliminarPdfDataUrl(args.preliminarData);
+    }
+
+    setPreviewSrc(nextSrc);
+    setPreviewOpen(true);
+  };
+
+  const closePreview = () => {
+    setPreviewOpen(false);
+    setPreviewSrc(null);
+    setPreviewTitle("");
+  };
 
   if (!isHydrated) {
     return (
@@ -139,7 +176,13 @@ export default function ClientesEnProcesoPage() {
                               <span className="text-xs font-medium text-emerald-800">{data.projectType}</span>
                               <button
                                 type="button"
-                                onClick={() => openPreliminarPdfInNewTab(data)}
+                                onClick={() =>
+                                  void openPreview({
+                                    title: `Vista previa preliminar - ${data.projectType}`,
+                                    downloadName: `cotizacion-preliminar-${(data.projectType || "proyecto").replace(/\s+/g, "-")}-${task.project.replace(/\s+/g, "-")}.pdf`,
+                                    preliminarData: data,
+                                  })
+                                }
                                 className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
                               >
                                 <Eye className="h-3 w-3" />
@@ -174,7 +217,14 @@ export default function ClientesEnProcesoPage() {
                               <span className="text-xs font-medium text-violet-800">{data.projectType}</span>
                               <button
                                 type="button"
-                                onClick={() => openFormalPdfInNewTab(data)}
+                                onClick={() =>
+                                  void openPreview({
+                                    title: `Vista previa formal - ${data.projectType}`,
+                                    downloadName: `cotizacion-formal-${(data.projectType || "proyecto").replace(/\s+/g, "-")}-${task.project.replace(/\s+/g, "-")}.pdf`,
+                                    formalData: data,
+                                    preliminarData: data,
+                                  })
+                                }
                                 className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-violet-700 transition hover:bg-violet-100"
                               >
                                 <Eye className="h-3 w-3" />
@@ -208,6 +258,57 @@ export default function ClientesEnProcesoPage() {
           )}
         </motion.div>
       </div>
+
+      {previewOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm">
+          <div className="flex h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-primary/10 px-5 py-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">Previsualización</p>
+                <h2 className="text-lg font-semibold text-primary">{previewTitle}</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (previewSrc) {
+                      const link = document.createElement("a");
+                      link.href = previewSrc;
+                      link.download = previewDownloadName;
+                      link.click();
+                    }
+                  }}
+                  className="inline-flex items-center gap-2 rounded-xl border border-primary/15 bg-white px-3 py-2 text-sm font-semibold text-primary hover:border-primary/30"
+                >
+                  <Download className="h-4 w-4" />
+                  Descargar
+                </button>
+                <button
+                  type="button"
+                  onClick={closePreview}
+                  className="rounded-xl p-2 text-secondary hover:bg-gray-100 hover:text-primary"
+                  aria-label="Cerrar previsualizacion"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 bg-zinc-100 p-3">
+              {previewSrc ? (
+                <iframe
+                  src={previewSrc}
+                  title={previewTitle}
+                  className="h-full w-full rounded-2xl border border-primary/10 bg-white"
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-primary/20 bg-white text-sm text-secondary">
+                  No se pudo cargar la vista previa.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

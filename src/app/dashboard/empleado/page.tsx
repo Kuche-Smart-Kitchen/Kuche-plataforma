@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { CheckCircle2, FileUp } from "lucide-react";
+import { CheckCircle2, FileUp, Loader2 } from "lucide-react";
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
@@ -247,6 +247,7 @@ export default function EmpleadoDashboard() {
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dragOverColumnId, setDragOverColumnId] = useState<TaskStage | null>(null);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
+  const [startingTaskId, setStartingTaskId] = useState<string | null>(null);
   const [publicStep, setPublicStep] = useState(publicTimelineSteps[2]);
   const [publicFiles, setPublicFiles] = useState([
     { id: "p1", name: "Render_Actualizado.jpg", type: "jpg" },
@@ -540,6 +541,7 @@ export default function EmpleadoDashboard() {
   };
 
   const handleStartCita = (taskId: string) => {
+    setStartingTaskId(taskId);
     const runtimeTasks: KanbanTask[] = kanbanTasks.map((task) => ({
       ...(task as unknown as KanbanTask),
       assignedTo: task.assignedTo ? [task.assignedTo] : [],
@@ -548,10 +550,12 @@ export default function EmpleadoDashboard() {
     runtimeStore.setItem(activeCitaTaskStorageKey, taskId);
     runtimeStore.setItem(citaReturnUrlStorageKey, window.location.pathname);
     setActiveTaskId(null);
+    window.setTimeout(() => setStartingTaskId((prev) => (prev === taskId ? null : prev)), 2500);
     router.push("/dashboard/cotizador-preliminar");
   };
 
   const handleStartCotizacion = (taskId: string) => {
+    setStartingTaskId(taskId);
     const runtimeTasks: KanbanTask[] = kanbanTasks.map((task) => ({
       ...(task as unknown as KanbanTask),
       assignedTo: task.assignedTo ? [task.assignedTo] : [],
@@ -560,6 +564,7 @@ export default function EmpleadoDashboard() {
     runtimeStore.setItem(activeCotizacionFormalTaskStorageKey, taskId);
     runtimeStore.setItem(citaReturnUrlStorageKey, window.location.pathname);
     setActiveTaskId(null);
+    window.setTimeout(() => setStartingTaskId((prev) => (prev === taskId ? null : prev)), 2500);
     router.push("/dashboard/cotizador");
   };
 
@@ -570,12 +575,38 @@ export default function EmpleadoDashboard() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <p className="text-xs uppercase tracking-[0.3em] text-secondary">Dashboard Empleado</p>
-        <h1 className="mt-2 text-3xl font-semibold">Tablero general</h1>
-        <p className="mt-2 text-sm text-secondary">
-          Visibilidad completa del flujo activo y responsables asignados.
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-secondary">Dashboard Empleado</p>
+          <h1 className="mt-2 text-3xl font-semibold">Tablero general</h1>
+          <p className="mt-2 text-sm text-secondary">
+            Hola {user?.nombre ?? "equipo"}, aqui esta tu flujo de trabajo.
+          </p>
+        </div>
+        <div className="flex rounded-2xl border border-primary/10 bg-white p-1 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setViewMode("mine")}
+            className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+              viewMode === "mine"
+                ? "bg-primary text-white"
+                : "text-secondary hover:bg-primary/5"
+            }`}
+          >
+            Mis tareas
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("all")}
+            className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+              viewMode === "all"
+                ? "bg-primary text-white"
+                : "text-secondary hover:bg-primary/5"
+            }`}
+          >
+            Ver todo
+          </button>
+        </div>
       </div>
 
       <motion.section
@@ -584,32 +615,7 @@ export default function EmpleadoDashboard() {
         transition={{ duration: 0.4 }}
         className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-md"
       >
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-secondary">Flujo de la empresa</p>
-            <h2 className="mt-2 text-xl font-semibold">Tablero general</h2>
-          </div>
-          <div className="flex items-center gap-2 rounded-full border border-primary/10 bg-white p-1">
-            {[
-              { id: "all", label: "Ver todo" },
-              { id: "mine", label: "Mis tareas" },
-            ].map((option) => (
-              <button
-                key={option.id}
-                onClick={() => setViewMode(option.id as "all" | "mine")}
-                className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
-                  viewMode === option.id
-                    ? "bg-accent text-white"
-                    : "text-secondary hover:text-primary"
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-6 grid gap-4 lg:grid-cols-4">
+        <div className="grid gap-4 lg:grid-cols-4">
           {kanbanColumns.map((column) => {
             const columnTasks = filteredTasks.filter((task) => task.stage === column.id);
             const isDragOver = dragOverColumnId === column.id;
@@ -690,25 +696,41 @@ export default function EmpleadoDashboard() {
                               {task.stage === "citas" && task.status === "pendiente" ? (
                                 <button
                                   type="button"
+                                  disabled={startingTaskId === task.id}
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     handleStartCita(task.id);
                                   }}
                                   className="inline-flex w-auto items-center rounded-full border border-primary/10 bg-white px-3 py-1 text-[11px] font-semibold text-secondary"
                                 >
-                                  Iniciar cita
+                                  {startingTaskId === task.id ? (
+                                    <span className="inline-flex items-center gap-1.5">
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      Cargando...
+                                    </span>
+                                  ) : (
+                                    "Iniciar cita"
+                                  )}
                                 </button>
                               ) : null}
                               {task.stage === "cotizacion" && task.status === "pendiente" ? (
                                 <button
                                   type="button"
+                                  disabled={startingTaskId === task.id}
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     handleStartCotizacion(task.id);
                                   }}
                                   className="inline-flex w-auto items-center rounded-full border border-primary/10 bg-white px-3 py-1 text-[11px] font-semibold text-secondary"
                                 >
-                                  Iniciar
+                                  {startingTaskId === task.id ? (
+                                    <span className="inline-flex items-center gap-1.5">
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      Cargando...
+                                    </span>
+                                  ) : (
+                                    "Iniciar"
+                                  )}
                                 </button>
                               ) : null}
                               {task.stage === "disenos" ? (
@@ -763,7 +785,7 @@ export default function EmpleadoDashboard() {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, delay: 0.05 }}
-        className="grid grid-cols-1 gap-6 md:grid-cols-3"
+        className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3"
       >
         <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-md">
           <p className="text-xs uppercase tracking-[0.3em] text-secondary">Salud del día</p>
@@ -791,15 +813,56 @@ export default function EmpleadoDashboard() {
         </div>
         <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-md">
           <p className="text-xs uppercase tracking-[0.3em] text-secondary">Cotización</p>
-          <h3 className="mt-2 text-xl font-semibold">Cotizador Preliminar</h3>
+          <h3 className="mt-2 text-xl font-semibold">Levantamiento Detallado</h3>
           <p className="mt-3 text-sm text-secondary">
             Crea una estimación rápida para prospectos antes de formalizar.
           </p>
           <button
-            onClick={() => router.push("/dashboard/cotizador-preliminar")}
+            onClick={() => router.push("/dashboard/Levantamiento-detallado")}
             className="mt-4 rounded-2xl border border-primary/20 bg-white px-4 py-2 text-xs font-semibold text-primary shadow-sm transition hover:border-primary/40"
           >
-            Abrir preliminar
+            Abrir levantamiento
+          </button>
+        </div>
+        <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-md">
+          <p className="text-xs uppercase tracking-[0.3em] text-secondary">Clientes</p>
+          <h3 className="mt-2 text-xl font-semibold">Clientes en proceso</h3>
+          <p className="mt-3 text-sm text-secondary">
+            Ver tus clientes en proceso y los PDF de cotizaciones.
+          </p>
+          <button
+            onClick={() => router.push("/dashboard/clientes-en-proceso")}
+            className="mt-4 rounded-2xl border border-primary/20 bg-white px-4 py-2 text-xs font-semibold text-primary shadow-sm transition hover:border-primary/40"
+          >
+            Ver clientes
+          </button>
+        </div>
+        <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-md">
+          <p className="text-xs uppercase tracking-[0.3em] text-secondary">Clientes</p>
+          <h3 className="mt-2 text-xl font-semibold">Clientes confirmados</h3>
+          <p className="mt-3 text-sm text-secondary">
+            Revisa proyectos confirmados y expedientes PDF en un solo lugar.
+          </p>
+          <button
+            type="button"
+            onClick={() => router.push("/dashboard/clientes-en-proceso")}
+            className="mt-4 rounded-2xl border border-primary/20 bg-white px-4 py-2 text-xs font-semibold text-primary shadow-sm transition hover:border-primary/40"
+          >
+            Ver confirmados
+          </button>
+        </div>
+        <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-md">
+          <p className="text-xs uppercase tracking-[0.3em] text-secondary">Clientes</p>
+          <h3 className="mt-2 text-xl font-semibold">Proyectos inactivos</h3>
+          <p className="mt-3 text-sm text-secondary">
+            Consulta historial de proyectos que por ahora no continuan.
+          </p>
+          <button
+            type="button"
+            onClick={() => router.push("/dashboard/clientes-en-proceso")}
+            className="mt-4 rounded-2xl border border-primary/20 bg-white px-4 py-2 text-xs font-semibold text-primary shadow-sm transition hover:border-primary/40"
+          >
+            Ver inactivos
           </button>
         </div>
       </motion.section>
@@ -906,10 +969,18 @@ export default function EmpleadoDashboard() {
                       {activeTask.status === "pendiente" ? (
                         <button
                           type="button"
+                          disabled={startingTaskId === activeTask.id}
                           onClick={() => handleStartCita(activeTask.id)}
                           className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white"
                         >
-                          Iniciar cita
+                          {startingTaskId === activeTask.id ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              Cargando...
+                            </span>
+                          ) : (
+                            "Iniciar cita"
+                          )}
                         </button>
                       ) : null}
                       <button
@@ -931,19 +1002,20 @@ export default function EmpleadoDashboard() {
                       {activeTask.status === "pendiente" ? (
                         <button
                           type="button"
+                          disabled={startingTaskId === activeTask.id}
                           onClick={() => handleStartCotizacion(activeTask.id)}
                           className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white"
                         >
-                          Iniciar
+                          {startingTaskId === activeTask.id ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              Cargando...
+                            </span>
+                          ) : (
+                            "Iniciar"
+                          )}
                         </button>
                       ) : null}
-                      <button
-                        type="button"
-                        onClick={() => handleFinishCita(activeTask.id)}
-                        className="rounded-full border border-primary/10 bg-white px-4 py-2 text-xs font-semibold text-secondary"
-                      >
-                        Terminar
-                      </button>
                     </div>
                   </div>
                 ) : null}

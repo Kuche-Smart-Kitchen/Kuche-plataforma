@@ -15,6 +15,7 @@ type SeguimientoArchivo = {
   name: string;
   type: "pdf" | "jpg";
   src: string;
+  rawType?: string;
 };
 
 type SeguimientoPayment = {
@@ -118,10 +119,155 @@ const detailCardClass = "rounded-3xl border border-primary/10 bg-white/95 p-5 sh
 
 const normalizeEmptyText = (value?: string | null) => (value && value.trim().length > 0 ? value : "Por definir");
 
+const normalizeSearchText = (value?: string | null) =>
+  (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+
+const readString = (record: Record<string, unknown>, keys: string[]) => {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  }
+  return "";
+};
+
+const inferFileType = (url: string, rawType = "", name = ""): "pdf" | "jpg" => {
+  const haystack = normalizeSearchText(`${rawType} ${name} ${url}`);
+  if (haystack.includes("pdf") || /\.pdf(?:\?|$)/i.test(url)) return "pdf";
+  if (/(jpg|jpeg|png|webp|gif|bmp|svg|image|foto|imagen|render)/i.test(haystack)) return "jpg";
+  return "pdf";
+};
+
+const collectRelatedFilesFromPayload = (payload: Record<string, unknown>): SeguimientoArchivo[] => {
+  const files: SeguimientoArchivo[] = [];
+  const seen = new Set<string>();
+
+  const pushFile = (file: SeguimientoArchivo) => {
+    const key = file.src.trim().toLowerCase();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    files.push(file);
+  };
+
+  const pushFromUrl = (url: unknown, name: string, rawType = "") => {
+    if (typeof url !== "string" || !url.trim()) return;
+    const src = url.trim();
+    pushFile({
+      id: `url-${files.length + 1}`,
+      name,
+      src,
+      rawType,
+      type: inferFileType(src, rawType, name),
+    });
+  };
+
+  const arrayCandidates: unknown[] = [
+    payload.archivos,
+    payload.files,
+    payload.clientFiles,
+    payload.archivosCliente,
+    payload.clienteArchivos,
+    payload.documentos,
+  ];
+
+  arrayCandidates.forEach((candidate) => {
+    if (!Array.isArray(candidate)) return;
+    candidate.forEach((entry, index) => {
+      const raw = asRecord(entry);
+      if (!raw) return;
+      const src = readString(raw, ["src", "url", "archivoUrl", "fileUrl", "ruta", "href"]);
+      if (!src) return;
+      const name =
+        readString(raw, ["nombre", "name", "fileName", "filename", "titulo", "title", "etiqueta"]) ||
+        `Archivo ${index + 1}`;
+      const rawType = readString(raw, ["tipo", "type", "mimeType", "extension"]);
+      pushFile({
+        id: readString(raw, ["id", "_id"]) || `file-${files.length + 1}`,
+        name,
+        src,
+        rawType,
+        type: inferFileType(src, rawType, name),
+      });
+    });
+  });
+
+  const preliminar = asRecord(payload.preliminarData);
+  pushFromUrl(preliminar?.levantamientoPdfUrl, "PDF de levantamiento", "pdf");
+
+  const formal = asRecord(payload.cotizacionFormalData);
+  pushFromUrl(formal?.formalPdfUrl, "Cotización formal PDF", "pdf");
+  pushFromUrl(formal?.workshopPdfUrl, "Hoja de taller", "pdf");
+
+  if (Array.isArray(payload.preliminarCotizaciones)) {
+    payload.preliminarCotizaciones.forEach((item, index) => {
+      const entry = asRecord(item);
+      if (!entry) return;
+      const label = readString(entry, ["projectType", "tipoProyecto"]) || `Preliminar ${index + 1}`;
+      pushFromUrl(entry.levantamientoPdfUrl, `${label} · Levantamiento`, "pdf");
+      pushFromUrl(entry.preliminarPdfUrl, `${label} · Cotización preliminar`, "pdf");
+    });
+  }
+
+  if (Array.isArray(payload.cotizacionesFormales)) {
+    payload.cotizacionesFormales.forEach((item, index) => {
+      const entry = asRecord(item);
+      if (!entry) return;
+      const label = readString(entry, ["projectType", "tipoProyecto"]) || `Formal ${index + 1}`;
+      pushFromUrl(entry.formalPdfUrl, `${label} · Cotización formal`, "pdf");
+      pushFromUrl(entry.workshopPdfUrl, `${label} · Hoja de taller`, "pdf");
+    });
+  }
+
+  const pagos = asRecord(payload.pagos);
+  if (pagos) {
+    ["anticipo", "segundoPago", "liquidacion"].forEach((key, index) => {
+      const pago = asRecord(pagos[key]);
+      if (!pago) return;
+      const receiptLabel = readString(pago, ["receiptLabel", "label", "nombre"]) || `Recibo ${index + 1}`;
+      pushFromUrl(pago.receiptImage, receiptLabel, `recibo_${index + 1}`);
+    });
+  }
+
+  pushFromUrl(payload.cotizacionPreliminarImage, "Vista previa levantamiento", "imagen");
+  pushFromUrl(payload.cotizacionFormalImage, "Vista previa cotización formal", "imagen");
+
+  return files;
+};
+
 const getTimelineIndexFromProject = (project: SeguimientoProject) => {
-  if (project.estadoProyecto.toLowerCase().includes("entregado")) {
+  const directIndex = timelineSteps.indexOf(project.etapaActual as (typeof timelineSteps)[number]);
+  if (directIndex >= 0) {
+    return directIndex;
+  }
+
+  const estadoText = normalizeSearchText(project.estadoProyecto);
+  const etapaText = normalizeSearchText(project.etapaActual);
+  const notesText = normalizeSearchText(project.notes);
+  const stageText = project.stage ? normalizeSearchText(stageLabels[project.stage]) : "";
+  const allText = `${estadoText} ${etapaText} ${notesText} ${stageText}`;
+
+  if (/(instal|entreg|finaliz|terminad|completad)/.test(allText)) {
     return 4;
   }
+  if (/(ensambl|armad|montaj)/.test(allText)) {
+    return 3;
+  }
+  if (/(corte|cnc)/.test(allText)) {
+    return 2;
+  }
+  if (/(material|taller)/.test(allText)) {
+    return 1;
+  }
+  if (/(diseno aprobado|diseno|aprobado)/.test(allText)) {
+    return 0;
+  }
+
   switch (project.stage) {
     case "citas":
       return 0;
@@ -130,16 +276,17 @@ const getTimelineIndexFromProject = (project: SeguimientoProject) => {
     case "cotizacion":
       return 2;
     case "contrato":
-      return 4;
+      return project.status === "completada" ? 4 : 3;
     default: {
-      const directIndex = timelineSteps.indexOf(project.etapaActual as (typeof timelineSteps)[number]);
-      return directIndex >= 0 ? directIndex : 0;
+      return 0;
     }
   }
 };
 
-const getTimelineStatusLabel = (project: SeguimientoProject) =>
-  project.stage ? stageLabels[project.stage] : normalizeEmptyText(project.etapaActual);
+const getTimelineStatusLabel = (project: SeguimientoProject) => {
+  const index = getTimelineIndexFromProject(project);
+  return timelineSteps[index] ?? normalizeEmptyText(project.etapaActual);
+};
 
 const getProjectDetailFields = (project: SeguimientoProject) => [
   { label: "Cliente", value: normalizeEmptyText(project.cliente) },
@@ -225,6 +372,23 @@ const formatPayment = (payment: { amount: number; date?: string }) => {
 
 const summarizeFileType = (file: SeguimientoArchivo) => (file.type === "pdf" ? "PDF" : "Imagen");
 
+const receiptTypeMatchers: Record<(typeof installments)[number]["key"], string[]> = {
+  anticipo: ["recibo_1", "recibo1", "anticipo", "pago_1", "pago1"],
+  segundoPago: ["recibo_2", "recibo2", "segundo", "2do", "pago_2", "pago2"],
+  liquidacion: ["recibo_3", "recibo3", "liquidacion", "finiquito", "pago_3", "pago3"],
+};
+
+const findReceiptFileByKey = (
+  files: SeguimientoArchivo[],
+  key: (typeof installments)[number]["key"],
+) => {
+  const matchers = receiptTypeMatchers[key];
+  return files.find((file) => {
+    const haystack = `${file.rawType ?? ""} ${file.name}`.toLowerCase();
+    return matchers.some((matcher) => haystack.includes(matcher));
+  });
+};
+
 const GarantiaCountdown = ({ startDate }: { startDate: string }) => {
   const msInDay = 1000 * 60 * 60 * 24;
   const daysLeft = useMemo(() => {
@@ -289,6 +453,46 @@ export default function SeguimientoPage() {
     currentProject.cotizacionFormalData?.workshopPdfUrl,
     currentProject.cotizacionFormalImage,
   ].filter((value): value is string => Boolean(value && value.trim()));
+  const clientFiles = useMemo(
+    () => currentProject.archivos.filter((file) => typeof file.src === "string" && file.src.trim().length > 0),
+    [currentProject.archivos],
+  );
+  const allRelatedFiles = useMemo(() => {
+    const list = [...clientFiles];
+    const seen = new Set(list.map((file) => file.src.trim().toLowerCase()));
+
+    const pushUrl = (url?: string, name?: string, rawType = "") => {
+      if (!url || !url.trim()) return;
+      const src = url.trim();
+      const key = src.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      list.push({
+        id: `related-${list.length + 1}`,
+        name: name || `Archivo ${list.length + 1}`,
+        src,
+        rawType,
+        type: inferFileType(src, rawType, name || ""),
+      });
+    };
+
+    levantamientoLinkedFiles.forEach((url, index) => pushUrl(url, `Levantamiento ${index + 1}`, "pdf"));
+    formalLinkedFiles.forEach((url, index) => pushUrl(url, `Formal ${index + 1}`, "pdf"));
+    installments.forEach((installment, index) => {
+      const payment = currentProject.pagos[installment.key];
+      pushUrl(payment.receiptImage, payment.receiptLabel || `Recibo ${index + 1}`, `recibo_${index + 1}`);
+    });
+
+    return list;
+  }, [clientFiles, currentProject.pagos, formalLinkedFiles, levantamientoLinkedFiles]);
+  const receiptFilesByKey = useMemo(
+    () => ({
+      anticipo: findReceiptFileByKey(allRelatedFiles, "anticipo"),
+      segundoPago: findReceiptFileByKey(allRelatedFiles, "segundoPago"),
+      liquidacion: findReceiptFileByKey(allRelatedFiles, "liquidacion"),
+    }),
+    [allRelatedFiles],
+  );
 
   const lockRemainingSeconds = useMemo(() => {
     if (!lockUntil) return 0;
@@ -396,44 +600,16 @@ export default function SeguimientoPage() {
                         throw new Error("Codigo invalido para este proyecto.");
                       }
 
-                      const archivosFromBackend = Array.isArray(normalizedProject.archivos)
-                        ? normalizedProject.archivos
-                        : [];
-
-                      const mappedArchivos = archivosFromBackend
-                        .map((item, idx) => {
-                          if (!item || typeof item !== "object") return null;
-                          const raw = item as Record<string, unknown>;
-                          const nombre = typeof raw.nombre === "string" ? raw.nombre : `Archivo ${idx + 1}`;
-                          const src =
-                            typeof raw.src === "string"
-                              ? raw.src
-                              : typeof raw.url === "string"
-                                ? raw.url
-                                : "";
-                          const tipoRaw =
-                            typeof raw.tipo === "string"
-                              ? raw.tipo
-                              : typeof raw.type === "string"
-                                ? raw.type
-                                : "otro";
-
-                          const lower = tipoRaw.toLowerCase();
-                          const type =
-                            lower.includes("pdf")
-                              ? "pdf"
-                              : lower.includes("jpg") || lower.includes("jpeg") || lower.includes("png") || lower.includes("render")
-                                ? "jpg"
-                                : "pdf";
-
-                          return {
-                            id: typeof raw.id === "string" ? raw.id : `file-${idx}`,
-                            name: nombre,
-                            type,
-                            src,
-                          };
-                        })
-                        .filter((item): item is { id: string; name: string; type: "pdf" | "jpg"; src: string } => Boolean(item));
+                      const mappedArchivos = collectRelatedFilesFromPayload(backendProject as Record<string, unknown>);
+                      const normalizedArchivos = collectRelatedFilesFromPayload(normalizedProject as unknown as Record<string, unknown>);
+                      const mergedArchivos = [...mappedArchivos];
+                      const existing = new Set(mappedArchivos.map((file) => file.src.trim().toLowerCase()));
+                      normalizedArchivos.forEach((file) => {
+                        const key = file.src.trim().toLowerCase();
+                        if (!key || existing.has(key)) return;
+                        existing.add(key);
+                        mergedArchivos.push(file);
+                      });
 
                       const mergedProject: SeguimientoProject = {
                         ...emptyProject,
@@ -468,7 +644,7 @@ export default function SeguimientoPage() {
                         visita: normalizedProject.visita,
                         etapaActual: normalizedProject.etapaActual,
                         pagos: normalizedProject.pagos,
-                        archivos: mappedArchivos,
+                        archivos: mergedArchivos,
                         preliminarData: normalizedProject.preliminarData,
                         cotizacionFormalData: normalizedProject.cotizacionFormalData,
                         preliminarCotizaciones: normalizedProject.preliminarCotizaciones,
@@ -748,6 +924,45 @@ export default function SeguimientoPage() {
                 <div className="mt-6 rounded-[1.75rem] border border-primary/10 bg-white/95 p-5 shadow-[0_22px_55px_-35px_rgba(43,26,22,0.45)]">
                   <div className="flex items-center justify-between gap-3">
                     <div>
+                      <p className="text-xs uppercase tracking-[0.3em] text-secondary">Archivos del cliente</p>
+                      <h3 className="mt-2 text-xl font-semibold">Documentos de tu proyecto</h3>
+                    </div>
+                    <span className="rounded-full bg-primary/5 px-4 py-2 text-xs font-semibold text-secondary">
+                      {allRelatedFiles.length} archivo{allRelatedFiles.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  {allRelatedFiles.length > 0 ? (
+                    <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {allRelatedFiles.map((file) => (
+                        <button
+                          key={file.id}
+                          type="button"
+                          className="flex items-center justify-between gap-3 rounded-2xl border border-primary/10 bg-primary/[0.02] px-4 py-3 text-left text-xs font-semibold text-primary transition hover:border-accent hover:bg-accent/5"
+                          onClick={() => {
+                            if (file.type === "jpg") {
+                              setSelectedImage({ name: file.name, src: file.src });
+                              return;
+                            }
+                            window.open(file.src, "_blank", "noopener,noreferrer");
+                          }}
+                        >
+                          <span className="truncate">{file.name}</span>
+                          <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-secondary">
+                            {summarizeFileType(file)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-4 rounded-2xl border border-dashed border-primary/15 bg-primary/5 px-4 py-3 text-xs text-secondary">
+                      Aún no hay archivos disponibles para tu proyecto.
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-6 rounded-[1.75rem] border border-primary/10 bg-white/95 p-5 shadow-[0_22px_55px_-35px_rgba(43,26,22,0.45)]">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
                       <p className="text-xs uppercase tracking-[0.3em] text-secondary">Recibos</p>
                       <h3 className="mt-2 text-xl font-semibold">Espacio para los tres comprobantes</h3>
                     </div>
@@ -759,6 +974,18 @@ export default function SeguimientoPage() {
                     <div className="mt-5 grid gap-4 lg:grid-cols-3">
                       {installments.map((item, index) => {
                         const payment = currentProject.pagos[item.key];
+                        const fallbackReceipt = receiptFilesByKey[item.key];
+                        const effectiveReceiptSrc =
+                          typeof payment.receiptImage === "string" && payment.receiptImage.trim().length > 0
+                            ? payment.receiptImage
+                            : fallbackReceipt?.src;
+                        const effectiveReceiptLabel =
+                          typeof payment.receiptLabel === "string" && payment.receiptLabel.trim().length > 0
+                            ? payment.receiptLabel
+                            : fallbackReceipt?.name ?? "Ver Recibo";
+                        const isImageReceipt =
+                          Boolean(effectiveReceiptSrc) &&
+                          ((typeof payment.receiptImage === "string" && payment.receiptImage.trim().length > 0) || fallbackReceipt?.type === "jpg");
                         return (
                           <div
                             key={item.key}
@@ -775,17 +1002,23 @@ export default function SeguimientoPage() {
                             <p className="mt-2 text-sm font-semibold text-primary">{formatPayment(payment)}</p>
                             <div className="mt-4 rounded-3xl border border-dashed border-primary/15 bg-white px-4 py-4">
                               <div className="flex min-h-32 items-center justify-center rounded-2xl bg-primary/[0.02] text-center text-xs text-secondary">
-                                {typeof payment.receiptImage === "string" && payment.receiptImage.trim().length > 0 ? (
+                                {typeof effectiveReceiptSrc === "string" && effectiveReceiptSrc.trim().length > 0 ? (
                                   <button
                                     type="button"
                                     className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-2xl text-primary transition hover:text-accent"
-                                    onClick={() => setSelectedImage({ name: `Recibo ${index + 1}`, src: payment.receiptImage || "" })}
+                                    onClick={() => {
+                                      if (isImageReceipt) {
+                                        setSelectedImage({ name: `Recibo ${index + 1}`, src: effectiveReceiptSrc || "" });
+                                        return;
+                                      }
+                                      window.open(effectiveReceiptSrc, "_blank", "noopener,noreferrer");
+                                    }}
                                   >
                                     <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-secondary">
                                       Recibo {index + 1}
                                     </span>
                                     <span className="text-sm font-semibold">Ver comprobante</span>
-                                    <span className="text-[10px] text-secondary">{payment.receiptLabel ?? "Ver Recibo"}</span>
+                                    <span className="text-[10px] text-secondary">{effectiveReceiptLabel}</span>
                                   </button>
                                 ) : (
                                   <div className="space-y-2">

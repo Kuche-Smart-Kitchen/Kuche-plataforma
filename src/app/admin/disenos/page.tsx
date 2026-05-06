@@ -195,7 +195,6 @@ export default function DisenosPage() {
     setIsLoading(true);
     setError(null);
     const loadedTasks = await refresh();
-    console.log("[DisenosPage] refresh() tasks:", loadedTasks);
     setAllTasks(loadedTasks);
     const designTasks = loadedTasks.filter((task) => task.stage === "disenos");
     const hydratedDesignTasks = await Promise.all(
@@ -224,10 +223,8 @@ export default function DisenosPage() {
         }
       }),
     );
-    console.log("[DisenosPage] tareas filtradas etapa disenos:", designTasks);
     setTasksById(Object.fromEntries(hydratedDesignTasks.map((task) => [task.id, task])));
     const mappedProjects = hydratedDesignTasks.map(taskToProject);
-    console.log("[DisenosPage] projects mapeados:", mappedProjects);
     setProjects(mappedProjects);
     setIsLoading(false);
   }, [refresh]);
@@ -254,12 +251,6 @@ export default function DisenosPage() {
 
     void loadEmployees();
   }, []);
-
-  useEffect(() => {
-    if (!showFullInfo) return;
-    console.log("[DisenosPage] allTasks (informacion completa):", allTasks);
-    console.log("[DisenosPage] projects (informacion completa):", projects);
-  }, [showFullInfo, allTasks, projects]);
 
   useEscapeClose(Boolean(activePreview), () => {
     setActivePreview(null);
@@ -343,13 +334,6 @@ export default function DisenosPage() {
     if (!task) return false;
     setSavingTaskId(taskId);
     try {
-      console.log("[DisenosPage] persistTask intento:", {
-        taskId,
-        backendSource: task.backendSource,
-        sourceId: task.sourceId,
-        updates,
-        taskAntes: task,
-      });
       await updateTask(task, {
         notes: updates.notes ?? task.notes ?? "",
         designApprovedByAdmin: updates.designApprovedByAdmin ?? task.designApprovedByAdmin ?? false,
@@ -357,7 +341,6 @@ export default function DisenosPage() {
         assignedToIds: updates.assignedToIds ?? task.assignedToIds ?? [],
         assignedTo: updates.assignedTo ?? task.assignedTo ?? ["Sin asignar"],
       });
-      console.log("[DisenosPage] persistTask ok:", { taskId, updates });
       await loadProjects();
       setActiveFeedbackId(null);
       if (options?.successMessage) {
@@ -365,11 +348,6 @@ export default function DisenosPage() {
       }
       return true;
     } catch (currentError) {
-      console.error("[DisenosPage] persistTask error:", {
-        taskId,
-        updates,
-        error: currentError,
-      });
       const errorMsg = currentError instanceof Error ? currentError.message : "No se pudo actualizar el diseño";
       setError(errorMsg);
       if (options?.errorMessage) {
@@ -382,7 +360,6 @@ export default function DisenosPage() {
   };
 
   const handleApprove = async (taskId: string) => {
-    console.log("[DisenosPage] click Aprobar:", { taskId });
     const success = await persistTask(
       taskId,
       {

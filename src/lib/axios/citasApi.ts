@@ -5,6 +5,8 @@
 
 import axiosInstance, { ApiResponse } from './axiosConfig';
 
+let allCitasRequest: Promise<ApiResponse<Cita[]>> | null = null;
+
 // Tipos de datos para Citas
 export interface ClienteCita {
   nombre: string;
@@ -216,27 +218,37 @@ export const crearCita = async (
  * Obtener todas las citas (Admin)
  */
 export const obtenerTodasLasCitas = async (): Promise<ApiResponse<Cita[]>> => {
-  try {
-    const response = await axiosInstance.get('/api/citas/getAllCitas');
-    
-    // Si la respuesta es directamente un array (respuesta del backend)
-    if (Array.isArray(response.data)) {
-      return {
-        success: true,
-        data: response.data
-      };
-    }
-    
-    // Si ya viene con el formato ApiResponse
-    return response.data;
-  } catch (error) {
-    console.error('Error en obtenerTodasLasCitas:', error);
-    return {
-      success: false,
-      message: 'Error al obtener las citas',
-      error: error instanceof Error ? error.message : 'Error desconocido'
-    };
+  if (allCitasRequest) {
+    return allCitasRequest;
   }
+
+  allCitasRequest = (async () => {
+    try {
+      const response = await axiosInstance.get('/api/citas/getAllCitas');
+
+      // Si la respuesta es directamente un array (respuesta del backend)
+      if (Array.isArray(response.data)) {
+        return {
+          success: true,
+          data: response.data,
+        };
+      }
+
+      // Si ya viene con el formato ApiResponse
+      return response.data;
+    } catch (error) {
+      console.error('Error en obtenerTodasLasCitas:', error);
+      return {
+        success: false,
+        message: 'Error al obtener las citas',
+        error: error instanceof Error ? error.message : 'Error desconocido',
+      };
+    } finally {
+      allCitasRequest = null;
+    }
+  })();
+
+  return allCitasRequest;
 };
 
 /**

@@ -1,16 +1,8 @@
-/**
- * API de Archivos del Cliente
- * Endpoints para gestión centralizada de ClienteArchivo (modelo separado)
- * 
- * Backend URL: http://localhost:3001/api/archivos
- * Estado: ✅ Implementado (2026-04-06 backend update)
- */
+
 
 import axiosInstance, { ApiResponse } from './axiosConfig';
 
-/* ========================================================================
-   TYPES & INTERFACES
-   ======================================================================== */
+
 
 export interface ClienteArchivo {
   _id: string;
