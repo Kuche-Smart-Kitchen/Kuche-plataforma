@@ -209,5 +209,25 @@ export function normalizeLevantamientoConfig(raw: Partial<LevantamientoConfig> |
         : base.materiales,
     ivaPercent: parseFlexiblePercentInput(raw.ivaPercent ?? base.ivaPercent),
     marginPercent: parseFlexiblePercentInput(raw.marginPercent ?? base.marginPercent),
+    extrasPrecios:
+      typeof raw.extrasPrecios === "object" && raw.extrasPrecios
+        ? {
+            iluminacion: typeof raw.extrasPrecios?.iluminacion === "object"
+              ? raw.extrasPrecios.iluminacion
+              : base.extrasPrecios!.iluminacion,
+            accesoriosEspeciales:
+              typeof raw.extrasPrecios?.accesoriosEspeciales === "object"
+                ? raw.extrasPrecios.accesoriosEspeciales
+                : base.extrasPrecios!.accesoriosEspeciales,
+          }
+        : base.extrasPrecios,
+    extrasIluminacionCantidades:
+      typeof raw.extrasIluminacionCantidades === "object" && raw.extrasIluminacionCantidades
+        ? raw.extrasIluminacionCantidades
+        : base.extrasIluminacionCantidades,
+    factorHastaTecho:
+      typeof raw.factorHastaTecho === "number" && Number.isFinite(raw.factorHastaTecho)
+        ? Math.min(1, Math.max(0, raw.factorHastaTecho))
+        : base.factorHastaTecho,
   };
 }
