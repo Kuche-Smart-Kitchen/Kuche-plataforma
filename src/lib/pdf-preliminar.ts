@@ -404,8 +404,8 @@ function addFichaTecnica(doc: jsPDF, data: PreliminarData, lev: LevantamientoDet
   doc.text("Medidas generales", marginX, y);
   y += 16;
 
-  const largoRaw = (lev?.largo ?? data.largo ?? "").trim();
-  const altoRaw = (lev?.alto ?? data.alto ?? "").trim();
+  const largoRaw = String(lev?.largo ?? data.largo ?? "").trim();
+  const altoRaw = String(lev?.alto ?? data.alto ?? "").trim();
   const largoTxt = largoRaw || "—";
   const altoTxt = altoRaw || "—";
   setText(doc, TEXT_DARK, 9, "normal");
