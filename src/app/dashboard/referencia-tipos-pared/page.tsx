@@ -10,9 +10,10 @@ export default function ReferenciaTiposParedPage() {
           <p className="text-xs uppercase tracking-[0.3em] text-secondary">Levantamiento</p>
           <h1 className="mt-2 text-3xl font-semibold">Referencias visuales · Tipos de pared</h1>
           <p className="mt-3 max-w-2xl text-sm text-secondary">
-            Iconos 2D SVG compartidos con el levantamiento detallado: mismo <span className="font-medium text-primary">viewBox</span>{" "}
-            y geometría que las cotas (A, B, C…). Cada tipo pide un juego distinto de medidas en metros (ver listado
-            por tarjeta).
+            Aquí ves los mismos dibujos de referencia que en el levantamiento detallado: sirven para saber{" "}
+            <span className="font-medium text-primary">qué medir</span> y cómo se etiquetan las cotas en el croquis (A,
+            B, C…). Cada tipo de pared pide un conjunto distinto de medidas en{" "}
+            <span className="font-medium text-primary">metros</span>; el listado exacto va en cada tarjeta de abajo.
           </p>
           <Link
             href="/dashboard/Levantamiento-detallado"

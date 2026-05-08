@@ -2317,14 +2317,12 @@ export default function CotizadorPreliminarPage() {
                 Sección C · Electrodomésticos
               </p>
               <p className="mt-2 text-sm text-secondary">
-                Pósters grandes (2:3); el nombre va en la parte baja de la foto. Clic abre el detalle en la página.
-                Indica si el ítem entra al PDF; las medidas en metros son útiles pero opcionales. El carrusel muestra
-                primero <span className="font-medium text-primary/90">refrigeración</span>, luego{" "}
-                <span className="font-medium text-primary/90">estufas</span> y{" "}
-                <span className="font-medium text-primary/90">tarjas</span>; después{" "}
-                <span className="font-medium text-primary/90">microondas</span>,{" "}
-                <span className="font-medium text-primary/90">parrillas</span>,{" "}
-                <span className="font-medium text-primary/90">campanas</span> y la fila{" "}
+                Cada electrodoméstico muestra una{" "}
+                <span className="font-medium text-primary/90">foto grande en vertical</span> con el nombre abajo.
+                Pulsa la foto para ver la ficha. Marca si ese equipo debe{" "}
+                <span className="font-medium text-primary/90">salir en el PDF</span> del levantamiento; las medidas en
+                metros son opcionales pero ayudan mucho. El catálogo va en este orden: refrigeradores; estufas y tarjas;
+                microondas, parrillas y campanas; y al final{" "}
                 <span className="font-medium text-primary/90">Otros</span> (cafetera, lavavajillas, freidora de aire,
                 horno de gas, tostadora, dispensador de agua, enfriador de vinos, tarja extra).
               </p>
