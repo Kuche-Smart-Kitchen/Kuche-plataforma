@@ -8,17 +8,18 @@ import type { KanbanTask } from "@/lib/kanban";
 export const KANBAN_PIPELINE_STAGES = ["citas", "disenos", "cotizacion", "contrato"] as const;
 
 /**
- * Cliente “confirmado” en sentido comercial: tarjeta en seguimiento (≥ contrato) y follow-up confirmado.
- * Si en el futuro hay etapas posteriores a `contrato`, siguen contando como confirmado.
+ * Portal `/seguimiento` completo cuando:
+ * - Se pulsó «Confirmar cliente» en cualquier etapa del tablero, o
+ * - La tarjeta ya está en columna Seguimiento (`contrato`) y no está descartada.
+ *
+ * Descartado en Seguimiento → vista limitada (prospecto).
  */
 export function isClienteConfirmadoSegunKanban(stage: unknown, followUpStatus: unknown): boolean {
-  if (followUpStatus !== "confirmado") return false;
+  if (followUpStatus === "confirmado") return true;
+
   const s = typeof stage === "string" ? stage : "";
-  const order = KANBAN_PIPELINE_STAGES as readonly string[];
-  const idx = order.indexOf(s);
-  const contratoIdx = order.indexOf("contrato");
-  if (contratoIdx < 0) return false;
-  if (idx >= contratoIdx) return true;
+  if (s === "contrato" && followUpStatus !== "descartado") return true;
+
   return false;
 }
 

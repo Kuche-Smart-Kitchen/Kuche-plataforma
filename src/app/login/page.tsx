@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -12,13 +12,6 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
-
-  const helperText = useMemo(() => {
-    if (status === "error") {
-      return "Credenciales inválidas. Usa admin o empleado.";
-    }
-    return "Acceso interno Küche. Simulado para demo.";
-  }, [status]);
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -85,7 +78,11 @@ export default function LoginPage() {
                 Volver al sitio web (inicio)
               </Link>
               <h2 className="text-2xl font-semibold">Inicia sesión</h2>
-              <p className="mt-2 text-sm text-secondary">{helperText}</p>
+              {status === "error" ? (
+                <p className="mt-2 text-sm text-secondary">
+                  Credenciales inválidas. Usa admin o empleado.
+                </p>
+              ) : null}
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">

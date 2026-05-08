@@ -1132,33 +1132,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                                 </button>
                               ) : null}
 
-                              {/* SEGUIMIENTO: Confirmar/Descartar cliente */}
-                              {task.stage === "contrato" && task.followUpStatus === "pendiente" ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      confirmFollowUp(task.id);
-                                    }}
-                                    className="inline-flex w-auto items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
-                                  >
-                                    <CheckCircle2 className="h-3 w-3" />
-                                    Confirmar
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      discardFollowUp(task.id);
-                                    }}
-                                    className="inline-flex w-auto items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100"
-                                  >
-                                    <XCircle className="h-3 w-3" />
-                                    Descartar
-                                  </button>
-                                </>
-                              ) : null}
+                              {/* Confirmar/Descartar solo en el panel lateral al hacer clic en la tarjeta */}
                               {task.stage === "contrato" && task.followUpStatus === "confirmado" ? (
                                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-semibold text-emerald-700">
                                   <CheckCircle2 className="h-3 w-3" />
