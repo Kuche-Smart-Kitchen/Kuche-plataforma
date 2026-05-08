@@ -295,7 +295,9 @@ export default function PreciosPage() {
           <div className="min-w-0">
             <p className="text-xs font-semibold text-gray-800">Actualización de costos base (piezas)</p>
             <p className="mt-0.5 text-[11px] leading-snug text-gray-500">
-              El rango del PDF de levantamiento usa otra pantalla (escenarios, IVA y catálogo de materiales); no es esta tabla.
+              Esta tabla es solo los precios base de materiales del cotizador. Para el PDF de levantamiento
+              (escenarios por superficie, IVA y materiales que aparecen en ese PDF), usa el botón{' '}
+              <span className="font-medium text-gray-600">Configuración levantamiento</span>.
             </p>
           </div>
           <Link

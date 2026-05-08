@@ -23,3 +23,58 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/*
+ * Cursor consistente en toda la app: manita en controles clicables habilitados;
+ * prohibido en deshabilitados. Las utilidades Tailwind (p. ej. cursor-default en overlays)
+ * siguen pudiendo sobrescribir cuando lo marques en className.
+ */
+@layer base {
+  button:not(:disabled):not([aria-disabled="true"]),
+  [role="button"]:not(:disabled):not([aria-disabled="true"]),
+  [role="menuitem"]:not([aria-disabled="true"]),
+  [role="tab"]:not([aria-disabled="true"]),
+  [role="switch"]:not([aria-disabled="true"]),
+  [role="option"]:not([aria-disabled="true"]),
+  [role="link"]:not([aria-disabled="true"]),
+  input[type="submit"]:not(:disabled),
+  input[type="button"]:not(:disabled),
+  input[type="reset"]:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  input[type="file"]:not(:disabled),
+  input[type="range"]:not(:disabled),
+  input[type="color"]:not(:disabled),
+  input[type="image"]:not(:disabled),
+  select:not(:disabled),
+  summary {
+    cursor: pointer;
+  }
+
+  a:any-link {
+    cursor: pointer;
+  }
+
+  label:not(:has(input:disabled)):not(:has(select:disabled)):not(:has(textarea:disabled)) {
+    cursor: pointer;
+  }
+
+  label:has(input:disabled),
+  label:has(select:disabled),
+  label:has(textarea:disabled) {
+    cursor: not-allowed;
+  }
+
+  button:disabled,
+  button[aria-disabled="true"],
+  [role="button"][aria-disabled="true"],
+  [role="menuitem"][aria-disabled="true"],
+  [role="tab"][aria-disabled="true"],
+  [role="option"][aria-disabled="true"],
+  [role="link"][aria-disabled="true"],
+  input:disabled,
+  select:disabled,
+  textarea:disabled {
+    cursor: not-allowed;
+  }
+}

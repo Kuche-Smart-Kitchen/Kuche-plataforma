@@ -420,28 +420,31 @@ export default function EmpleadoDashboard() {
       ) : null}
 
       {isNewTaskModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4 py-8">
           <motion.div
             ref={newTaskModalRef}
             tabIndex={-1}
             initial={{ y: 40, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            className="w-full max-w-lg rounded-3xl border border-white/70 bg-white p-6 shadow-2xl"
+            className="flex max-h-[min(90dvh,calc(100dvh-2rem))] w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-white/70 bg-white shadow-2xl"
           >
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Nueva tarea</h3>
-              <button
-                type="button"
-                onClick={() => setIsNewTaskModalOpen(false)}
-                className="rounded-full border border-primary/10 px-3 py-1 text-xs font-semibold text-secondary"
-              >
-                Cerrar
-              </button>
+            <div className="shrink-0 border-b border-primary/5 px-6 pb-4 pt-6">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-lg font-semibold text-gray-900">Nueva tarea</h3>
+                <button
+                  type="button"
+                  onClick={() => setIsNewTaskModalOpen(false)}
+                  className="shrink-0 rounded-full border border-primary/10 px-3 py-1 text-xs font-semibold text-secondary"
+                >
+                  Cerrar
+                </button>
+              </div>
+              <p className="mt-2 text-sm text-secondary">
+                La tarea será asignada automáticamente a ti ({CURRENT_USER}).
+              </p>
             </div>
-            <p className="mt-2 text-sm text-secondary">
-              La tarea será asignada automáticamente a ti ({CURRENT_USER}).
-            </p>
-            <div className="mt-4 space-y-4">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
+            <div className="space-y-4">
               <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
                 Proyecto / Cliente
                 <input
@@ -514,21 +517,24 @@ export default function EmpleadoDashboard() {
                 {taskError}
               </p>
             ) : null}
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setIsNewTaskModalOpen(false)}
-                className="rounded-2xl border border-primary/10 bg-white px-5 py-2 text-xs font-semibold text-secondary"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleCreateTask}
-                className="rounded-2xl bg-primary px-5 py-2 text-xs font-semibold text-white"
-              >
-                Crear tarea
-              </button>
+            </div>
+            <div className="shrink-0 border-t border-primary/10 bg-white px-6 py-4">
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsNewTaskModalOpen(false)}
+                  className="rounded-2xl border border-primary/10 bg-white px-5 py-2 text-xs font-semibold text-secondary"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateTask}
+                  className="rounded-2xl bg-primary px-5 py-2 text-xs font-semibold text-white"
+                >
+                  Crear tarea
+                </button>
+              </div>
             </div>
           </motion.div>
         </div>

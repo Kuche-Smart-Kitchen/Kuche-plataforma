@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, User, X } from "lucide-react";
-import { kanbanStorageKey, stageStyles, type KanbanTask } from "@/lib/kanban";
+import { getTaskCardSubtitle, kanbanStorageKey, stageStyles, type KanbanTask } from "@/lib/kanban";
 import { ClientDocuments } from "@/components/admin/ClientDocuments";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
@@ -52,8 +52,7 @@ export default function AdminClientesEnProcesoPage() {
   const columnCount = useClientCardColumns(3);
   const taskColumns = useMemo(() => {
     if (inProgress.length === 0) return [];
-    const n = Math.min(columnCount, inProgress.length);
-    return splitIntoColumns(inProgress, n);
+    return splitIntoColumns(inProgress, columnCount);
   }, [inProgress, columnCount]);
 
   useEffect(() => {
@@ -125,7 +124,9 @@ export default function AdminClientesEnProcesoPage() {
             <div className="flex flex-col gap-4 md:flex-row md:items-start">
               {taskColumns.map((col, colIdx) => (
                 <div key={colIdx} className="flex min-w-0 flex-1 flex-col gap-4">
-                  {col.map((task) => (
+                  {col.map((task) => {
+                    const cardSubtitle = getTaskCardSubtitle(task);
+                    return (
                     <div
                       key={task.id}
                       className={`min-w-0 rounded-2xl border border-primary/10 bg-white p-5 shadow-sm transition hover:shadow-md border-l-4 ${stageStyles[task.stage].border}`}
@@ -138,7 +139,9 @@ export default function AdminClientesEnProcesoPage() {
                           <div className="min-w-0">
                             <p className="text-[10px] font-semibold uppercase tracking-wide text-secondary">Proyecto</p>
                             <h3 className="break-words text-base font-semibold text-gray-900">{task.project}</h3>
-                            <p className="mt-0.5 text-sm text-secondary">{task.title}</p>
+                            {cardSubtitle ? (
+                              <p className="mt-0.5 text-sm text-secondary">{cardSubtitle}</p>
+                            ) : null}
                             {task.codigoProyecto ? (
                               <p className="mt-2 break-all text-[11px] text-secondary">
                                 Código:{" "}
@@ -167,7 +170,8 @@ export default function AdminClientesEnProcesoPage() {
                         Abrir expediente
                       </button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ))}
             </div>
@@ -219,7 +223,10 @@ export default function AdminClientesEnProcesoPage() {
                     Expediente
                   </p>
                   <p className="mt-1 break-words text-sm font-medium text-primary">{selectedClient.project}</p>
-                  <p className="text-xs text-secondary">{selectedClient.title}</p>
+                  {(() => {
+                    const subtitle = getTaskCardSubtitle(selectedClient);
+                    return subtitle ? <p className="text-xs text-secondary">{subtitle}</p> : null;
+                  })()}
                   {selectedClient.codigoProyecto ? (
                     <p className="mt-2 break-all text-[11px] text-secondary">
                       Código:{" "}

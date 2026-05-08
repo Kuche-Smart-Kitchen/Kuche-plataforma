@@ -29,11 +29,10 @@ export default function Hero() {
             Küche · Diseño de Cocinas Inteligentes
           </p>
           <h1 className="mt-5 text-4xl font-semibold text-white md:text-6xl">
-            Diseño inteligente y humano
+            Ingeniería de precisión para el alma de tu hogar.
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-white/80 md:text-lg">
-            Cocinas a medida con precisión CNC y detalles artesanales para
-            espacios que se viven todos los días.
+            Fabricamos espacios con exactitud digital para que tú solo te preocupes por disfrutarlos. La combinación ideal entre innovación técnica y el confort que tu día a día necesita.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link

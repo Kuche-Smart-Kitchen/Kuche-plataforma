@@ -12,49 +12,49 @@ const partnerLogos = [
     name: "Arauco",
     src: "/images/aliados/Arauco.png",
     description:
-      "Madera y tableros de alto estándar para mobiliario y arquitectura, con cadenas de abastecimiento sostenible y un amplio catálogo de soluciones para cocinas y espacios residenciales.",
+      "Fabricante líder de tableros y paneles de madera de alto estándar. Su enfoque en la sostenibilidad y la innovación proporciona los cimientos perfectos para la arquitectura interior y el mobiliario de alta gama.",
   },
   {
-    name: "Bloom",
-    src: "/images/aliados/bloom.png",
+    name: "Blum",
+    src: "/images/aliados/blum.jpg",
     description:
-      "Soluciones de componentes y sistemas que elevan el confort, la estética y el rendimiento de los detalles en cocina y equipamiento a medida.",
+      "Ingeniería austriaca de excelencia en herrajes. Sus sistemas de bisagras, compases abatibles y guías para cajones garantizan un movimiento perfecto, elevando el confort y la ergonomía de cada cocina.",
   },
   {
     name: "Arcadia",
     src: "/images/aliados/Arcadia.png",
     description:
-      "Proveedor alineado con proyectos que buscan un equilibrio entre funcionalidad, calidad de acabado y acompañamiento en especificación técnica.",
+      "Especialistas con más de 30 años en el mercado ofreciendo tableros melamínicos, enchapados naturales y recubrimientos arquitectónicos de alta tecnología, aportando textura y vanguardia a cada diseño.",
   },
   {
     name: "Navetta",
     src: "/images/aliados/navetta.png",
     description:
-      "Aliado con enfoque en desempeño y afinidad con procesos de fabricación y montaje, apoyando la continuidad de estándar en cocinas Kuche.",
+      "Marca destacada en tableros de MDF melamínicos con diseños contemporáneos. Sus texturas realistas y su resistencia estructural aseguran un desempeño impecable en el uso diario de la cocina.",
   },
   {
     name: "Madelam",
     src: "/images/aliados/Mademel.png",
     description:
-      "Canales y referencias de material que fortalecen la oferta de frentes, texturas o sistemas vinculados a la madera y sus aplicaciones en cocina.",
+      "Creadores de tableros recubiertos de vanguardia. Sus acabados premium, como el alto brillo UV y el súper mate (Soft Touch), ofrecen superficies sofisticadas, anti-rayaduras y de estética impecable.",
   },
   {
     name: "Rehau",
     src: "/images/aliados/rehau.png",
     description:
-      "Rehau aporta componentes técnicos y perfiles con ingeniería europea, reconocida en impermeabilidad, estanqueidad y larga vida en uso.",
+      "Ingeniería alemana aplicada a superficies poliméricas y cubrecantos de precisión. Sus soluciones garantizan estética continua, impermeabilidad y una larga vida útil en los bordes y detalles más exigentes.",
   },
   {
-    name: "Cubrica",
+    name: "Cúbrica",
     src: "/images/aliados/cubrica.png",
     description:
-      "Integración con soluciones de almacenaje, cajonaje o canceles -segun su linea asociada- que suman versatilidad a los proyectos de cocina a medida.",
+      "Expertos en tableros melamínicos sobre sustrato MDF de alta densidad. Destacan por sus tecnologías anti-huella y resistencia a la humedad, logrando frentes de cocina modernos, funcionales y altamente duraderos.",
   },
   {
     name: "Hettich",
     src: "/images/aliados/hettich.svg",
     description:
-      "Hettich: herrajes, correderas, bisagras y sistemas de cajonaje de origen aleman, con tecnologia fiable, amplia gama y respaldo global en el mueble.",
+      "Referente global en herrajes de origen alemán. Su tecnología fiable e innovadora en sistemas de cajonaje y organización interior asegura que el diseño y la funcionalidad trabajen en perfecta armonía.",
   },
 ];
 

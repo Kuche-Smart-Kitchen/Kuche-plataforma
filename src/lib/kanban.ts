@@ -107,6 +107,18 @@ export type KanbanTask = {
   projectTypeSummary?: string;
 };
 
+/**
+ * Segunda línea opcional en tarjetas administrativas: `title` a veces repite `project`
+ * (mismo nombre del cliente). Si son equivalentes tras normalizar mayúsculas/espacios, no se muestra.
+ */
+export function getTaskCardSubtitle(task: Pick<KanbanTask, "project" | "title">): string | null {
+  const trimmedTitle = task.title.trim();
+  if (!trimmedTitle) return null;
+  const trimmedProject = task.project.trim();
+  if (trimmedTitle.toLowerCase() === trimmedProject.toLowerCase()) return null;
+  return trimmedTitle;
+}
+
 /** Lista efectiva de cotizaciones preliminares (array nuevo o migrado desde preliminarData). */
 export function getPreliminarList(task: KanbanTask): PreliminarData[] {
   if (task.preliminarCotizaciones && task.preliminarCotizaciones.length > 0) {

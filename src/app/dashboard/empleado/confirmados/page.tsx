@@ -79,8 +79,7 @@ export default function EmpleadoConfirmadosPage() {
   const columnCount = useClientCardColumns(3);
   const clientColumns = useMemo(() => {
     if (clients.length === 0) return [];
-    const n = Math.min(columnCount, clients.length);
-    return splitIntoColumns(clients, n);
+    return splitIntoColumns(clients, columnCount);
   }, [clients, columnCount]);
 
   useEffect(() => {

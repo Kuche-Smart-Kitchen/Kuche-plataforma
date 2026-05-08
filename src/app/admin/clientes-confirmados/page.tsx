@@ -18,6 +18,7 @@ import {
   saveKanbanTasksToLocalStorage,
   deriveProjectTypesLabel,
   getAggregatedDeliveryWeeksFromTask,
+  getTaskCardSubtitle,
   type KanbanTask,
 } from "@/lib/kanban";
 import { ConfirmedClientContractFields } from "@/components/admin/ConfirmedClientContractFields";
@@ -72,8 +73,7 @@ export default function ClientesConfirmadosPage() {
   const columnCount = useClientCardColumns(3);
   const clientColumns = useMemo(() => {
     if (clients.length === 0) return [];
-    const n = Math.min(columnCount, clients.length);
-    return splitIntoColumns(clients, n);
+    return splitIntoColumns(clients, columnCount);
   }, [clients, columnCount]);
 
   useEffect(() => {
@@ -175,6 +175,7 @@ export default function ClientesConfirmadosPage() {
                   {col.map((client) => {
                     const projectTypesLabel = deriveProjectTypesLabel(client).trim();
                     const deliverySummary = getCardDeliverySummary(client);
+                    const cardSubtitle = getTaskCardSubtitle(client);
                     return (
                     <div
                       key={client.id}
@@ -188,7 +189,9 @@ export default function ClientesConfirmadosPage() {
                           <div className="min-w-0">
                             <p className="text-[10px] font-semibold uppercase tracking-wide text-secondary">Proyecto</p>
                             <h3 className="break-words text-base font-semibold text-gray-900">{client.project}</h3>
-                            <p className="mt-0.5 text-sm text-secondary">{client.title}</p>
+                            {cardSubtitle ? (
+                              <p className="mt-0.5 text-sm text-secondary">{cardSubtitle}</p>
+                            ) : null}
                             {client.codigoProyecto ? (
                               <p className="mt-2 break-all text-[11px] text-secondary">
                                 Código:{" "}
@@ -305,7 +308,10 @@ export default function ClientesConfirmadosPage() {
                     Expediente
                   </p>
                   <p className="mt-1 break-words text-sm font-medium text-primary">{selectedClient.project}</p>
-                  <p className="text-xs text-secondary">{selectedClient.title}</p>
+                  {(() => {
+                    const subtitle = getTaskCardSubtitle(selectedClient);
+                    return subtitle ? <p className="text-xs text-secondary">{subtitle}</p> : null;
+                  })()}
                   {selectedClient.codigoProyecto ? (
                     <p className="mt-2 break-all text-[11px] text-secondary">
                       Código: <span className="font-semibold text-primary">{selectedClient.codigoProyecto}</span>

@@ -17,7 +17,7 @@ export default function Footer() {
           <div className="space-y-3">
             <div className="text-lg font-semibold tracking-[0.35em]">Küche</div>
             <p className="text-sm text-gray-400">
-              Fusión de arquitectura y robótica
+              Küche · Donde la calidez del hogar se encuentra con la precisión del futuro.
             </p>
           </div>
 

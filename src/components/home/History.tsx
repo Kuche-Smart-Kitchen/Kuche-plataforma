@@ -9,20 +9,16 @@ export default function History() {
       <div className="mx-auto grid max-w-6xl gap-12 px-6 md:grid-cols-2 md:items-center">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-secondary">
-            Nuestra historia
+            Nuestra esencia
           </p>
           <h2 className="mt-4 text-3xl font-semibold text-primary md:text-4xl">
-            Nacimos con una obsesión
+            La unión perfecta entre técnica y sensibilidad.
           </h2>
           <p className="mt-4 text-base leading-relaxed text-secondary">
-            En Küche no somos una carpintería tradicional. Somos un laboratorio
-            de diseño que combina arquitectura, ingeniería y tecnología CNC para
-            crear cocinas y espacios que dialogan con tu estilo de vida.
+            En Küche, creemos que la tecnología solo tiene sentido cuando mejora tu forma de vivir. Nacimos para llevar el diseño de interiores a una nueva era, sustituyendo la carpintería convencional por un proceso de fabricación digital que garantiza una perfección imposible de lograr a mano.
           </p>
           <p className="mt-4 text-base leading-relaxed text-secondary">
-            Creemos en la precisión, la calidez de los materiales y en procesos
-            colaborativos que hacen que cada proyecto se sienta único desde el
-            primer boceto.
+            Pero detrás de cada máquina hay una visión humana: crear espacios acogedores, ergonómicos y bellos. Nuestra meta es que tu cocina no sea solo un logro de la ingeniería, sino el escenario donde tu familia se siente realmente en casa.
           </p>
         </div>
         <div className="relative">

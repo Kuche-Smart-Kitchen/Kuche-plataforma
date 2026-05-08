@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 /**
  * Número de columnas para tarjetas de clientes, alineado con Tailwind (md: 768px, lg: 1024px).
  * - maxColumns 3: 1 / 2 (md) / 3 (lg) — usado en admin confirmados, inactivos, en proceso.
+ *   Al partir tarjetas, usar siempre este número de columnas (no min con la cantidad de ítems),
+ *   para que una sola tarjeta conserve el mismo ancho que en vistas con más tarjetas.
  * - maxColumns 2: 1 / 2 (md+) — usado en dashboard clientes en proceso.
  */
 export function useClientCardColumns(maxColumns: 2 | 3 = 3): number {

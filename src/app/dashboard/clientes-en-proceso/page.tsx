@@ -68,8 +68,7 @@ export default function ClientesEnProcesoPage() {
   const columnCount = useClientCardColumns(2);
   const taskColumns = useMemo(() => {
     if (inProgress.length === 0) return [];
-    const n = Math.min(columnCount, inProgress.length);
-    return splitIntoColumns(inProgress, n);
+    return splitIntoColumns(inProgress, columnCount);
   }, [inProgress, columnCount]);
 
   if (!isHydrated) {

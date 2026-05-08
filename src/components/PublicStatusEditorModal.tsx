@@ -659,8 +659,7 @@ export function PublicStatusEditorModal({
                 Añadir a la lista
               </button>
               <p className="mt-2 text-[11px] text-gray-500">
-                Puedes solo poner un nombre y añadir (enlace simbólico) o elegir un archivo para que el
-                cliente pueda abrirlo en /seguimiento.
+                elige un archivo para que el cliente pueda abrirlo en /seguimiento.
               </p>
 
               <div
@@ -671,8 +670,8 @@ export function PublicStatusEditorModal({
                   Pagos del cliente
                 </p>
                 <p className="mt-2 text-sm text-secondary">
-                  El cliente puede pagar lo que acuerde en cada momento (no hay reparto fijo). Los montos empiezan en
-                  blanco: escribe solo lo que registras. La inversión total viene de la cotización formal arriba.
+                  Los montos empiezan en blanco: escribe solo lo que registras. La inversión total viene de la cotización
+                  formal arriba.
                 </p>
                 <div className="mt-4 space-y-4">
                   {(
