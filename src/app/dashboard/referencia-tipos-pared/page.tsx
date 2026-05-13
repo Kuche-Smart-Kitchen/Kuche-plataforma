@@ -10,12 +10,10 @@ export default function ReferenciaTiposParedPage() {
           <p className="text-xs uppercase tracking-[0.3em] text-secondary">Levantamiento</p>
           <h1 className="mt-2 text-3xl font-semibold">Referencias visuales · Tipos de pared</h1>
           <p className="mt-3 max-w-2xl text-sm text-secondary">
-            Catálogo interno para alinear fotos o diagramas con cada tipo. Coloca en{" "}
-            <code className="rounded bg-primary/5 px-1.5 py-0.5 text-xs">public/images/levantamiento/paredes/</code> un
-            archivo por <span className="font-medium text-primary">id</span> (o el nombre mapeado en catálogo), por
-            ejemplo <code className="rounded bg-primary/5 px-1.5 py-0.5 text-xs">pared-recta.jpg</code>. Si el archivo
-            no existe, el formulario usa la textura de respaldo hasta que subas la imagen definitiva. En el
-            levantamiento detallado, cada tipo pide un juego distinto de medidas en metros (ver listado por tarjeta).
+            Aquí ves los mismos dibujos de referencia que en el levantamiento detallado: sirven para saber{" "}
+            <span className="font-medium text-primary">qué medir</span> y cómo se etiquetan las cotas en el croquis (A,
+            B, C…). Cada tipo de pared pide un conjunto distinto de medidas en{" "}
+            <span className="font-medium text-primary">metros</span>; el listado exacto va en cada tarjeta de abajo.
           </p>
           <Link
             href="/dashboard/Levantamiento-detallado"
