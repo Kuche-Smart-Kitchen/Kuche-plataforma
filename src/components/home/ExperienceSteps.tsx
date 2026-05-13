@@ -31,7 +31,7 @@ const steps: Step[] = [
     title: "Agenda cita",
     description: "Agendamos una visita para conocer tu espacio y estilo.",
     image: {
-      src: "/images/cocina1.jpg",
+      src: "/images/home/experiencia-3d/slide-01-cita-domicilio.jpg",
       alt: "Agenda de cita para diseño de cocina",
     },
     icon: Calendar,
@@ -41,7 +41,7 @@ const steps: Step[] = [
     title: "Diseño y cotización",
     description: "Propuesta de distribución, materiales y presupuesto claro.",
     image: {
-      src: "/images/render1.jpg",
+      src: "/images/home/linea-tiempo-7-pasos/02-diseno-cotizacion.jpg",
       alt: "Diseño y cotización de cocina",
     },
     icon: PencilRuler,
@@ -51,7 +51,7 @@ const steps: Step[] = [
     title: "A tu manera",
     description: "Personalizamos acabados y detalles según tu gusto.",
     image: {
-      src: "/images/cocina2.jpg",
+      src: "/images/home/linea-tiempo-7-pasos/03-personalizacion-cocina.jpg",
       alt: "Diseño personalizado de cocina",
     },
     icon: Boxes,
@@ -62,7 +62,7 @@ const steps: Step[] = [
     title: "Realidad virtual",
     description: "Visualiza tu cocina en VR antes de fabricar.",
     image: {
-      src: "/images/render3.jpg",
+      src: "/images/home/experiencia-3d/slide-03-realidad-virtual.jpg",
       alt: "Recorrido virtual de cocina",
     },
     icon: Boxes,
@@ -73,7 +73,7 @@ const steps: Step[] = [
     title: "Cortes precisos con tecnología",
     description: "Precisión CNC para cada pieza y ensamble perfecto.",
     image: {
-      src: "/images/render4.jpg",
+      src: "/images/home/experiencia-3d/slide-04-cortes-cnc.jpg",
       alt: "Cortes precisos con máquina CNC",
     },
     icon: Cpu,
@@ -84,7 +84,7 @@ const steps: Step[] = [
     title: "Instalación",
     description: "Montaje limpio, rápido y cuidado en tu hogar.",
     image: {
-      src: "/images/cocina5.jpg",
+      src: "/images/home/linea-tiempo-7-pasos/06-instalacion.jpg",
       alt: "Instalación de cocina",
     },
     icon: CheckCircle2,
@@ -94,7 +94,7 @@ const steps: Step[] = [
     title: "Entrega",
     description: "Cierre con revisión final y acompañamiento post-venta.",
     image: {
-      src: "/images/cocina6.jpg",
+      src: "/images/home/linea-tiempo-7-pasos/07-entrega-final.jpg",
       alt: "Entrega final de cocina",
     },
     icon: CheckCircle2,
@@ -252,4 +252,6 @@ export default function ExperienceSteps() {
     </MotionSection>
   );
 }
+
+
 

@@ -1,790 +1,596 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-
-import { useEscapeClose } from "@/hooks/useEscapeClose";
-import { useFocusTrap } from "@/hooks/useFocusTrap";
-import {
-  actualizarCita,
+import { useEffect, useState } from "react";
+import { Plus, Users, Loader2, X, Clock } from "lucide-react";
+import KanbanBoard from "@/components/admin/KanbanBoard";
+import CitaModal from "@/components/admin/CitaModal";
+import { 
+  Cita, 
+  obtenerTodasLasCitas, 
+  asignarIngeniero, 
   actualizarEstadoCita,
-  asignarIngeniero,
   crearCita,
-  eliminarCita,
-  obtenerTodasLasCitas,
-  type Cita,
+  actualizarCita,
+  eliminarCita
 } from "@/lib/axios/citasApi";
-import { listarEmpleados, type Usuario } from "@/lib/axios/usuariosApi";
+import { Usuario, listarEmpleados } from "@/lib/axios/usuariosApi";
 
-type AppointmentType =
-  | "Levantamiento / Medidas"
-  | "Cotización en sitio"
-  | "Presentación de diseño";
-
-type AppointmentStatus = "Pendiente" | "Confirmada";
-
-type Appointment = {
-  id: string;
-  title: string;
-  client: string;
-  clientCode?: string;
-  clientEmail: string;
-  clientPhone: string;
-  location: string;
-  date: string;
-  time: string;
-  type: AppointmentType;
-  assignedTo: string | null;
-  status: AppointmentStatus;
-  backendState: Cita["estado"];
-};
-
-type TeamMember = {
-  id: string;
-  name: string;
-  role: string;
-};
-
-const UNASSIGNED_FILTER = "__unassigned__";
-
-const typeStyles: Record<AppointmentType, string> = {
-  "Levantamiento / Medidas": "bg-sky-100 text-sky-700",
-  "Cotización en sitio": "bg-emerald-100 text-emerald-700",
-  "Presentación de diseño": "bg-purple-100 text-purple-700",
-};
-
-const weekDays = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
-
-const formatMonthLabel = (date: Date) =>
-  date.toLocaleDateString("es-MX", { month: "long", year: "numeric" });
-
-const toDateInput = (date: Date) => date.toISOString().slice(0, 10);
-
-const toDateTimeIso = (date: string, time: string) => {
-  if (!date) return new Date().toISOString();
-  const merged = `${date}T${time || "09:00"}:00`;
-  const parsed = new Date(merged);
-  return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
-};
-
-const toAppointmentType = (cita: Cita): AppointmentType => {
-  const disenoNombre =
-    cita.diseno && typeof cita.diseno === "object" && "nombre" in cita.diseno
-      ? cita.diseno.nombre
-      : "";
-  const source = `${cita.informacionAdicional || ""} ${disenoNombre || ""}`.toLowerCase();
-  if (source.includes("cotiz")) return "Cotización en sitio";
-  if (source.includes("dise")) return "Presentación de diseño";
-  return "Levantamiento / Medidas";
-};
-
-const toAppointmentStatus = (cita: Cita): AppointmentStatus => {
-  if (!cita.ingenieroAsignado) return "Pendiente";
-  return "Confirmada";
-};
-
-const getAssignedId = (cita: Cita) => {
-  if (!cita.ingenieroAsignado) return null;
-  if (typeof cita.ingenieroAsignado === "string") return cita.ingenieroAsignado;
-  return cita.ingenieroAsignado._id;
-};
-
-const citaToAppointment = (cita: Cita): Appointment => {
-  const scheduledDate = new Date(cita.fechaAgendada);
-  const safeDate = Number.isNaN(scheduledDate.getTime()) ? new Date() : scheduledDate;
-
-  return {
-    id: cita._id,
-    title: cita.informacionAdicional || "Levantamiento / Medidas",
-    client: cita.nombreCliente,
-    clientCode:
-      cita.clienteId ||
-      (typeof cita.cliente === "object" && cita.cliente ? cita.cliente.clienteId : undefined),
-    clientEmail: cita.correoCliente,
-    clientPhone: cita.telefonoCliente,
-    location: cita.ubicacion || "",
-    date: toDateInput(safeDate),
-    time: safeDate.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", hour12: false }),
-    type: toAppointmentType(cita),
-    assignedTo: getAssignedId(cita),
-    status: toAppointmentStatus(cita),
-    backendState: cita.estado,
-  };
-};
 
 export default function AgendaPage() {
-  const searchParams = useSearchParams();
-  const selectedDateFromQuery = useMemo(() => {
-    const date = searchParams.get("date");
-    return date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
-  }, [searchParams]);
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
-  const [selectedEmployee, setSelectedEmployee] = useState("Todos");
-  const [currentMonth, setCurrentMonth] = useState(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1);
-  });
-
+  const [citas, setCitas] = useState<Cita[]>([]);
+  const [empleados, setEmpleados] = useState<Usuario[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-
+  const [selectedCita, setSelectedCita] = useState<Cita | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [selectedDateForDayView, setSelectedDateForDayView] = useState<string | null>(selectedDateFromQuery);
-  const [formState, setFormState] = useState<Appointment>({
-    id: "",
-    title: "",
-    client: "",
-    clientEmail: "",
-    clientPhone: "",
-    location: "",
-    date: toDateInput(new Date()),
-    time: "09:00",
-    type: "Levantamiento / Medidas",
-    assignedTo: "",
-    status: "Pendiente",
-    backendState: "programada",
+  const [isCreatingCita, setIsCreatingCita] = useState(false);
+  const [editingCitaId, setEditingCitaId] = useState<string | null>(null);
+  const [formData, setFormData] = useState({
+    nombreCliente: "",
+    correoCliente: "",
+    telefonoCliente: "",
+    ubicacion: "",
+    informacionAdicional: "",
+    fecha: "",
+    hora: "",
   });
-  const modalRef = useRef<HTMLDivElement | null>(null);
-  const dayViewRef = useRef<HTMLDivElement | null>(null);
 
-  useEscapeClose(isModalOpen, () => setIsModalOpen(false));
-  useFocusTrap(isModalOpen, modalRef);
+  // Cargar citas y empleados al montar el componente
+  useEffect(() => {
+    cargarDatos();
+  }, []);
 
-  useEscapeClose(selectedDateForDayView !== null, () => setSelectedDateForDayView(null));
-  useFocusTrap(selectedDateForDayView !== null, dayViewRef);
-
-  const loadData = async () => {
+  const cargarDatos = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const [citasResponse, empleadosResponse] = await Promise.all([obtenerTodasLasCitas(), listarEmpleados()]);
+      // Cargar citas y empleados en paralelo
+      const [citasResponse, empleadosResponse] = await Promise.all([
+        obtenerTodasLasCitas(),
+        listarEmpleados()
+      ]);
 
-      if (!citasResponse.success || !citasResponse.data) {
-        throw new Error(citasResponse.message || "No se pudo cargar la agenda");
+      if (citasResponse.success && citasResponse.data) {
+        setCitas(citasResponse.data);
+      } else {
+        setError(citasResponse.message || "Error al cargar las citas");
       }
-
-      const citas = Array.isArray(citasResponse.data) ? citasResponse.data : [];
-      setAppointments(citas.map(citaToAppointment));
 
       if (empleadosResponse.success && empleadosResponse.data) {
-        setTeamMembers(
-          empleadosResponse.data.map((member: Usuario) => ({
-            id: member._id,
-            name: member.nombre,
-            role: member.rol,
-          })),
-        );
+        setEmpleados(empleadosResponse.data);
       }
-    } catch (currentError) {
-      setError(currentError instanceof Error ? currentError.message : "Error al cargar agenda");
+    } catch (err) {
+      console.error("Error al cargar datos:", err);
+      setError("Error al conectar con el servidor");
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => {
-    void loadData();
-  }, []);
+  const handleCitaClick = (cita: Cita) => {
+    setSelectedCita(cita);
+    setIsModalOpen(true);
+  };
 
-  useEffect(() => {
-    if (selectedDateFromQuery) {
-      setSelectedDateForDayView(selectedDateFromQuery);
+  const handleMoverCita = async (citaId: string, nuevoEstado: 'programada' | 'en_proceso' | 'completada') => {
+    try {
+      const response = await actualizarEstadoCita(citaId, { 
+        estado: nuevoEstado,
+        ...(nuevoEstado === 'completada' ? { fechaTermino: new Date().toISOString() } : {})
+      });
+
+      if (response.success && response.data) {
+        // Actualizar la cita en el estado local
+        setCitas(prevCitas => 
+          prevCitas.map(cita => 
+            cita._id === citaId ? response.data! : cita
+          )
+        );
+      } else {
+        alert(response.message || "Error al actualizar el estado");
+      }
+    } catch (err) {
+      console.error("Error al mover cita:", err);
+      alert("Error al actualizar el estado de la cita");
     }
-  }, [selectedDateFromQuery]);
+  };
 
-  useEffect(() => {
-    if (!isModalOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setIsModalOpen(false);
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isModalOpen]);
+  const handleAsignarIngeniero = async (citaId: string, ingenieroId: string | null) => {
+    try {
+      const response = await asignarIngeniero(citaId, { 
+        ingenieroId: ingenieroId || undefined 
+      });
 
-  const filteredAppointments = useMemo(() => {
-    if (selectedEmployee === "Todos") return appointments;
-    if (selectedEmployee === UNASSIGNED_FILTER) {
-      return appointments.filter((appointment) => !appointment.assignedTo);
+      if (response.success && response.data) {
+        // Actualizar la cita en el estado local
+        const citaActualizada = response.data.cita;
+        setCitas(prevCitas => 
+          prevCitas.map(cita => 
+            cita._id === citaId ? citaActualizada : cita
+          )
+        );
+        
+        // Actualizar la cita seleccionada en el modal
+        if (selectedCita?._id === citaId) {
+          setSelectedCita(citaActualizada);
+        }
+
+        alert(response.data.message || "Ingeniero asignado correctamente");
+      } else {
+        alert(response.message || "Error al asignar ingeniero");
+      }
+    } catch (err) {
+      console.error("Error al asignar ingeniero:", err);
+      alert("Error al asignar el ingeniero");
     }
-    return appointments.filter((appointment) => appointment.assignedTo === selectedEmployee);
-  }, [appointments, selectedEmployee]);
+  };
 
-  const daysInMonth = useMemo(() => {
-    const year = currentMonth.getFullYear();
-    const month = currentMonth.getMonth();
-    const lastDay = new Date(year, month + 1, 0).getDate();
-    return Array.from({ length: lastDay }, (_, index) => new Date(year, month, index + 1));
-  }, [currentMonth]);
+  const handleActualizarEstado = async (citaId: string, nuevoEstado: 'programada' | 'en_proceso' | 'completada' | 'cancelada') => {
+    try {
+      const response = await actualizarEstadoCita(citaId, { 
+        estado: nuevoEstado,
+        ...(nuevoEstado === 'completada' ? { fechaTermino: new Date().toISOString() } : {})
+      });
 
-  const calendarCells = useMemo(() => {
-    const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
-    const startOffset = (firstDay.getDay() + 6) % 7;
-    const totalCells = startOffset + daysInMonth.length;
-    const trailing = (7 - (totalCells % 7)) % 7;
-    return [
-      ...Array.from({ length: startOffset }, () => null),
-      ...daysInMonth,
-      ...Array.from({ length: trailing }, () => null),
-    ];
-  }, [currentMonth, daysInMonth]);
+      if (response.success && response.data) {
+        // Actualizar la cita en el estado local
+        setCitas(prevCitas => 
+          prevCitas.map(cita => 
+            cita._id === citaId ? response.data! : cita
+          )
+        );
+        
+        // Actualizar la cita seleccionada en el modal
+        if (selectedCita?._id === citaId) {
+          setSelectedCita(response.data);
+        }
+      } else {
+        alert(response.message || "Error al actualizar el estado");
+      }
+    } catch (err) {
+      console.error("Error al actualizar estado:", err);
+      alert("Error al actualizar el estado de la cita");
+    }
+  };
 
-  const openNewModal = (date: string) => {
-    setEditingId(null);
-    setFormState({
-      id: "",
-      title: "",
-      client: "",
-      clientEmail: "",
-      clientPhone: "",
-      location: "",
-      date,
-      time: "09:00",
-      type: "Levantamiento / Medidas",
-      assignedTo: teamMembers[0]?.id ?? "",
-      status: teamMembers[0]?.id ? "Confirmada" : "Pendiente",
-      backendState: "programada",
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedCita(null);
+  };
+
+  // Obtener las horas deshabilitadas para una fecha específica
+  const getDisabledHours = (fecha: string): number[] => {
+    const disabledHours = new Set<number>();
+    
+    citas.forEach(cita => {
+      const citaDate = new Date(cita.fechaAgendada).toISOString().split('T')[0];
+      if (citaDate === fecha && editingCitaId !== cita._id) {
+        const citaHour = new Date(cita.fechaAgendada).getHours();
+        // Deshabilitar 1 hora antes, durante y 1 hora después
+        disabledHours.add(citaHour - 1);
+        disabledHours.add(citaHour);
+        disabledHours.add(citaHour + 1);
+      }
     });
-    setIsModalOpen(true);
+
+    return Array.from(disabledHours).sort((a, b) => a - b);
   };
 
-  const openDayView = (date: string) => {
-    setSelectedDateForDayView(date);
+  const openNewCitaModal = () => {
+    setEditingCitaId(null);
+    setFormData({
+      nombreCliente: "",
+      correoCliente: "",
+      telefonoCliente: "",
+      ubicacion: "",
+      informacionAdicional: "",
+      fecha: new Date().toISOString().split('T')[0],
+      hora: "09:00",
+    });
+    setIsCreatingCita(true);
   };
 
-  const openEditModal = (appointment: Appointment) => {
-    setEditingId(appointment.id);
-    setFormState(appointment);
-    setIsModalOpen(true);
+  const closeNewCitaModal = () => {
+    setIsCreatingCita(false);
+    setEditingCitaId(null);
+    setFormData({
+      nombreCliente: "",
+      correoCliente: "",
+      telefonoCliente: "",
+      ubicacion: "",
+      informacionAdicional: "",
+      fecha: "",
+      hora: "",
+    });
   };
 
-  const handleSave = async () => {
-    if (!formState.title.trim() || !formState.client.trim() || !formState.date || !formState.time) return;
-    if (!formState.clientEmail.trim() || !formState.clientPhone.trim()) {
-      setError("Correo y teléfono del cliente son requeridos.");
+  const handleSaveCita = async () => {
+    if (!formData.nombreCliente.trim() || !formData.correoCliente.trim() || !formData.telefonoCliente.trim() || !formData.fecha || !formData.hora) {
+      alert("Por favor completa todos los campos requeridos");
       return;
     }
 
-    setIsSaving(true);
-    setError(null);
-
     try {
-      const fechaAgendada = toDateTimeIso(formState.date, formState.time);
-      const normalizedStatus: AppointmentStatus = formState.assignedTo ? "Confirmada" : "Pendiente";
-
-      if (editingId) {
-        const updateResponse = await actualizarCita(editingId, {
-          nombreCliente: formState.client.trim(),
-          correoCliente: formState.clientEmail.trim(),
-          telefonoCliente: formState.clientPhone.trim(),
-          ubicacion: formState.location.trim() || undefined,
-          informacionAdicional: formState.title.trim(),
-          fechaAgendada,
+      const fechaAgendada = `${formData.fecha}T${formData.hora}:00`;
+      
+      if (editingCitaId) {
+        // Actualizar cita existente
+        const response = await actualizarCita(editingCitaId, {
+          nombreCliente: formData.nombreCliente.trim(),
+          correoCliente: formData.correoCliente.trim(),
+          telefonoCliente: formData.telefonoCliente.trim(),
+          ubicacion: formData.ubicacion.trim() || undefined,
+          informacionAdicional: formData.informacionAdicional.trim(),
+          fechaAgendada: new Date(fechaAgendada).toISOString(),
         });
-        if (!updateResponse.success) {
-          throw new Error(updateResponse.message || "No se pudo actualizar la cita");
-        }
 
-        const assignResponse = await asignarIngeniero(editingId, {
-          ingenieroId: formState.assignedTo || undefined,
-        });
-        if (!assignResponse.success) {
-          throw new Error(assignResponse.message || "No se pudo actualizar asignación");
-        }
-
-        const estadoResponse = await actualizarEstadoCita(editingId, {
-          estado: formState.assignedTo ? "en_proceso" : "programada",
-        });
-        if (!estadoResponse.success) {
-          throw new Error(estadoResponse.message || "No se pudo actualizar estado");
+        if (!response.success) {
+          alert(response.message || "Error al actualizar la cita");
+          return;
         }
       } else {
-        const createResponse = await crearCita(
-          {
-            fechaAgendada,
-            nombreCliente: formState.client.trim(),
-            correoCliente: formState.clientEmail.trim(),
-            telefonoCliente: formState.clientPhone.trim(),
-            ubicacion: formState.location.trim() || undefined,
-            informacionAdicional: formState.title.trim(),
-          },
-          "",
-        );
+        // Crear nueva cita
+        const response = await crearCita({
+          nombreCliente: formData.nombreCliente.trim(),
+          correoCliente: formData.correoCliente.trim(),
+          telefonoCliente: formData.telefonoCliente.trim(),
+          ubicacion: formData.ubicacion.trim() || undefined,
+          informacionAdicional: formData.informacionAdicional.trim(),
+          fechaAgendada: new Date(fechaAgendada).toISOString(),
+        }, "");
 
-        if (!createResponse.success) {
-          throw new Error(createResponse.message || "No se pudo crear la cita");
-        }
-
-        const createdId = createResponse.data?._id;
-        if (createdId) {
-          await asignarIngeniero(createdId, { ingenieroId: formState.assignedTo || undefined });
-          await actualizarEstadoCita(createdId, {
-            estado: formState.assignedTo ? "en_proceso" : "programada",
-          });
+        if (!response.success) {
+          alert(response.message || "Error al crear la cita");
+          return;
         }
       }
 
-      setIsModalOpen(false);
-      await loadData();
-
-      setFormState((prev) => ({
-        ...prev,
-        status: normalizedStatus,
-      }));
-    } catch (currentError) {
-      setError(currentError instanceof Error ? currentError.message : "No se pudo guardar la cita");
-    } finally {
-      setIsSaving(false);
+      alert(editingCitaId ? "Cita actualizada correctamente" : "Cita creada correctamente");
+      closeNewCitaModal();
+      await cargarDatos();
+    } catch (err) {
+      console.error("Error al guardar cita:", err);
+      alert("Error al guardar la cita");
     }
   };
 
-  const handleDelete = async () => {
-    if (!editingId) return;
-    setIsSaving(true);
-    setError(null);
+  const handleDeleteCita = async () => {
+    if (!editingCitaId) return;
+    
+    if (!confirm("¿Estás seguro de que deseas eliminar esta cita?")) {
+      return;
+    }
+
     try {
-      const response = await eliminarCita(editingId);
+      const response = await eliminarCita(editingCitaId);
       if (!response.success) {
-        throw new Error(response.message || "No se pudo eliminar la cita");
+        alert(response.message || "Error al eliminar la cita");
+        return;
       }
-      setIsModalOpen(false);
-      await loadData();
-    } catch (currentError) {
-      setError(currentError instanceof Error ? currentError.message : "No se pudo eliminar la cita");
-    } finally {
-      setIsSaving(false);
+
+      alert("Cita eliminada correctamente");
+      closeNewCitaModal();
+      await cargarDatos();
+    } catch (err) {
+      console.error("Error al eliminar cita:", err);
+      alert("Error al eliminar la cita");
     }
   };
+
+  // Filtrar citas por estado
+  const programadas = citas.filter(cita => cita.estado === 'programada');
+  const enProceso = citas.filter(cita => cita.estado === 'en_proceso');
+  const completadas = citas.filter(cita => cita.estado === 'completada');
+
+  // Estadísticas
+  const sinAsignar = citas.filter(cita => !cita.ingenieroAsignado).length;
+  const totalCitas = citas.length;
+
+  if (isLoading) {
+    return (
+      <div className="flex h-[calc(100vh-200px)] items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="mx-auto h-12 w-12 animate-spin text-accent" />
+          <p className="mt-4 text-sm text-secondary">Cargando citas...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-[calc(100vh-200px)] items-center justify-center">
+        <div className="text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
+            <span className="text-2xl">⚠️</span>
+          </div>
+          <h3 className="mt-4 text-lg font-semibold text-primary">Error al cargar</h3>
+          <p className="mt-2 text-sm text-secondary">{error}</p>
+          <button
+            onClick={cargarDatos}
+            className="mt-4 rounded-full bg-accent px-6 py-2 text-sm font-semibold text-white transition hover:bg-accent/90"
+          >
+            Reintentar
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex h-[calc(100vh-2rem)] flex-col gap-6 overflow-y-auto">
+    <div className="space-y-6">
+      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Agenda de Citas y Visitas</h1>
-          <p className="mt-1 text-sm text-gray-500 capitalize">{formatMonthLabel(currentMonth)}</p>
+          <h1 className="text-3xl font-semibold text-primary">
+            Agenda de Citas
+          </h1>
+          <p className="mt-2 text-sm text-secondary">
+            Gestiona las citas de levantamiento y asigna ingenieros
+          </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex gap-2">
           <button
-            type="button"
-            onClick={() => setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm transition hover:bg-gray-50"
-            aria-label="Mes anterior"
+            onClick={openNewCitaModal}
+            className="rounded-full bg-[#8B1C1C] px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-[#6B1515]"
           >
-            <ChevronLeft className="h-4 w-4" />
+            <Plus className="mr-2 inline-block h-4 w-4" />
+            Agendar Cita
           </button>
           <button
-            type="button"
-            onClick={() => setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm transition hover:bg-gray-50"
-            aria-label="Mes siguiente"
+            onClick={cargarDatos}
+            className="rounded-full bg-accent px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-accent/90"
           >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-          <select
-            value={selectedEmployee}
-            onChange={(event) => setSelectedEmployee(event.target.value)}
-            className="rounded-2xl border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 shadow-sm outline-none"
-          >
-            <option value="Todos">Todos</option>
-            <option value={UNASSIGNED_FILTER}>🟥 Citas sin asignar</option>
-            {teamMembers.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => openNewModal(toDateInput(new Date()))}
-            className="rounded-2xl bg-[#8B1C1C] px-5 py-2.5 text-sm font-semibold text-white shadow-sm"
-          >
-            Agendar visita
+            <Plus className="mr-2 inline-block h-4 w-4" />
+            Recargar
           </button>
         </div>
       </div>
 
-      {error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
-          {error}
-        </div>
-      ) : null}
-
-      <div className="flex flex-1 min-h-0 flex-col gap-2">
-        <div className="grid grid-cols-7 gap-2">
-          {weekDays.map((day) => (
-            <div key={day} className="px-2 text-sm font-medium text-gray-500">
-              {day}
+      {/* Estadísticas */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-secondary">Total</p>
+              <p className="mt-1 text-2xl font-bold text-primary">{totalCitas}</p>
             </div>
-          ))}
-        </div>
-        <div className="grid flex-1 min-h-0 grid-cols-7 grid-rows-[repeat(6,minmax(120px,1fr))] gap-2">
-          {calendarCells.map((date, index) => {
-            if (!date) {
-              return <div key={`empty-${index}`} className="rounded-2xl border border-transparent p-1" />;
-            }
-            const dateKey = toDateInput(date);
-            const dayAppointments = filteredAppointments.filter((item) => item.date === dateKey);
-            const hasAppointments = dayAppointments.length > 0;
-
-            return (
-              <button
-                key={dateKey}
-                type="button"
-                onClick={() => openDayView(dateKey)}
-                className={`flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border p-2 text-left transition-colors hover:bg-[#8B1C1C]/5 ${
-                  hasAppointments ? "border-[#8B1C1C]/20 bg-[#8B1C1C]/5" : "border-gray-100 bg-white"
-                }`}
-              >
-                <div className="text-xs font-bold text-[#8B1C1C]">{date.getDate()}</div>
-                <div className="mt-1 min-h-0 flex-1 overflow-hidden">
-                  {hasAppointments ? (
-                    <>
-                      <div className="mb-1 text-[11px] font-semibold text-[#8B1C1C]">
-                        {dayAppointments.length} {dayAppointments.length === 1 ? "cita" : "citas"}
-                      </div>
-                      <div className="space-y-1 overflow-hidden">
-                        {dayAppointments.slice(0, 2).map((appointment, idx) => {
-                          const statusColor =
-                            appointment.backendState === "programada"
-                              ? "bg-[#8B1C1C]/10 text-[#8B1C1C]"
-                              : appointment.backendState === "en_proceso"
-                                ? "bg-blue-100 text-blue-700"
-                                : "bg-green-100 text-green-700";
-
-                          return (
-                            <div key={idx} className={`rounded-md px-2 py-1 text-[11px] font-semibold ${statusColor} leading-tight`}>
-                              <div className="truncate">
-                                {appointment.time} - {appointment.type.split("/")[0].trim()}
-                              </div>
-                            </div>
-                          );
-                        })}
-                        {dayAppointments.length > 2 ? (
-                          <div className="text-[10px] font-semibold text-[#8B1C1C]">
-                            +{dayAppointments.length - 2} pendientes
-                          </div>
-                        ) : null}
-                      </div>
-                    </>
-                  ) : null}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {selectedDateForDayView ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4"
-          onClick={() => setSelectedDateForDayView(null)}
-        >
-          <div
-            ref={dayViewRef}
-            tabIndex={-1}
-            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar rounded-3xl border border-white/70 bg-white/95 p-6 shadow-2xl backdrop-blur"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-bold text-[#8B1C1C]">
-                {new Date(`${selectedDateForDayView}T00:00`).toLocaleDateString("es-MX", {
-                  weekday: "long",
-                  year: "numeric",
-                  month: "long",
-                  day: "numeric",
-                })}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setSelectedDateForDayView(null)}
-                className="rounded-full border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-500 hover:bg-gray-100"
-              >
-                ✕
-              </button>
-            </div>
-
-            {(() => {
-              const dayAppointments = filteredAppointments.filter((item) => item.date === selectedDateForDayView);
-
-              if (dayAppointments.length === 0) {
-                return (
-                  <div className="text-center py-8">
-                    <p className="text-gray-500 text-sm mb-4">No hay citas agendadas para este día</p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedDateForDayView(null);
-                        openNewModal(selectedDateForDayView!);
-                      }}
-                      className="rounded-2xl bg-[#8B1C1C] px-5 py-2 text-xs font-semibold text-white hover:bg-[#6B1515]"
-                    >
-                      Crear cita
-                    </button>
-                  </div>
-                );
-              }
-
-              return (
-                <div className="space-y-3 mb-6">
-                  {dayAppointments.map((appointment) => (
-                    <div
-                      key={appointment.id}
-                      className="rounded-2xl border border-[#8B1C1C]/20 bg-white p-4 hover:border-[#8B1C1C]/50 hover:bg-[#8B1C1C]/3 transition cursor-pointer hover:shadow-md"
-                      onClick={() => {
-                        setSelectedDateForDayView(null);
-                        openEditModal(appointment);
-                      }}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-2 flex-wrap">
-                            <span
-                              className={`rounded-full px-2 py-1 text-[11px] font-bold ${
-                                appointment.backendState === "programada"
-                                  ? "bg-[#8B1C1C]/15 text-[#8B1C1C]"
-                                  : appointment.backendState === "en_proceso"
-                                    ? "bg-blue-100 text-blue-700"
-                                    : "bg-green-100 text-green-700"
-                              }`}
-                            >
-                              {appointment.backendState === "programada"
-                                ? "Programada"
-                                : appointment.backendState === "en_proceso"
-                                  ? "En proceso"
-                                  : "Completada"}
-                            </span>
-                            <span className={`text-[11px] font-semibold rounded px-2 py-1 ${typeStyles[appointment.type]}`}>
-                              {appointment.type.split("/")[0].trim()}
-                            </span>
-                          </div>
-                          <h4 className="font-bold text-[#8B1C1C] text-base mb-2">{appointment.title}</h4>
-                          <div className="space-y-1 text-sm text-gray-700">
-                            <div>
-                              <span className="font-semibold text-[#8B1C1C]">Cliente:</span> {appointment.client}
-                            </div>
-                            {appointment.clientCode ? (
-                              <div>
-                                <span className="font-semibold text-[#8B1C1C]">Código:</span> {appointment.clientCode}
-                              </div>
-                            ) : null}
-                            <div>
-                              <span className="font-semibold text-[#8B1C1C]">Email:</span> {appointment.clientEmail}
-                            </div>
-                            <div>
-                              <span className="font-semibold text-[#8B1C1C]">Teléfono:</span> {appointment.clientPhone}
-                            </div>
-                            {appointment.location ? (
-                              <div>
-                                <span className="font-semibold text-[#8B1C1C]">Ubicación:</span> {appointment.location}
-                              </div>
-                            ) : null}
-                            <div>
-                              <span className="font-semibold text-[#8B1C1C]">Hora:</span> {appointment.time}
-                            </div>
-                            {appointment.assignedTo ? (
-                              <div>
-                                <span className="font-semibold text-[#8B1C1C]">Asignado a:</span>{" "}
-                                {teamMembers.find((member) => member.id === appointment.assignedTo)?.name || "Desconocido"}
-                              </div>
-                            ) : (
-                              <div className="text-orange-600">
-                                <span className="font-semibold">Asignado a:</span> Sin asignar
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="text-right flex-shrink-0">
-                          <button
-                            type="button"
-                            className="text-[#8B1C1C]/40 hover:text-[#8B1C1C] text-2xl font-light"
-                            title="Ver detalles"
-                          >
-                            →
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
-
-            <div className="flex gap-3 pt-4 border-t border-gray-200">
-              <button
-                type="button"
-                onClick={() => setSelectedDateForDayView(null)}
-                className="flex-1 rounded-2xl border border-[#8B1C1C]/30 bg-white px-5 py-2 text-xs font-semibold text-[#8B1C1C] hover:bg-[#8B1C1C]/5"
-              >
-                Cerrar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedDateForDayView(null);
-                  openNewModal(selectedDateForDayView!);
-                }}
-                className="flex-1 rounded-2xl bg-[#8B1C1C] px-5 py-2 text-xs font-semibold text-white hover:bg-[#6B1515]"
-              >
-                Crear nueva cita
-              </button>
+            <div className="rounded-lg bg-blue-100 p-2">
+              <span className="text-xl">📋</span>
             </div>
           </div>
         </div>
-      ) : null}
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-secondary">Programadas</p>
+              <p className="mt-1 text-2xl font-bold text-yellow-600">{programadas.length}</p>
+            </div>
+            <div className="rounded-lg bg-yellow-100 p-2">
+              <span className="text-xl">📅</span>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-secondary">En Proceso</p>
+              <p className="mt-1 text-2xl font-bold text-blue-600">{enProceso.length}</p>
+            </div>
+            <div className="rounded-lg bg-blue-100 p-2">
+              <span className="text-xl">🔄</span>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-secondary">Sin Asignar</p>
+              <p className="mt-1 text-2xl font-bold text-red-600">{sinAsignar}</p>
+            </div>
+            <div className="rounded-lg bg-red-100 p-2">
+              <Users className="h-5 w-5 text-red-600" />
+            </div>
+          </div>
+        </div>
+      </div>
 
-      {isModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4" onClick={() => setIsModalOpen(false)}>
-          <div
-            ref={modalRef}
-            tabIndex={-1}
-            className="w-full max-w-xl max-h-[90vh] overflow-y-auto custom-scrollbar rounded-3xl border border-white/70 bg-white/95 p-6 shadow-2xl backdrop-blur"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">{editingId ? "Editar visita" : "Agendar visita"}</h3>
+      {/* Kanban Board */}
+      <KanbanBoard
+        programadas={programadas}
+        enProceso={enProceso}
+        completadas={completadas}
+        onCitaClick={handleCitaClick}
+        onMoverCita={handleMoverCita}
+      />
+
+      {/* Modal de Detalles */}
+      <CitaModal
+        cita={selectedCita}
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+        empleados={empleados}
+        onAsignarIngeniero={handleAsignarIngeniero}
+        onActualizarEstado={handleActualizarEstado}
+      />
+
+      {/* Modal de Crear/Editar Cita */}
+      {isCreatingCita && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-xl">
+            {/* Header */}
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white p-6">
+              <h2 className="text-xl font-semibold text-primary">
+                {editingCitaId ? "Editar Cita" : "Agendar Nueva Cita"}
+              </h2>
               <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                className="rounded-full border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-500"
+                onClick={closeNewCitaModal}
+                className="rounded-full p-2 text-secondary transition hover:bg-gray-100"
               >
-                Cerrar
+                <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <label className="text-xs font-semibold text-gray-500 sm:col-span-2">
-                Título
+
+            {/* Contenido */}
+            <div className="p-6 space-y-4">
+              {/* Cliente */}
+              <div>
+                <label className="block text-xs font-semibold text-secondary mb-2">
+                  Nombre del Cliente *
+                </label>
                 <input
-                  value={formState.title}
-                  onChange={(event) => setFormState((prev) => ({ ...prev, title: event.target.value }))}
-                  placeholder="Ej. Medición cocina principal"
-                  className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none"
+                  type="text"
+                  value={formData.nombreCliente}
+                  onChange={(e) => setFormData({ ...formData, nombreCliente: e.target.value })}
+                  placeholder="Ej. Juan Pérez"
+                  className="w-full rounded-lg border border-gray-200 px-4 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
-              </label>
-              <label className="text-xs font-semibold text-gray-500 sm:col-span-2">
-                Cliente
+              </div>
+
+              {/* Correo */}
+              <div>
+                <label className="block text-xs font-semibold text-secondary mb-2">
+                  Correo Electrónico *
+                </label>
                 <input
-                  value={formState.client}
-                  onChange={(event) => setFormState((prev) => ({ ...prev, client: event.target.value }))}
-                  placeholder="Ej. Mariana Fuentes"
-                  className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none"
-                />
-              </label>
-              <label className="text-xs font-semibold text-gray-500">
-                Correo cliente
-                <input
-                  value={formState.clientEmail}
-                  onChange={(event) => setFormState((prev) => ({ ...prev, clientEmail: event.target.value }))}
+                  type="email"
+                  value={formData.correoCliente}
+                  onChange={(e) => setFormData({ ...formData, correoCliente: e.target.value })}
                   placeholder="cliente@email.com"
-                  className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none"
+                  className="w-full rounded-lg border border-gray-200 px-4 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
-              </label>
-              <label className="text-xs font-semibold text-gray-500">
-                Teléfono cliente
+              </div>
+
+              {/* Teléfono */}
+              <div>
+                <label className="block text-xs font-semibold text-secondary mb-2">
+                  Teléfono *
+                </label>
                 <input
-                  value={formState.clientPhone}
-                  onChange={(event) => setFormState((prev) => ({ ...prev, clientPhone: event.target.value }))}
+                  type="tel"
+                  value={formData.telefonoCliente}
+                  onChange={(e) => setFormData({ ...formData, telefonoCliente: e.target.value })}
                   placeholder="10 dígitos"
-                  className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none"
+                  className="w-full rounded-lg border border-gray-200 px-4 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
-              </label>
-              <label className="text-xs font-semibold text-gray-500 sm:col-span-2">
-                Dirección / Ubicación
+              </div>
+
+              {/* Ubicación */}
+              <div>
+                <label className="block text-xs font-semibold text-secondary mb-2">
+                  Ubicación
+                </label>
                 <textarea
-                  value={formState.location}
-                  onChange={(event) => setFormState((prev) => ({ ...prev, location: event.target.value }))}
-                  placeholder="Ej. Calle 123, Col. Centro, CDMX"
-                  className="mt-2 min-h-[90px] w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none"
+                  value={formData.ubicacion}
+                  onChange={(e) => setFormData({ ...formData, ubicacion: e.target.value })}
+                  placeholder="Dirección completa"
+                  rows={2}
+                  className="w-full rounded-lg border border-gray-200 px-4 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
-              </label>
-              <label className="text-xs font-semibold text-gray-500">
-                Fecha
+              </div>
+
+              {/* Información Adicional */}
+              <div>
+                <label className="block text-xs font-semibold text-secondary mb-2">
+                  Información Adicional
+                </label>
                 <input
-                  value={formState.date}
-                  onChange={(event) => setFormState((prev) => ({ ...prev, date: event.target.value }))}
+                  type="text"
+                  value={formData.informacionAdicional}
+                  onChange={(e) => setFormData({ ...formData, informacionAdicional: e.target.value })}
+                  placeholder="Ej. Levantamiento / Medidas"
+                  className="w-full rounded-lg border border-gray-200 px-4 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+
+              {/* Fecha */}
+              <div>
+                <label className="block text-xs font-semibold text-secondary mb-2">
+                  Fecha *
+                </label>
+                <input
                   type="date"
-                  className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none"
+                  value={formData.fecha}
+                  onChange={(e) => setFormData({ ...formData, fecha: e.target.value, hora: "09:00" })}
+                  className="w-full rounded-lg border border-gray-200 px-4 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
-              </label>
-              <label className="text-xs font-semibold text-gray-500">
-                Hora
-                <input
-                  value={formState.time}
-                  onChange={(event) => setFormState((prev) => ({ ...prev, time: event.target.value }))}
-                  type="time"
-                  className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none"
-                />
-              </label>
-              <label className="text-xs font-semibold text-gray-500">
-                Tipo de visita
-                <select
-                  value={formState.type}
-                  onChange={(event) => setFormState((prev) => ({ ...prev, type: event.target.value as AppointmentType }))}
-                  className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none"
-                >
-                  <option value="Levantamiento / Medidas">Levantamiento / Medidas</option>
-                  <option value="Cotización en sitio">Cotización en sitio</option>
-                  <option value="Presentación de diseño">Presentación de diseño</option>
-                </select>
-              </label>
-              <label className="text-xs font-semibold text-gray-500">
-                Asignar a
-                <select
-                  value={formState.assignedTo ?? ""}
-                  onChange={(event) =>
-                    setFormState((prev) => ({
-                      ...prev,
-                      assignedTo: event.target.value || null,
-                      status: event.target.value ? "Confirmada" : "Pendiente",
-                    }))
-                  }
-                  className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none"
-                >
-                  <option value="">Sin asignar</option>
-                  {teamMembers.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-              {editingId ? (
-                <button
-                  type="button"
-                  onClick={() => void handleDelete()}
-                  disabled={isSaving}
-                  className="rounded-2xl border border-rose-200 px-4 py-2 text-xs font-semibold text-rose-600 disabled:opacity-50"
-                >
-                  Eliminar cita
-                </button>
-              ) : (
-                <span />
+              </div>
+
+              {/* Horas disponibles */}
+              {formData.fecha && (
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-3">
+                    <Clock className="inline h-3 w-3 mr-1" />
+                    Selecciona una hora (9 AM - 5 PM) *
+                  </label>
+                  <div className="grid grid-cols-5 gap-2">
+                    {Array.from({ length: 9 }, (_, i) => {
+                      const hour = 9 + i;
+                      const hourStr = String(hour).padStart(2, "0") + ":00";
+                      const isDisabled = getDisabledHours(formData.fecha).includes(hour);
+                      const isSelected = formData.hora === hourStr;
+
+                      return (
+                        <button
+                          key={hour}
+                          type="button"
+                          onClick={() => {
+                            if (!isDisabled) {
+                              setFormData({ ...formData, hora: hourStr });
+                            }
+                          }}
+                          disabled={isDisabled}
+                          className={`py-2 px-3 rounded-lg text-sm font-semibold transition ${
+                            isDisabled
+                              ? "bg-gray-100 text-gray-400 cursor-not-allowed opacity-50"
+                              : isSelected
+                              ? "bg-[#8B1C1C] text-white"
+                              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                          }`}
+                          title={isDisabled ? "Hora no disponible" : ""}
+                        >
+                          {hour > 12 ? hour - 12 : hour}{hour >= 12 ? " PM" : " AM"}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {getDisabledHours(formData.fecha).length > 0 && (
+                    <p className="mt-2 text-xs text-orange-600">
+                      ⚠️ Las horas deshabilitadas incluyen citas existentes y 1 hora antes/después
+                    </p>
+                  )}
+                </div>
               )}
-              <div className="flex flex-wrap gap-3">
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-gray-200 bg-gray-50 p-6 flex flex-wrap items-center justify-between gap-3">
+              {editingCitaId && (
                 <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="rounded-2xl border border-gray-200 bg-white px-5 py-2 text-xs font-semibold text-gray-600"
+                  onClick={handleDeleteCita}
+                  className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50"
+                >
+                  Eliminar Cita
+                </button>
+              )}
+              <div className="flex gap-3 ml-auto">
+                <button
+                  onClick={closeNewCitaModal}
+                  className="rounded-lg border border-gray-200 px-6 py-2 text-sm font-semibold text-gray-600 transition hover:bg-gray-100"
                 >
                   Cancelar
                 </button>
                 <button
-                  type="button"
-                  onClick={() => void handleSave()}
-                  disabled={isSaving}
-                  className="rounded-2xl bg-[#8B1C1C] px-5 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                  onClick={handleSaveCita}
+                  className="rounded-lg bg-[#8B1C1C] px-6 py-2 text-sm font-semibold text-white transition hover:bg-[#6B1515]"
                 >
-                  {editingId ? "Guardar cambios" : "Guardar cita"}
+                  {editingCitaId ? "Actualizar" : "Crear"} Cita
                 </button>
               </div>
             </div>
           </div>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

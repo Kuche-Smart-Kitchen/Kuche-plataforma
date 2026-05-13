@@ -29,7 +29,7 @@ export default function History() {
           <div className="absolute -right-6 -top-6 hidden h-20 w-20 rounded-3xl bg-accent/10 md:block" />
           <div className="relative h-full min-h-[320px] w-full overflow-hidden rounded-3xl shadow-lg shadow-black/10">
             <Image
-              src="/images/cocina3.jpg"
+              src="/images/home/historia-section/ilustracion-historia.jpg"
               alt="Espacio de cocina contemporánea"
               fill
               className="object-cover"

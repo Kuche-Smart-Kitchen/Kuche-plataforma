@@ -12,7 +12,7 @@ const fadeUp = {
 export default function Hero() {
   return (
     <section className="relative min-h-[85vh] overflow-hidden rounded-3xl mx-4 md:mx-6">
-      <div className="absolute inset-0 bg-[url('/images/cocina1.jpg')] bg-cover bg-center" />
+      <div className="absolute inset-0 bg-[url('/images/home/hero-section/fondo-cabecera.jpg')] bg-cover bg-center" />
       <div className="absolute inset-0 bg-black/45" />
 
       <div className="relative z-10 flex min-h-[85vh] items-center px-6 py-16">

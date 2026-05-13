@@ -8,30 +8,21 @@ const projects = [
     title: "Proyecto Residencial Navarro",
     description: "Cocina luminosa con madera natural y diseño funcional.",
     images: [
-      "/images/cocina1.jpg",
-      "/images/render1.jpg",
-      "/images/planos/plano-placeholder.svg",
-      "/images/cocina2.jpg",
+      "/images/home/proyecto-destacado-1/cocina-1.jpg", "/images/home/proyecto-destacado-1/cocina-2.jpg", "/images/home/proyecto-destacado-1/plano1.jpg", "/images/home/proyecto-destacado-1/render-uno.jpg",
     ],
   },
   {
     title: "Proyecto Loft Reforma",
     description: "Isla central protagonista y herrajes premium integrados.",
     images: [
-      "/images/render2.jpg",
-      "/images/planos/plano-placeholder.svg",
-      "/images/cocina6.jpg",
-      "/images/cocina7.jpg",
+      "/images/home/proyecto-destacado-2/cocina-1.jpg", "/images/home/proyecto-destacado-2/cocina-2.jpg", "/images/home/proyecto-destacado-2/plano2.jpg", "/images/home/proyecto-destacado-2/render-uno.jpg",
     ],
   },
   {
     title: "Proyecto Casa Bruma",
     description: "Paleta neutra con toques de color y textura elegante.",
     images: [
-      "/images/render3.jpg",
-      "/images/planos/plano-placeholder.svg",
-      "/images/cocina10.jpg",
-      "/images/cocina11.jpg",
+      "/images/home/proyecto-destacado-3/cocina-1.jpg", "/images/home/proyecto-destacado-3/cocina-2.jpg", "/images/home/proyecto-destacado-3/plano1.jpg", "/images/home/proyecto-destacado-3/render-uno.jpg",
     ],
   },
 ];
@@ -57,3 +48,4 @@ export default function FeaturedProjects() {
     </MotionSection>
   );
 }
+
