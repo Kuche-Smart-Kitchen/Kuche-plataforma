@@ -8,55 +8,55 @@ export default function LeadForm() {
   const [captchaToken, setCaptchaToken] = useState("");
 
   return (
-    <MotionSection className="bg-accent py-20 mx-4 md:mx-6 rounded-3xl">
-      <div className="mx-auto max-w-5xl px-6">
-        <div className="rounded-3xl bg-white p-8 shadow-lg shadow-black/10 md:p-12">
-          <div className="grid gap-10 md:grid-cols-[1.1fr_0.9fr] md:items-center">
-            <div>
-              <h2 className="text-3xl font-semibold text-primary md:text-4xl">
-                Inicia tu proyecto
-              </h2>
-              <p className="mt-4 text-base leading-relaxed text-secondary">
-                Cuéntanos lo esencial y en breve un especialista Küche te
-                compartirá ideas y recomendaciones personalizadas.
-              </p>
+    <MotionSection className="mx-4 rounded-3xl bg-accent py-24 shadow-xl shadow-black/5 md:mx-6">
+      <div className="mx-auto max-w-3xl px-6 text-center">
+        <h2 className="text-3xl font-semibold text-white md:text-5xl">
+          Inicia tu proyecto
+        </h2>
+        <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-white/90">
+          Cuéntanos lo esencial y en breve un especialista Küche te
+          compartirá ideas y recomendaciones personalizadas.
+        </p>
+
+        <form
+          className="mx-auto mt-10 grid w-full max-w-md gap-5 text-left"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!captchaToken) return;
+          }}
+        >
+          <input
+            type="text"
+            placeholder="Nombre"
+            className="w-full rounded-2xl border-none bg-white px-5 py-4 text-sm text-primary shadow-inner outline-none transition-all focus:ring-4 focus:ring-white/30"
+          />
+          <input
+            type="tel"
+            placeholder="Teléfono"
+            className="w-full rounded-2xl border-none bg-white px-5 py-4 text-sm text-primary shadow-inner outline-none transition-all focus:ring-4 focus:ring-white/30"
+          />
+
+          <div className="rounded-2xl border border-white/20 bg-white/10 px-4 py-5 backdrop-blur-sm">
+            <p className="mb-3 text-center text-xs font-medium text-white/90">
+              Verificación de seguridad
+            </p>
+            <div className="flex justify-center">
+              <Captcha
+                onVerify={setCaptchaToken}
+                onExpire={() => setCaptchaToken("")}
+                onError={() => setCaptchaToken("")}
+              />
             </div>
-            <form
-              className="grid gap-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!captchaToken) return;
-              }}
-            >
-              <input
-                type="text"
-                placeholder="Nombre"
-                className="w-full rounded-2xl border border-secondary/20 bg-[#F9F9F9] px-4 py-3 text-sm text-primary outline-none focus:border-accent"
-              />
-              <input
-                type="tel"
-                placeholder="Teléfono"
-                className="w-full rounded-2xl border border-secondary/20 bg-[#F9F9F9] px-4 py-3 text-sm text-primary outline-none focus:border-accent"
-              />
-              <div className="rounded-2xl border border-secondary/20 bg-[#F4F4F4] px-4 py-3">
-                <p className="text-xs text-secondary">Verificación de seguridad</p>
-                <Captcha
-                  onVerify={setCaptchaToken}
-                  onExpire={() => setCaptchaToken("")}
-                  onError={() => setCaptchaToken("")}
-                  className="mt-3"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={!captchaToken}
-                className="rounded-full bg-[#6F1414] px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-black/10 transition enabled:hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                Solicitar detalles
-              </button>
-            </form>
           </div>
-        </div>
+
+          <button
+            type="submit"
+            disabled={!captchaToken}
+            className="mt-2 rounded-full bg-white px-5 py-4 text-base font-bold text-accent shadow-lg shadow-black/20 transition-all enabled:hover:scale-105 enabled:hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            Solicitar detalles
+          </button>
+        </form>
       </div>
     </MotionSection>
   );

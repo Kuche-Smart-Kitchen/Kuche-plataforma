@@ -11,18 +11,18 @@ import { SHOWROOM_ADDRESS_LINE } from "@/lib/site-location";
 
 export default function Footer() {
   return (
-    <footer className="bg-black text-white">
-      <div className="mx-auto max-w-6xl px-4 py-14">
-        <div className="grid gap-10 md:grid-cols-2 lg:grid-cols-4">
-          <div className="space-y-3">
-            <div className="text-lg font-semibold tracking-[0.35em]">Küche</div>
-            <p className="text-sm text-gray-400">
+    <footer className="overflow-x-hidden bg-black text-white">
+      <div className="mx-auto max-w-6xl px-4 py-10 sm:py-14">
+        <div className="grid grid-cols-1 gap-8 text-center sm:gap-10 md:grid-cols-2 md:text-left lg:grid-cols-4">
+          <div className="space-y-3 md:space-y-4">
+            <div className="text-lg font-semibold tracking-[0.25em] sm:tracking-[0.35em]">Küche</div>
+            <p className="mx-auto max-w-xs text-sm text-gray-400 md:mx-0 md:max-w-none">
               Küche · Donde la calidez del hogar se encuentra con la precisión del futuro.
             </p>
           </div>
 
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-white">
+          <div className="space-y-3 md:space-y-4">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.25em] text-white sm:tracking-[0.3em]">
               Navegación
             </h3>
             <ul className="space-y-2 text-sm text-gray-400">
@@ -37,10 +37,7 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
-                <Link
-                  href="/experiencia"
-                  className="transition hover:text-accent"
-                >
+                <Link href="/experiencia" className="transition hover:text-accent">
                   Experiencia
                 </Link>
               </li>
@@ -50,18 +47,15 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
-                <Link
-                  href="/seguimiento"
-                  className="transition hover:text-accent"
-                >
+                <Link href="/seguimiento" className="transition hover:text-accent">
                   Seguimiento
                 </Link>
               </li>
             </ul>
           </div>
 
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-white">
+          <div className="space-y-3 md:space-y-4">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.25em] text-white sm:tracking-[0.3em]">
               Showroom
             </h3>
             <div className="space-y-2 text-sm text-gray-400">
@@ -72,18 +66,21 @@ export default function Footer() {
                 </a>
               </p>
               <p>
-                <a href={KUCHE_EMAIL_MAILTO_HREF} className="text-sky-300 transition hover:text-accent">
+                <a
+                  href={KUCHE_EMAIL_MAILTO_HREF}
+                  className="break-all text-sky-300 transition hover:text-accent"
+                >
                   {KUCHE_EMAIL}
                 </a>
               </p>
             </div>
           </div>
 
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-white">
+          <div className="flex flex-col items-center space-y-4 md:items-start">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.25em] text-white sm:tracking-[0.3em]">
               Síguenos
             </h3>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center gap-3 md:justify-start">
               <a
                 href="https://www.instagram.com/cocinasinteligenteskuche/"
                 target="_blank"
@@ -112,13 +109,13 @@ export default function Footer() {
           </div>
         </div>
 
-        <div className="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-6 text-sm text-gray-400">
-          <span>
+        <div className="mt-8 flex flex-col items-center justify-center gap-4 space-y-2 border-t border-white/10 pt-6 text-center text-sm text-gray-400 sm:mt-10 md:flex-row md:justify-between md:gap-2 md:space-y-0 md:text-left">
+          <span className="max-w-prose">
             © 2026 Küche Cocinas Inteligentes. Todos los derechos reservados.
           </span>
           <Link
             href="/login"
-            className="rounded-full border border-white/20 px-3 py-1.5 text-[11px] font-semibold text-white/85 transition hover:border-white/40 hover:bg-white/10 hover:text-white"
+            className="shrink-0 rounded-full border border-white/20 px-3 py-1.5 text-[11px] font-semibold text-white/85 transition hover:border-white/40 hover:bg-white/10 hover:text-white"
           >
             Acceso Administrativo
           </Link>
@@ -127,4 +124,3 @@ export default function Footer() {
     </footer>
   );
 }
-

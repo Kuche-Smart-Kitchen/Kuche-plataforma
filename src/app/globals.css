@@ -78,3 +78,14 @@ body {
     cursor: not-allowed;
   }
 }
+
+.featured-projects-carousel,
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.featured-projects-carousel::-webkit-scrollbar,
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

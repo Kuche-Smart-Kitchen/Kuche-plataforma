@@ -43,14 +43,16 @@ export default function FeaturedProjects() {
         <h2 className="text-3xl font-semibold text-accent md:text-4xl">
           Proyectos Destacados
         </h2>
-        <div className="mt-10 grid gap-8 md:grid-cols-3">
+
+        <div className="mt-10 flex w-full flex-col gap-8 md:grid md:grid-cols-2 lg:grid-cols-3">
           {projects.map((project) => (
-            <ProjectCard
-              key={project.title}
-              title={project.title}
-              description={project.description}
-              images={project.images}
-            />
+            <div key={project.title} className="w-full">
+              <ProjectCard
+                title={project.title}
+                description={project.description}
+                images={project.images}
+              />
+            </div>
           ))}
         </div>
       </div>

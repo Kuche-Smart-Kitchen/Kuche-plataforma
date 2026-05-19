@@ -5,7 +5,7 @@ import Footer from "@/components/Footer";
 export default function AgendarPage() {
   return (
     <main className="min-h-screen bg-background text-primary">
-      <section className="px-4 pt-16">
+      <section className="px-4 pt-28 md:pt-32">
         <div className="mx-auto max-w-6xl">
           <div className="text-center">
             <h1 className="text-3xl font-semibold text-primary md:text-5xl">
