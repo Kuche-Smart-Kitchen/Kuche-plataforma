@@ -32,8 +32,8 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="min-h-screen bg-background text-primary">
-      <div className="mx-auto grid min-h-screen max-w-6xl grid-cols-1 gap-6 px-4 py-10 lg:grid-cols-2">
+    <main className="min-h-screen bg-background pt-28 text-primary md:pt-32">
+      <div className="mx-auto grid min-h-[calc(100vh-7rem)] max-w-6xl grid-cols-1 gap-6 px-4 pb-10 md:min-h-[calc(100vh-8rem)] lg:grid-cols-2">
         <motion.section
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}

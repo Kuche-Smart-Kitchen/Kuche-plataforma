@@ -66,8 +66,8 @@ export default function AliadosPage() {
   useFocusTrap(Boolean(activePartner), modalRef);
 
   return (
-    <main className="overflow-x-hidden bg-background">
-      <section className="px-4 py-12 sm:py-16 md:py-20">
+    <main className="overflow-x-hidden bg-background pt-28 md:pt-32">
+      <section className="px-4 pb-12 sm:pb-16 md:pb-20">
         <div className="mx-auto max-w-6xl space-y-8 sm:space-y-10">
           <div className="text-center">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">Aliados</p>
