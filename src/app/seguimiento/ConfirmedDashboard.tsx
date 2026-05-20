@@ -317,56 +317,81 @@ export function ConfirmedDashboard({ project, onOpenImage }: Props) {
             {project.etapaActual}
           </span>
         </div>
-        <div className="mt-8">
-          <div className="relative h-2 rounded-full bg-primary/10">
+        <div className="relative mt-8">
+          <div className="relative hidden h-2 rounded-full bg-primary/10 md:block">
             <div
               className="absolute left-0 top-0 h-2 rounded-full bg-accent"
               style={{ width: `${timelineProgressPct}%` }}
             />
           </div>
-          <div className="mt-6 grid grid-cols-5 gap-2 text-center text-xs text-secondary">
+
+          <div className="absolute bottom-2 left-4 top-2 w-0.5 bg-primary/10 md:hidden">
+            <div
+              className="absolute left-0 top-0 w-full rounded-full bg-accent transition-all duration-500"
+              style={{ height: `${timelineProgressPct}%` }}
+            />
+          </div>
+
+          <div className="flex flex-col gap-8 pl-1 text-xs text-secondary md:mt-6 md:grid md:grid-cols-5 md:gap-2 md:text-center">
             {TIMELINE_STEPS.map((step, index) => {
               const isCompleted = index <= currentIndex;
               const isActive = index === currentIndex;
               const payment = paymentByStep[step];
               return (
-                <div key={step} className="flex flex-col items-center gap-3">
-                  <div className="relative flex h-5 w-5 items-center justify-center">
+                <div
+                  key={step}
+                  className="relative flex flex-row items-start gap-4 pl-1 md:flex-col md:items-center md:gap-3 md:pl-0"
+                >
+                  <div className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white">
                     <span
-                      className={`h-3 w-3 rounded-full ${isCompleted ? "bg-accent" : "bg-primary/20"}`}
+                      className={`h-3.5 w-3.5 rounded-full transition-colors duration-300 ${
+                        isCompleted ? "bg-accent" : "bg-primary/20"
+                      }`}
                     />
                     {isActive ? (
                       <motion.span
-                        className="absolute h-5 w-5 rounded-full border border-accent"
-                        animate={{ scale: [1, 1.4, 1], opacity: [0.8, 0, 0.8] }}
+                        className="absolute h-6 w-6 rounded-full border border-accent"
+                        animate={{ scale: [1, 1.3, 1], opacity: [0.8, 0, 0.8] }}
                         transition={{ duration: 1.6, repeat: Infinity }}
                       />
                     ) : null}
                   </div>
-                  <span className={isActive ? "font-semibold text-primary" : ""}>{step}</span>
-                  {payment ? (
-                    <div
-                      className={`group relative mt-1 flex items-center gap-2 rounded-full px-2 py-1 text-[10px] font-semibold ${
-                        payment.status === "pending"
-                          ? "animate-[pulse_3.5s_ease-in-out_infinite] bg-amber-50 text-amber-500"
-                          : "bg-accent/10 text-accent"
+
+                  <div className="flex w-full flex-col items-start gap-1 md:items-center">
+                    <span
+                      className={`text-sm transition-all md:text-xs ${
+                        isActive
+                          ? "text-base font-bold text-primary md:text-xs"
+                          : "font-medium text-secondary"
                       }`}
-                      aria-label={payment.tooltip}
-                      title={payment.tooltip}
                     >
-                      {payment.status === "pending" ? (
-                        <Bell className="h-3.5 w-3.5" />
-                      ) : (
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                      )}
-                      <span>{payment.label}</span>
-                      {payment.status === "pending" ? (
-                        <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-primary px-3 py-1 text-[10px] font-medium text-white opacity-0 transition group-hover:opacity-100">
-                          {payment.tooltip}
-                        </span>
-                      ) : null}
-                    </div>
-                  ) : null}
+                      {step}
+                    </span>
+
+                    {payment ? (
+                      <div
+                        className={`group relative mt-1 flex items-center gap-2 rounded-full px-3 py-1 text-[10px] font-semibold md:mx-auto ${
+                          payment.status === "pending"
+                            ? "animate-[pulse_3.5s_ease-in-out_infinite] bg-amber-50 text-amber-500"
+                            : "bg-accent/10 text-accent"
+                        }`}
+                        aria-label={payment.tooltip}
+                        title={payment.tooltip}
+                      >
+                        {payment.status === "pending" ? (
+                          <Bell className="h-3.5 w-3.5" />
+                        ) : (
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                        )}
+                        <span>{payment.label}</span>
+                        {payment.status === "pending" ? (
+                          <span className="pointer-events-none absolute -top-8 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded-full bg-primary px-3 py-1 text-[10px] font-medium text-white opacity-0 transition group-hover:opacity-100 md:block">
+                            {payment.tooltip}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               );
             })}
