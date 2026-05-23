@@ -805,7 +805,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
         initial={false}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0 }}
-        className="relative z-0 rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-md pointer-events-auto"
+        className="pointer-events-auto relative z-0 rounded-3xl border border-white/70 bg-white/80 p-4 shadow-lg backdrop-blur-md md:p-6"
       >
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -857,7 +857,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
           </div>
         ) : null}
 
-        <div className="mt-6 grid gap-4 lg:grid-cols-4">
+        <div className="mt-6 flex flex-row gap-4 overflow-x-auto pb-4 snap-x snap-mandatory md:grid md:grid-cols-4 md:overflow-x-visible md:pb-0">
           {kanbanColumns.map((column) => {
             const columnTasksRaw = filteredTasks.filter((task) => {
               if (task.stage !== column.id) return false;
@@ -886,7 +886,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                   setDraggedTaskId(null);
                   setDragOverColumnId(null);
                 }}
-                className={`rounded-2xl border border-primary/10 bg-white/70 p-4 transition ${
+                className={`w-[280px] shrink-0 snap-center rounded-2xl border border-primary/10 bg-white/70 p-4 transition md:w-full ${
                   isDragOver ? "bg-accent/5 ring-2 ring-accent/30" : ""
                 }`}
               >

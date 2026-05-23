@@ -79,6 +79,11 @@ body {
   }
 }
 
+/* Placeholder "0" en inputs numéricos (mismo tono que Cotizador Pro). */
+input[placeholder="0"]::placeholder {
+  color: color-mix(in srgb, var(--secondary) 50%, transparent);
+}
+
 .featured-projects-carousel,
 .scrollbar-hide {
   scrollbar-width: none;

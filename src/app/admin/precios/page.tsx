@@ -461,7 +461,7 @@ export default function PreciosPage() {
                 Cerrar
               </button>
             </div>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
               <label className="text-xs font-semibold text-gray-500">
                 ID único
                 <input

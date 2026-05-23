@@ -153,26 +153,30 @@ export default function SeguimientoPage() {
         </AnimatePresence>
       </div>
       {selectedImage ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
           <div
             ref={modalRef}
             tabIndex={-1}
-            className="w-full max-w-3xl rounded-3xl bg-white p-6 shadow-2xl"
+            className="relative flex max-h-[90vh] w-full max-w-2xl flex-col rounded-3xl bg-white p-5 shadow-2xl"
           >
-            <div className="flex items-center justify-between gap-4">
-              <h3 className="text-lg font-semibold text-primary">{selectedImage.name}</h3>
+            <div className="flex shrink-0 items-center justify-between gap-4 border-b border-primary/5 pb-3">
+              <h3 className="max-w-[70%] truncate text-base font-semibold text-primary">
+                {selectedImage.name}
+              </h3>
               <button
-                className="rounded-full border border-primary/10 px-3 py-1 text-xs font-semibold text-primary transition hover:border-accent hover:text-accent"
+                type="button"
+                className="rounded-full border border-primary/10 bg-primary/5 px-4 py-1.5 text-xs font-bold text-primary transition hover:border-accent hover:bg-accent hover:text-white"
                 onClick={() => setSelectedImage(null)}
               >
                 Cerrar
               </button>
             </div>
-            <div className="mt-4 overflow-hidden rounded-2xl bg-primary/5">
+
+            <div className="mt-4 flex w-full justify-center overflow-hidden rounded-2xl bg-neutral-900/5 p-2">
               <img
                 src={selectedImage.src}
                 alt={selectedImage.name}
-                className="h-full w-full object-contain"
+                className="h-auto w-auto max-h-[60vh] max-w-full rounded-lg object-contain md:max-h-[65vh]"
               />
             </div>
           </div>

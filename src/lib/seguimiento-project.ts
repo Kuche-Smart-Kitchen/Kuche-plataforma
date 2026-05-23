@@ -113,30 +113,29 @@ function coercePago(raw: unknown, fallback: SeguimientoPago): SeguimientoPago {
   };
 }
 
-/** Conserva montos/fecha/recibo ya capturados al recalcular parcialidades. */
-export function mergePagosPreservingReceipts(
-  previous: unknown,
-  inversion: number,
-): SeguimientoPagos {
-  const fresh = defaultPagosForInversion(inversion);
-  if (!previous || typeof previous !== "object") return fresh;
+/** Conserva montos/fecha/recibo ya capturados; no reparte la inversión en tercios. */
+export function mergePagosPreservingReceipts(previous: unknown, _inversion?: number): SeguimientoPagos {
+  const zeroPagos = defaultPagosForInversion(0);
+  if (!previous || typeof previous !== "object") return zeroPagos;
   const p = previous as Record<string, unknown>;
-  const pick = (key: keyof SeguimientoPagos): SeguimientoPago => {
-    const old = coercePago(p[key], fresh[key]);
-    if (old.receiptImage?.trim() || old.date?.trim()) {
-      return {
-        ...fresh[key],
-        ...old,
-        amount: old.amount > 0 ? old.amount : fresh[key].amount,
-      };
-    }
-    return fresh[key];
-  };
   return {
-    anticipo: pick("anticipo"),
-    segundoPago: pick("segundoPago"),
-    liquidacion: pick("liquidacion"),
+    anticipo: coercePago(p.anticipo, zeroPagos.anticipo),
+    segundoPago: coercePago(p.segundoPago, zeroPagos.segundoPago),
+    liquidacion: coercePago(p.liquidacion, zeroPagos.liquidacion),
   };
+}
+
+/** Detecta montos generados por el reparto automático legado (tercios de la inversión). */
+export function pagosMatchDefaultInversionSplit(inversion: number, pagos: SeguimientoPagos): boolean {
+  const t = Math.max(0, Math.round(Number(inversion) || 0));
+  if (t <= 0) return false;
+  const auto = defaultPagosForInversion(t);
+  return (
+    pagos.anticipo.amount === auto.anticipo.amount &&
+    pagos.segundoPago.amount === auto.segundoPago.amount &&
+    pagos.liquidacion.amount === auto.liquidacion.amount &&
+    auto.anticipo.amount > 0
+  );
 }
 
 export function normalizeEtapaForStorage(raw: unknown): TimelineStep {

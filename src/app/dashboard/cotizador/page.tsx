@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Minus, Plus, Star } from "lucide-react";
+import { Minus, MoreVertical, Plus, Star } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
@@ -2235,31 +2235,51 @@ export default function CotizadorPage() {
                 </p>
               </div>
             </div>
-            <div className="mt-4 max-h-[360px] overflow-auto rounded-2xl border border-primary/10">
-              <table className="min-w-full text-left text-[11px] text-secondary">
-                <thead className="bg-primary/5 text-[10px] uppercase tracking-[0.18em] text-secondary">
-                  <tr>
-                    <th className="px-3 py-2">Categoría</th>
-                    <th className="px-3 py-2">Material</th>
-                    <th className="px-3 py-2 text-right">Cantidad</th>
-                    <th className="px-3 py-2 text-right">Precio unitario</th>
-                    <th className="px-3 py-2 text-right">Total</th>
+            <div className="mt-4 max-h-[360px] overflow-auto rounded-2xl border border-primary/10 md:overflow-x-auto">
+              <table className="min-w-full text-left text-[11px] text-secondary md:table">
+                <thead className="hidden bg-primary/5 text-[10px] uppercase tracking-[0.18em] text-secondary md:table-header-group">
+                  <tr className="md:table-row">
+                    <th className="px-3 py-2 md:table-cell">Categoría</th>
+                    <th className="px-3 py-2 md:table-cell">Material</th>
+                    <th className="px-3 py-2 text-right md:table-cell">Cantidad</th>
+                    <th className="px-3 py-2 text-right md:table-cell">Precio unitario</th>
+                    <th className="px-3 py-2 text-right md:table-cell">Total</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="block md:table-row-group">
                   {excelPreviewLines.map((line) => (
-                    <tr key={line.id} className="border-t border-primary/5">
-                      <td className="px-3 py-2 align-top text-[11px] font-semibold">
-                        {line.categoria}
+                    <tr
+                      key={line.id}
+                      className="mb-4 flex flex-col gap-2 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:mb-0 md:table-row md:border-0 md:bg-transparent md:p-0 md:shadow-none"
+                    >
+                      <td className="block align-top text-[11px] md:table-cell md:border-t md:border-primary/5 md:px-3 md:py-2">
+                        <span className="mr-1 inline font-bold text-gray-400 md:hidden">
+                          Categoría:{" "}
+                        </span>
+                        <span className="font-semibold">{line.categoria}</span>
                       </td>
-                      <td className="px-3 py-2 align-top text-[11px]">{line.descripcion}</td>
-                      <td className="px-3 py-2 align-top text-right text-[11px]">
+                      <td className="block align-top text-[11px] md:table-cell md:border-t md:border-primary/5 md:px-3 md:py-2">
+                        <span className="mr-1 inline font-bold text-gray-400 md:hidden">
+                          Material:{" "}
+                        </span>
+                        {line.descripcion}
+                      </td>
+                      <td className="block align-top text-[11px] md:table-cell md:border-t md:border-primary/5 md:px-3 md:py-2 md:text-right">
+                        <span className="mr-1 inline font-bold text-gray-400 md:hidden">
+                          Cantidad:{" "}
+                        </span>
                         {line.cantidad}
                       </td>
-                      <td className="px-3 py-2 align-top text-right text-[11px]">
+                      <td className="block align-top text-[11px] md:table-cell md:border-t md:border-primary/5 md:px-3 md:py-2 md:text-right">
+                        <span className="mr-1 inline font-bold text-gray-400 md:hidden">
+                          Precio unit.:{" "}
+                        </span>
                         {formatCurrency(line.precioUnitario)}
                       </td>
-                      <td className="px-3 py-2 align-top text-right text-[11px]">
+                      <td className="block align-top text-[11px] md:table-cell md:border-t md:border-primary/5 md:px-3 md:py-2 md:text-right">
+                        <span className="mr-1 inline font-bold text-gray-400 md:hidden">
+                          Total:{" "}
+                        </span>
                         {formatCurrency(line.total)}
                       </td>
                     </tr>
@@ -2369,13 +2389,16 @@ export default function CotizadorPage() {
                     <div className="relative" ref={openMenuId === item.id ? openMenuRef : null}>
                       <button
                         type="button"
+                        aria-label="Opciones del material (editar o eliminar)"
+                        aria-expanded={openMenuId === item.id}
+                        aria-haspopup="menu"
                         onClick={(event) => {
                           event.stopPropagation();
                           setOpenMenuId((prev) => (prev === item.id ? null : item.id));
                         }}
-                        className="flex h-7 w-7 items-center justify-center rounded-full border border-primary/10 text-sm font-semibold text-secondary transition hover:border-primary/30"
+                        className="flex h-7 w-7 items-center justify-center rounded-full border border-primary/10 text-secondary transition hover:border-primary/30 hover:bg-stone-50"
                       >
-                        +
+                        <MoreVertical className="h-4 w-4" aria-hidden />
                       </button>
                       {openMenuId === item.id ? (
                         <div

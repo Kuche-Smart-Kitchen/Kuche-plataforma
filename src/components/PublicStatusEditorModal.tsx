@@ -5,11 +5,13 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2 } from "lucide-react";
 
+import DateMaskInput from "@/components/ui/DateMaskInput";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { seguimientoProjectStoragePrefix } from "@/lib/kanban";
 import { persistSeguimientoRecordForLocalStorage } from "@/lib/seguimiento-storage-blobs";
 import {
   mergeSeguimientoFromStorage,
+  pagosMatchDefaultInversionSplit,
   TIMELINE_STEPS,
   type SeguimientoClienteProject,
   type SeguimientoPagos,
@@ -208,10 +210,20 @@ export function PublicStatusEditorModal({
       const parsed = JSON.parse(raw) as Record<string, unknown>;
       const merged = mergeSeguimientoFromStorage(parsed);
       const p = merged.pagos;
+      /** Montos en tercios iguales a la inversión = reparto automático del cotizador; no prellenar el modal. */
+      const legacyAutoSplit =
+        merged.inversion > 0 && pagosMatchDefaultInversionSplit(merged.inversion, p);
+      const pagosForForm: SeguimientoPagos = legacyAutoSplit
+        ? {
+            anticipo: { ...p.anticipo, amount: 0 },
+            segundoPago: { ...p.segundoPago, amount: 0 },
+            liquidacion: { ...p.liquidacion, amount: 0 },
+          }
+        : p;
       baselineReceiptsRef.current = {
-        anticipo: p.anticipo.receiptImage ?? "",
-        segundoPago: p.segundoPago.receiptImage ?? "",
-        liquidacion: p.liquidacion.receiptImage ?? "",
+        anticipo: pagosForForm.anticipo.receiptImage ?? "",
+        segundoPago: pagosForForm.segundoPago.receiptImage ?? "",
+        liquidacion: pagosForForm.liquidacion.receiptImage ?? "",
       };
       pendingReceiptsRef.current = {};
       setReceiptTick((t) => t + 1);
@@ -219,17 +231,17 @@ export function PublicStatusEditorModal({
       const pagoTextFromAmount = (amount: number) =>
         amount > 0 ? String(Math.max(0, Math.round(amount))) : "";
       setPagoAmountText({
-        anticipo: pagoTextFromAmount(p.anticipo.amount),
-        segundoPago: pagoTextFromAmount(p.segundoPago.amount),
-        liquidacion: pagoTextFromAmount(p.liquidacion.amount),
+        anticipo: pagoTextFromAmount(pagosForForm.anticipo.amount),
+        segundoPago: pagoTextFromAmount(pagosForForm.segundoPago.amount),
+        liquidacion: pagoTextFromAmount(pagosForForm.liquidacion.amount),
       });
       setDraft({
         ...merged,
         pagos: {
           /** `receiptImage` vacío en estado: los data URL grandes viven en baselineReceiptsRef. Montos/fechas sí del guardado. */
-          anticipo: { ...p.anticipo, receiptImage: "" },
-          segundoPago: { ...p.segundoPago, receiptImage: "" },
-          liquidacion: { ...p.liquidacion, receiptImage: "" },
+          anticipo: { ...pagosForForm.anticipo, receiptImage: "" },
+          segundoPago: { ...pagosForForm.segundoPago, receiptImage: "" },
+          liquidacion: { ...pagosForForm.liquidacion, receiptImage: "" },
         },
       });
       setInversionText(merged.inversion === 0 ? "" : String(merged.inversion));
@@ -516,6 +528,7 @@ export function PublicStatusEditorModal({
                     type="text"
                     inputMode="numeric"
                     autoComplete="off"
+                    placeholder="0"
                     value={inversionText}
                     onChange={(e) => setInversionText(digitsOnly(e.target.value))}
                     onBlur={() => {
@@ -523,7 +536,7 @@ export function PublicStatusEditorModal({
                       setInversionText(n === 0 ? "" : String(n));
                       setDraft((prev) => (prev ? { ...prev, inversion: n } : prev));
                     }}
-                    className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
+                    className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none placeholder:text-secondary/50"
                   />
                 </label>
                 <p className="mt-1 text-[11px] text-secondary">
@@ -531,7 +544,7 @@ export function PublicStatusEditorModal({
                   reparten solos.
                 </p>
               </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                 <label className="text-xs font-semibold text-secondary">
                   Estado del proyecto
                   <select
@@ -600,7 +613,7 @@ export function PublicStatusEditorModal({
                 )}
               </div>
 
-              <div className="mt-5 grid gap-3 md:grid-cols-[1fr_100px]">
+              <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-[1fr_100px]">
                 <input
                   value={newFileName}
                   onChange={(e) => setNewFileName(e.target.value)}
@@ -686,13 +699,14 @@ export function PublicStatusEditorModal({
                       className="rounded-xl border border-primary/5 bg-primary/[0.02] p-3"
                     >
                       <p className="text-xs font-semibold text-primary">{item.label}</p>
-                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
                         <label className="text-[11px] font-semibold text-secondary">
                           Monto
                           <input
                             type="text"
                             inputMode="numeric"
                             autoComplete="off"
+                            placeholder="0"
                             value={pagoAmountText[item.key]}
                             onChange={(e) => {
                               setPagoAmountText((prev) => ({
@@ -708,17 +722,15 @@ export function PublicStatusEditorModal({
                               }));
                               updatePago(item.key, { amount: n });
                             }}
-                            className="mt-1 w-full rounded-xl border border-primary/10 bg-white px-3 py-2 text-sm outline-none"
+                            className="mt-1 w-full rounded-xl border border-primary/10 bg-white px-3 py-2 text-sm outline-none placeholder:text-secondary/50"
                           />
                         </label>
                         <label className="text-[11px] font-semibold text-secondary">
                           Fecha de pago
-                          <input
-                            type="text"
-                            placeholder="Ej. 12/mar/2026"
+                          <DateMaskInput
                             value={draft.pagos[item.key].date ?? ""}
-                            onChange={(e) => updatePago(item.key, { date: e.target.value })}
-                            className="mt-1 w-full rounded-xl border border-primary/10 bg-white px-3 py-2 text-sm outline-none"
+                            onChangeValue={(date) => updatePago(item.key, { date })}
+                            className="mt-1 rounded-xl border border-primary/10 bg-white px-3 py-2 text-sm outline-none placeholder:text-secondary/50"
                           />
                         </label>
                       </div>

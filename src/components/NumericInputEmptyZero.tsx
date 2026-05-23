@@ -12,15 +12,20 @@ export type NumericInputEmptyZeroProps = Omit<
   parseAs?: "int" | "float";
 };
 
+/** Clase para el "0" tenue cuando el valor numérico está vacío (Cotizador Pro). */
+export const numericZeroPlaceholderClass = "placeholder:text-secondary/50";
+
 export const NumericInputEmptyZero = forwardRef<HTMLInputElement, NumericInputEmptyZeroProps>(
   function NumericInputEmptyZero(
-    { value, onValueChange, parseAs = "int", placeholder = "0", ...rest },
+    { value, onValueChange, parseAs = "int", placeholder = "0", className, ...rest },
     ref,
   ) {
+    const mergedClassName = [numericZeroPlaceholderClass, className].filter(Boolean).join(" ");
     return (
       <input
         ref={ref}
         {...rest}
+        className={mergedClassName}
         type="number"
         placeholder={placeholder}
         value={value === 0 ? "" : value}

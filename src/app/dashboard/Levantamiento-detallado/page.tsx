@@ -1039,7 +1039,7 @@ export default function CotizadorPreliminarPage() {
         fechaEntrega: newPreliminar.date || "Por definir",
         etapaActual: normalizeEtapaForStorage(existingParsed.etapaActual),
         estadoProyecto: "Prospecto",
-        pagos: defaultPagosForInversion(estimatedInversion),
+        pagos: defaultPagosForInversion(0),
         garantiaInicio: "",
         cotizacionPreliminarImage: "",
         cotizacionFormalImage: "",

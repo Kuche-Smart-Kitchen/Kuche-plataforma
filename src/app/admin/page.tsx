@@ -283,12 +283,12 @@ export default function AdminPage() {
 
   return (
     <main className="min-h-screen bg-[#F8F1EE]">
-      <div className="bg-gradient-to-r from-[#8B1C1C] to-[#6A1515] px-8 pb-32 pt-10 text-white">
+      <div className="bg-gradient-to-r from-[#8B1C1C] to-[#6A1515] px-0 pb-24 pt-6 text-white md:px-2 md:pb-32 md:pt-10">
         <h1 className="text-3xl font-semibold">{greeting}, Admin</h1>
         <p className="mt-1 text-sm tracking-wide text-white/80">{dateLabel}</p>
       </div>
 
-      <section className="-mt-20 mb-12 grid grid-cols-1 gap-6 px-8 md:grid-cols-2 lg:grid-cols-3">
+      <section className="-mt-16 mb-12 grid grid-cols-1 gap-6 px-0 md:-mt-20 md:grid-cols-2 md:px-2 lg:grid-cols-3">
         {cards.map((card) => {
           const Icon = card.icon;
           const parsedValue = Number.parseFloat(card.value);

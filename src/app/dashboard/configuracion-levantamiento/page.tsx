@@ -382,36 +382,48 @@ export default function ConfiguracionLevantamientoPage() {
               </label>
             </div>
 
-            <div className="mt-4 overflow-x-auto rounded-2xl border border-primary/10">
-              <table className="w-full min-w-[640px] text-left text-sm">
-                <thead>
-                  <tr className="border-b border-primary/10 bg-primary/[0.03] text-xs uppercase tracking-wide text-secondary">
-                    <th className="px-3 py-3 font-semibold">Nombre</th>
-                    <th className="px-3 py-3 font-semibold">Categoría</th>
-                    <th className="px-3 py-3 font-semibold">$/m</th>
-                    <th className="w-12 px-2 py-3" />
+            <div className="mt-4 overflow-x-auto rounded-2xl border border-primary/10 md:overflow-x-auto">
+              <table className="w-full min-w-0 text-left text-sm md:min-w-[640px] md:table">
+                <thead className="hidden md:table-header-group">
+                  <tr className="border-b border-primary/10 bg-primary/[0.03] text-xs uppercase tracking-wide text-secondary md:table-row">
+                    <th className="px-3 py-3 font-semibold md:table-cell">Nombre</th>
+                    <th className="px-3 py-3 font-semibold md:table-cell">Categoría</th>
+                    <th className="px-3 py-3 font-semibold md:table-cell">$/m</th>
+                    <th className="w-12 px-2 py-3 md:table-cell" />
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="block md:table-row-group">
                   {filteredMateriales.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="px-3 py-8 text-center text-sm text-secondary">
+                    <tr className="block md:table-row">
+                      <td
+                        colSpan={4}
+                        className="block px-3 py-8 text-center text-sm text-secondary md:table-cell"
+                      >
                         No hay materiales con estos criterios.
                       </td>
                     </tr>
                   ) : null}
                   {filteredMateriales.map((m) => (
-                    <tr key={m.id} className="border-b border-primary/5 last:border-0">
-                      <td className="px-3 py-2">
+                    <tr
+                      key={m.id}
+                      className="mb-4 flex flex-col gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:mb-0 md:table-row md:border-0 md:border-b md:border-primary/5 md:bg-transparent md:p-0 md:shadow-none"
+                    >
+                      <td className="block px-0 py-0 md:table-cell md:px-3 md:py-2">
+                        <span className="mb-1 block text-xs font-bold text-gray-400 md:hidden">
+                          Nombre
+                        </span>
                         <input
-                          className="w-full min-w-[8rem] rounded-lg border border-primary/10 bg-white px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                          className="w-full min-w-0 rounded-lg border border-primary/10 bg-white px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary/20 md:min-w-[8rem]"
                           value={m.nombre}
                           onChange={(e) => updateMaterial(m.id, { nombre: e.target.value })}
                         />
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="block px-0 py-0 md:table-cell md:px-3 md:py-2">
+                        <span className="mb-1 block text-xs font-bold text-gray-400 md:hidden">
+                          Categoría
+                        </span>
                         <select
-                          className="rounded-lg border border-primary/10 bg-white px-2 py-1.5 text-sm outline-none"
+                          className="w-full rounded-lg border border-primary/10 bg-white px-2 py-1.5 text-sm outline-none md:w-auto"
                           value={m.categoria}
                           onChange={(e) =>
                             updateMaterial(m.id, { categoria: e.target.value as MaterialCategoria })
@@ -424,13 +436,16 @@ export default function ConfiguracionLevantamientoPage() {
                           ))}
                         </select>
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="block px-0 py-0 md:table-cell md:px-3 md:py-2">
+                        <span className="mb-1 block text-xs font-bold text-gray-400 md:hidden">
+                          $/m
+                        </span>
                         <NumericInputEmptyZero
                           min={0}
                           step={50}
                           parseAs="float"
                           placeholder="0"
-                          className="w-28 rounded-lg border border-primary/10 bg-white px-2 py-1.5 text-sm font-semibold tabular-nums outline-none focus:ring-2 focus:ring-primary/20"
+                          className="w-full rounded-lg border border-primary/10 bg-white px-2 py-1.5 text-sm font-semibold tabular-nums outline-none focus:ring-2 focus:ring-primary/20 md:w-28"
                           value={m.precioPorMetro}
                           onValueChange={(n) =>
                             updateMaterial(m.id, {
@@ -439,7 +454,7 @@ export default function ConfiguracionLevantamientoPage() {
                           }
                         />
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="flex justify-end px-0 py-0 md:table-cell md:px-2 md:py-2">
                         <button
                           type="button"
                           onClick={() => setDeletePending({ id: m.id, nombre: m.nombre })}
