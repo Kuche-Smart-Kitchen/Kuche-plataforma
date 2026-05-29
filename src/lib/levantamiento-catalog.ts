@@ -13,6 +13,8 @@ export type ItemCatalogo = {
   categoria?: string;
   hint?: string;
   image: string;
+  /** Cuando es false, la UI no debe usar imágenes locales de respaldo. */
+  allowFallbackImage?: boolean;
   /** Precio fijo (iluminación), no por metro. */
   precioFijo?: number;
 };
@@ -797,28 +799,32 @@ export const APPLIANCE_ITEMS: ItemCatalogo[] = [
     categoria: "Tarjas",
     label: "Tarja seno único",
     hint: "Una cubeta; la más común en cocinas compactas.",
-    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+    image: "",
+    allowFallbackImage: false,
   },
   {
     id: "tarja-doble",
     categoria: "Tarjas",
     label: "Tarja doble taza",
     hint: "Dos cubetas para lavar y escurrir por separado.",
-    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+    image: "",
+    allowFallbackImage: false,
   },
   {
     id: "tarja-farmhouse",
     categoria: "Tarjas",
     label: "Tarja tipo granja (apron front)",
     hint: "Frente visto; estilo rústico o escandinavo.",
-    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+    image: "",
+    allowFallbackImage: false,
   },
   {
     id: "tarja-trabajo",
     categoria: "Tarjas",
     label: "Tarja de gran formato / estación de trabajo",
     hint: "Mayor profundidad o ancho para preparación intensa.",
-    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+    image: "",
+    allowFallbackImage: false,
   },
   {
     id: "campana-telescopica",
@@ -902,7 +908,8 @@ export const APPLIANCE_ITEMS: ItemCatalogo[] = [
     categoria: "Otros",
     label: "Tarja extra",
     hint: "Segunda tarja en barista, isla o área de apoyo (distinta de la tarja principal de la cocina).",
-    image: APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+    image: "",
+    allowFallbackImage: false,
   },
 ];
 
@@ -960,10 +967,12 @@ function toApplianceDisplayUrl(url: string): string {
 export function applianceLevantamientoImageCandidates(item: ItemCatalogo): string[] {
   const primary = APPLIANCE_LEVANTAMIENTO_IMAGE_BY_ID[item.id];
   const extras = APPLIANCE_LEVANTAMIENTO_IMAGE_EXTRAS[item.id] ?? [];
-  const raw = [primary, ...extras, item.image, APPLIANCE_CATALOGO_IMAGE_FALLBACK].filter(
-    (u): u is string => Boolean(u?.trim()),
-  );
-  return [...new Set(raw)].map(toApplianceDisplayUrl);
+  const raw = [primary, ...extras];
+  if (item.allowFallbackImage !== false) {
+    raw.push(item.image, APPLIANCE_CATALOGO_IMAGE_FALLBACK);
+  }
+  const filtered = raw.filter((u): u is string => Boolean(u?.trim()));
+  return [...new Set(filtered)].map(toApplianceDisplayUrl);
 }
 
 /** Primera ruta dedicada en `electrodomesticos/`, si existe en el mapa. */
@@ -1105,6 +1114,8 @@ export type LevantamientoDetalle = {
   /** Cantidad de paredes del flujo dinámico (wall-0 … wall-N-1). 0 = sin definir. */
   wallSlotCount: number;
   wallMeasures: WallMeasuresMap;
+  /** Modo libre cuando el flujo por 1–4 paredes no aplica. */
+  wallMedidasModoLibre?: boolean;
   wallOtro: OtroMedidas;
   /** Electrodomésticos del catálogo a incluir en PDF; las medidas son opcionales. */
   applianceDocumentIds: string[];
@@ -1112,6 +1123,12 @@ export type LevantamientoDetalle = {
   applianceOtroInDocument: boolean;
   applianceMeasures: Record<string, MedidasCampos>;
   applianceOtro: OtroMedidas;
+  /** Accesorios de organización y tecnología a incluir en PDF. */
+  accessoryDocumentIds: string[];
+  /** Incluir bloque «Otro accesorio» en PDF. */
+  accessoryOtroInDocument: boolean;
+  accessoryMeasures: Record<string, MedidasCampos>;
+  accessoryOtro: OtroMedidas;
   /** Luminarios del catálogo elegidos para el proyecto/PDF (varios a la vez; medidas opcionales). */
   lightingSelectedIds: string[];
   /** Incluir bloque «Otro luminario» en PDF. */
@@ -1144,6 +1161,21 @@ export function applianceAppearsInPdf(lev: LevantamientoDetalle, applianceId: st
 export function applianceOtroAppearsInPdf(lev: LevantamientoDetalle): boolean {
   if (lev.applianceOtroInDocument) return true;
   const o = lev.applianceOtro;
+  return o.descripcion.trim() !== "" || medidasCamposTieneValor(o);
+}
+
+/** PDF: accesorio de catálogo si está seleccionado o tenía medidas (datos antiguos). */
+export function accessoryAppearsInPdf(lev: LevantamientoDetalle, accessoryId: string): boolean {
+  const ids = lev.accessoryDocumentIds ?? [];
+  if (ids.includes(accessoryId)) return true;
+  const m = lev.accessoryMeasures[accessoryId];
+  return m ? medidasCamposTieneValor(m) : false;
+}
+
+/** PDF: bloque Otro accesorio si está marcado o tenía contenido (datos antiguos). */
+export function accessoryOtroAppearsInPdf(lev: LevantamientoDetalle): boolean {
+  if (lev.accessoryOtroInDocument) return true;
+  const o = lev.accessoryOtro;
   return o.descripcion.trim() !== "" || medidasCamposTieneValor(o);
 }
 
@@ -1195,11 +1227,16 @@ export function defaultLevantamientoDetalle(): LevantamientoDetalle {
     sectionComments: {},
     wallSlotCount: 0,
     wallMeasures: initWallMeasuresMap(),
+    wallMedidasModoLibre: false,
     wallOtro: emptyOtro(),
     applianceDocumentIds: [],
     applianceOtroInDocument: false,
     applianceMeasures: initMeasuresMap(APPLIANCE_ITEMS.map((a) => a.id)),
     applianceOtro: emptyOtro(),
+    accessoryDocumentIds: [],
+    accessoryOtroInDocument: false,
+    accessoryMeasures: {},
+    accessoryOtro: emptyOtro(),
     lightingSelectedIds: [],
     lightingOtroInDocument: false,
     lightingMeasures: initMeasuresMap(LIGHTING_ITEMS.map((l) => l.id)),
@@ -1255,6 +1292,15 @@ export function normalizeLevantamientoDetalle(raw: unknown): LevantamientoDetall
           fondo: String(r.applianceOtro.fondo ?? ""),
         }
       : d.applianceOtro;
+    const accessoryOtro =
+      typeof (r as { accessoryOtro?: unknown }).accessoryOtro === "object" && (r as { accessoryOtro?: unknown }).accessoryOtro !== null
+        ? {
+            descripcion: String((r as { accessoryOtro?: { descripcion?: unknown } }).accessoryOtro?.descripcion ?? ""),
+            ancho: String((r as { accessoryOtro?: { ancho?: unknown } }).accessoryOtro?.ancho ?? ""),
+            alto: String((r as { accessoryOtro?: { alto?: unknown } }).accessoryOtro?.alto ?? ""),
+            fondo: String((r as { accessoryOtro?: { fondo?: unknown } }).accessoryOtro?.fondo ?? ""),
+          }
+        : d.accessoryOtro;
   const lightingOtroRaw = r.lightingOtro;
   const lightingOtro =
     typeof lightingOtroRaw === "object" && lightingOtroRaw !== null
@@ -1279,8 +1325,11 @@ export function normalizeLevantamientoDetalle(raw: unknown): LevantamientoDetall
     typeof wallSlotCountRaw === "number" && Number.isFinite(wallSlotCountRaw)
       ? Math.min(20, Math.max(0, Math.floor(wallSlotCountRaw)))
       : d.wallSlotCount;
+  const wallMedidasModoLibre = r.wallMedidasModoLibre === true;
 
   const applianceMeasures = mergeMeasuresMapFromRaw(r.applianceMeasures, APPLIANCE_ITEMS.map((a) => a.id));
+  const accessoryIds = [] as string[];
+  const accessoryMeasures = mergeMeasuresMapFromRaw((r as { accessoryMeasures?: unknown }).accessoryMeasures, accessoryIds);
 
   const rawDocIds = r.applianceDocumentIds;
   let applianceDocumentIds: string[] = Array.isArray(rawDocIds)
@@ -1301,6 +1350,14 @@ export function normalizeLevantamientoDetalle(raw: unknown): LevantamientoDetall
   let applianceOtroInDocument = r.applianceOtroInDocument === true;
   if (!applianceOtroInDocument && (applianceOtro.descripcion.trim() !== "" || medidasCamposTieneValor(applianceOtro))) {
     applianceOtroInDocument = true;
+  }
+
+  let accessoryDocumentIds: string[] = Array.isArray((r as { accessoryDocumentIds?: unknown }).accessoryDocumentIds)
+    ? [...new Set(((r as { accessoryDocumentIds?: unknown }).accessoryDocumentIds as unknown[]).filter((x): x is string => typeof x === "string"))]
+    : [];
+  let accessoryOtroInDocument = (r as { accessoryOtroInDocument?: unknown }).accessoryOtroInDocument === true;
+  if (!accessoryOtroInDocument && (accessoryOtro.descripcion.trim() !== "" || medidasCamposTieneValor(accessoryOtro))) {
+    accessoryOtroInDocument = true;
   }
 
   const lightingMeasures = mergeMeasuresMapFromRaw(r.lightingMeasures, LIGHTING_ITEMS.map((l) => l.id));
@@ -1336,11 +1393,16 @@ export function normalizeLevantamientoDetalle(raw: unknown): LevantamientoDetall
     sectionComments,
     wallSlotCount,
     wallMeasures: normalizeWallMeasuresPayload(r.wallMeasures),
+    wallMedidasModoLibre,
     wallOtro,
     applianceDocumentIds,
     applianceOtroInDocument,
     applianceMeasures,
     applianceOtro,
+    accessoryDocumentIds,
+    accessoryOtroInDocument,
+    accessoryMeasures,
+    accessoryOtro,
     lightingSelectedIds,
     lightingOtroInDocument,
     lightingMeasures,

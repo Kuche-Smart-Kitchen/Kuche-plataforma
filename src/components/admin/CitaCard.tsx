@@ -22,6 +22,10 @@ export default function CitaCard({ cita, onClick, onDragStart }: CitaCardProps) 
 
   const getNombreIngeniero = () => {
     if (!cita.ingenieroAsignado) return 'Sin asignar';
+    if (Array.isArray(cita.ingenieroAsignado)) {
+      const nombres = cita.ingenieroAsignado.map((item) => (typeof item === 'string' ? item : item.nombre)).filter(Boolean);
+      return nombres.length > 0 ? nombres.join(', ') : 'Sin asignar';
+    }
     if (typeof cita.ingenieroAsignado === 'string') return 'Asignado';
     return cita.ingenieroAsignado.nombre;
   };

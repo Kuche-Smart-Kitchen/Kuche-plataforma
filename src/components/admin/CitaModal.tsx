@@ -11,59 +11,99 @@ import {
   Mail, 
   Clock,
   FileText,
-  Briefcase,
   CheckCircle2,
   AlertCircle,
-  UserCheck,
-  Save
+  Save,
+  Edit2,
+  Users,
 } from "lucide-react";
-import { Cita } from "@/lib/axios/citasApi";
-import { Usuario } from "@/lib/axios/usuariosApi";
+import { Cita, ActualizarDatosCitaData } from "@/lib/axios/citasApi";
+import type { Usuario } from "@/lib/axios/usuariosApi";
 
 interface CitaModalProps {
   cita: Cita | null;
   isOpen: boolean;
   onClose: () => void;
-  empleados?: Usuario[];
-  onAsignarIngeniero?: (citaId: string, ingenieroId: string | null) => Promise<void>;
   onActualizarEstado?: (citaId: string, nuevoEstado: 'programada' | 'en_proceso' | 'completada' | 'cancelada') => Promise<void>;
+  onActualizarDatos?: (citaId: string, datos: ActualizarDatosCitaData) => Promise<void>;
+  onAsignarIngenieros?: (citaId: string, ingenieroIds: string[]) => Promise<void>;
+  empleados?: Usuario[];
 }
 
 export default function CitaModal({ 
   cita, 
   isOpen, 
   onClose, 
+  onActualizarEstado,
+  onActualizarDatos,
+  onAsignarIngenieros,
   empleados = [],
-  onAsignarIngeniero,
-  onActualizarEstado
 }: CitaModalProps) {
-  const [selectedIngeniero, setSelectedIngeniero] = useState<string>("");
-  const [isAssigning, setIsAssigning] = useState(false);
   const [isUpdatingEstado, setIsUpdatingEstado] = useState(false);
+  const [isEditingDatos, setIsEditingDatos] = useState(false);
+  const [isSavingDatos, setIsSavingDatos] = useState(false);
+  const [isSavingAsignacion, setIsSavingAsignacion] = useState(false);
+
+  // Formulario de edición de datos
+  const [datosForm, setDatosForm] = useState({
+    nombreCliente: "",
+    correoCliente: "",
+    telefonoCliente: "",
+    ubicacion: "",
+    informacionAdicional: ""
+  });
+  const [ingenieroIdsForm, setIngenieroIdsForm] = useState<string[]>([]);
 
   useEffect(() => {
-    if (cita && cita.ingenieroAsignado) {
-      const ingenieroId = typeof cita.ingenieroAsignado === 'string' 
-        ? cita.ingenieroAsignado 
-        : cita.ingenieroAsignado._id;
-      setSelectedIngeniero(ingenieroId);
-    } else {
-      setSelectedIngeniero("");
+    if (cita) {
+      // Cargar datos del formulario
+      setDatosForm({
+        nombreCliente: cita.nombreCliente || "",
+        correoCliente: cita.correoCliente || "",
+        telefonoCliente: cita.telefonoCliente || "",
+        ubicacion: cita.ubicacion || "",
+        informacionAdicional: cita.informacionAdicional || ""
+      });
+      const assigned = Array.isArray(cita.ingenieroAsignado)
+        ? cita.ingenieroAsignado
+        : cita.ingenieroAsignado
+          ? [cita.ingenieroAsignado]
+          : [];
+
+      setIngenieroIdsForm(
+        assigned
+          .map((item) => (typeof item === "string" ? item : item._id))
+          .filter((item): item is string => Boolean(item && item.trim().length > 0)),
+      );
     }
   }, [cita]);
 
   if (!cita) return null;
 
-  const handleAsignarIngeniero = async () => {
-    if (!onAsignarIngeniero) return;
-    setIsAssigning(true);
+  const handleGuardarDatos = async () => {
+    if (!onActualizarDatos) return;
+    
+    // Validar que hay cambios
+    const cambios: ActualizarDatosCitaData = {};
+    if (datosForm.nombreCliente !== cita.nombreCliente) cambios.nombreCliente = datosForm.nombreCliente;
+    if (datosForm.correoCliente !== cita.correoCliente) cambios.correoCliente = datosForm.correoCliente;
+    if (datosForm.telefonoCliente !== cita.telefonoCliente) cambios.telefonoCliente = datosForm.telefonoCliente;
+    if (datosForm.ubicacion !== cita.ubicacion) cambios.ubicacion = datosForm.ubicacion;
+    if (datosForm.informacionAdicional !== cita.informacionAdicional) cambios.informacionAdicional = datosForm.informacionAdicional;
+
+    if (Object.keys(cambios).length === 0) {
+      setIsEditingDatos(false);
+      return;
+    }
+
+    setIsSavingDatos(true);
     try {
-      const ingenieroId = selectedIngeniero || null;
-      await onAsignarIngeniero(cita._id, ingenieroId);
+      await onActualizarDatos(cita._id, cambios);
+      setIsEditingDatos(false);
     } catch (error) {
-      console.error("Error al asignar ingeniero:", error);
+      console.error("Error al guardar datos:", error);
     } finally {
-      setIsAssigning(false);
+      setIsSavingDatos(false);
     }
   };
 
@@ -78,6 +118,44 @@ export default function CitaModal({
       setIsUpdatingEstado(false);
     }
   };
+
+  const handleGuardarAsignacion = async () => {
+    if (!onAsignarIngenieros) return;
+
+    const idsSeleccionados = ingenieroIdsForm.filter((id) => id.trim().length > 0);
+    const idsActuales = Array.isArray(cita.ingenieroAsignado)
+      ? cita.ingenieroAsignado
+      : cita.ingenieroAsignado
+        ? [cita.ingenieroAsignado]
+        : [];
+    const idsActualesNormalizados = idsActuales
+      .map((item) => (typeof item === "string" ? item : item._id))
+      .filter((item): item is string => Boolean(item && item.trim().length > 0));
+
+    const cambios =
+      idsSeleccionados.length !== idsActualesNormalizados.length ||
+      idsSeleccionados.some((id, index) => id !== idsActualesNormalizados[index]);
+
+    if (!cambios) return;
+
+    setIsSavingAsignacion(true);
+    try {
+      await onAsignarIngenieros(cita._id, idsSeleccionados);
+    } catch (error) {
+      console.error("Error al guardar asignación:", error);
+    } finally {
+      setIsSavingAsignacion(false);
+    }
+  };
+
+  const getNombreEmpleado = (id: string) => {
+    const empleado = empleados.find((item) => item._id === id);
+    return empleado?.nombre || id;
+  };
+
+  const ingenierosAsignados = ingenieroIdsForm.length > 0
+    ? ingenieroIdsForm.map(getNombreEmpleado)
+    : [];
 
   const formatearFechaCompleta = (fecha: string) => {
     const date = new Date(fecha);
@@ -109,18 +187,6 @@ export default function CitaModal({
       case 'cancelada': return 'Cancelada';
       default: return estado;
     }
-  };
-
-  const getNombreIngeniero = () => {
-    if (!cita.ingenieroAsignado) return null;
-    if (typeof cita.ingenieroAsignado === 'string') return null;
-    return cita.ingenieroAsignado.nombre;
-  };
-
-  const getCorreoIngeniero = () => {
-    if (!cita.ingenieroAsignado) return null;
-    if (typeof cita.ingenieroAsignado === 'string') return null;
-    return cita.ingenieroAsignado.correo;
   };
 
   return (
@@ -172,43 +238,130 @@ export default function CitaModal({
                 </span>
               </div>
 
-              {/* Información del Cliente */}
+              {/* Información del Cliente - Con edición */}
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <h3 className="mb-3 text-sm font-semibold text-primary flex items-center gap-2">
-                  <User className="h-4 w-4 text-accent" />
-                  Información del Cliente
-                </h3>
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-xs text-secondary">Nombre completo</p>
-                    <p className="mt-1 text-sm font-medium text-primary">{cita.nombreCliente}</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <p className="text-xs text-secondary">Teléfono</p>
-                      <div className="mt-1 flex items-center gap-2">
-                        <Phone className="h-3 w-3 text-secondary" />
-                        <p className="text-sm font-medium text-primary">{cita.telefonoCliente}</p>
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-xs text-secondary">Correo electrónico</p>
-                      <div className="mt-1 flex items-center gap-2">
-                        <Mail className="h-3 w-3 text-secondary" />
-                        <p className="text-sm font-medium text-primary truncate">{cita.correoCliente}</p>
-                      </div>
-                    </div>
-                  </div>
-                  {cita.ubicacion && (
-                    <div>
-                      <p className="text-xs text-secondary">Ubicación</p>
-                      <div className="mt-1 flex items-start gap-2">
-                        <MapPin className="h-3 w-3 text-secondary mt-0.5 flex-shrink-0" />
-                        <p className="text-sm font-medium text-primary">{cita.ubicacion}</p>
-                      </div>
-                    </div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-primary flex items-center gap-2">
+                    <User className="h-4 w-4 text-accent" />
+                    Información del Cliente
+                  </h3>
+                  {!isEditingDatos && (
+                    <button
+                      onClick={() => setIsEditingDatos(true)}
+                      className="flex items-center gap-1 text-xs text-accent hover:text-accent/80 transition"
+                    >
+                      <Edit2 className="h-3.5 w-3.5" />
+                      Editar
+                    </button>
                   )}
                 </div>
+
+                {isEditingDatos ? (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs text-secondary mb-1">Nombre completo</label>
+                      <input
+                        type="text"
+                        value={datosForm.nombreCliente}
+                        onChange={(e) => setDatosForm({...datosForm, nombreCliente: e.target.value})}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-secondary mb-1">Correo electrónico</label>
+                      <input
+                        type="email"
+                        value={datosForm.correoCliente}
+                        onChange={(e) => setDatosForm({...datosForm, correoCliente: e.target.value})}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-secondary mb-1">Teléfono</label>
+                      <input
+                        type="tel"
+                        value={datosForm.telefonoCliente}
+                        onChange={(e) => setDatosForm({...datosForm, telefonoCliente: e.target.value})}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-secondary mb-1">Ubicación</label>
+                      <input
+                        type="text"
+                        value={datosForm.ubicacion}
+                        onChange={(e) => setDatosForm({...datosForm, ubicacion: e.target.value})}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-secondary mb-1">Información adicional</label>
+                      <textarea
+                        value={datosForm.informacionAdicional}
+                        onChange={(e) => setDatosForm({...datosForm, informacionAdicional: e.target.value})}
+                        rows={3}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleGuardarDatos}
+                        disabled={isSavingDatos}
+                        className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent/90 disabled:opacity-50"
+                      >
+                        {isSavingDatos ? (
+                          <>
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                            Guardando...
+                          </>
+                        ) : (
+                          <>
+                            <Save className="h-4 w-4" />
+                            Guardar
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => setIsEditingDatos(false)}
+                        className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-secondary transition hover:border-gray-400"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs text-secondary">Nombre completo</p>
+                      <p className="mt-1 text-sm font-medium text-primary">{datosForm.nombreCliente}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-xs text-secondary">Teléfono</p>
+                        <div className="mt-1 flex items-center gap-2">
+                          <Phone className="h-3 w-3 text-secondary" />
+                          <p className="text-sm font-medium text-primary">{datosForm.telefonoCliente}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs text-secondary">Correo electrónico</p>
+                        <div className="mt-1 flex items-center gap-2">
+                          <Mail className="h-3 w-3 text-secondary" />
+                          <p className="text-sm font-medium text-primary truncate">{datosForm.correoCliente}</p>
+                        </div>
+                      </div>
+                    </div>
+                    {datosForm.ubicacion && (
+                      <div>
+                        <p className="text-xs text-secondary">Ubicación</p>
+                        <div className="mt-1 flex items-start gap-2">
+                          <MapPin className="h-3 w-3 text-secondary mt-0.5 flex-shrink-0" />
+                          <p className="text-sm font-medium text-primary">{datosForm.ubicacion}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Fechas */}
@@ -249,81 +402,89 @@ export default function CitaModal({
                 </div>
               </div>
 
-              {/* Ingeniero Asignado / Asignar */}
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <h3 className="mb-3 text-sm font-semibold text-primary flex items-center gap-2">
-                  <Briefcase className="h-4 w-4 text-accent" />
-                  Ingeniero Asignado
-                </h3>
-                
-                {onAsignarIngeniero ? (
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs text-secondary mb-2">
-                        Seleccionar ingeniero
-                      </label>
-                      <select
-                        value={selectedIngeniero}
-                        onChange={(e) => setSelectedIngeniero(e.target.value)}
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
-                        disabled={isAssigning}
-                      >
-                        <option value="">Sin asignar</option>
-                        {empleados.map((empleado) => (
-                          <option key={empleado._id} value={empleado._id}>
-                            {empleado.nombre} - {empleado.rol}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    
-                    {getNombreIngeniero() && (
-                      <div className="rounded-lg bg-blue-50 p-3 border border-blue-200">
-                        <p className="text-xs text-secondary mb-1">Actualmente asignado a:</p>
-                        <p className="text-sm font-medium text-primary">{getNombreIngeniero()}</p>
-                        {getCorreoIngeniero() && (
-                          <p className="text-xs text-secondary mt-1">{getCorreoIngeniero()}</p>
-                        )}
+              {/* Asignación de empleados */}
+              {onAsignarIngenieros && (
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <h3 className="mb-3 text-sm font-semibold text-primary flex items-center gap-2">
+                    <Users className="h-4 w-4 text-accent" />
+                    Asignación de empleados
+                  </h3>
+
+                  {empleados.length > 0 ? (
+                    <div className="space-y-3">
+                      <div className="max-h-52 space-y-2 overflow-y-auto rounded-lg border border-gray-200 bg-white p-3">
+                        {empleados.map((empleado) => {
+                          const checked = ingenieroIdsForm.includes(empleado._id);
+
+                          return (
+                            <label
+                              key={empleado._id}
+                              className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-sm transition hover:bg-gray-50"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(event) => {
+                                  setIngenieroIdsForm((current) =>
+                                    event.target.checked
+                                      ? Array.from(new Set([...current, empleado._id]))
+                                      : current.filter((id) => id !== empleado._id),
+                                  );
+                                }}
+                                className="h-4 w-4 rounded border-gray-300 text-accent focus:ring-accent"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <p className="font-medium text-primary">{empleado.nombre}</p>
+                                <p className="text-xs text-secondary truncate">{empleado.correo}</p>
+                              </div>
+                            </label>
+                          );
+                        })}
                       </div>
-                    )}
-                    
-                    <button
-                      onClick={handleAsignarIngeniero}
-                      disabled={isAssigning || (!selectedIngeniero && !getNombreIngeniero())}
-                      className="w-full flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isAssigning ? (
-                        <>
-                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                          <span>Asignando...</span>
-                        </>
-                      ) : (
-                        <>
-                          <UserCheck className="h-4 w-4" />
-                          <span>{getNombreIngeniero() ? 'Actualizar asignación' : 'Asignar ingeniero'}</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                ) : (
-                  getNombreIngeniero() ? (
-                    <div className="space-y-2">
+
                       <div>
-                        <p className="text-xs text-secondary">Nombre</p>
-                        <p className="mt-1 text-sm font-medium text-primary">{getNombreIngeniero()}</p>
-                      </div>
-                      {getCorreoIngeniero() && (
-                        <div>
-                          <p className="text-xs text-secondary">Correo</p>
-                          <p className="mt-1 text-sm font-medium text-primary">{getCorreoIngeniero()}</p>
+                        <p className="text-xs text-secondary">Seleccionados</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {ingenierosAsignados.length > 0 ? (
+                            ingenierosAsignados.map((nombre, index) => (
+                              <span
+                                key={`${nombre}-${index}`}
+                                className="inline-flex items-center rounded-full bg-accent/10 px-3 py-1 text-xs font-medium text-accent"
+                              >
+                                {nombre}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-sm text-secondary">Sin asignar</span>
+                          )}
                         </div>
-                      )}
+                      </div>
+
+                      <button
+                        onClick={handleGuardarAsignacion}
+                        disabled={isSavingAsignacion}
+                        className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent/90 disabled:opacity-50"
+                      >
+                        {isSavingAsignacion ? (
+                          <>
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                            Guardando asignación...
+                          </>
+                        ) : (
+                          <>
+                            <Save className="h-4 w-4" />
+                            Guardar asignación
+                          </>
+                        )}
+                      </button>
                     </div>
                   ) : (
-                    <p className="text-sm text-secondary italic">No asignado</p>
-                  )
-                )}
-              </div>
+                    <p className="text-sm text-secondary">
+                      No hay empleados disponibles para asignar.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Especificaciones */}
               {(cita.especificacionesInicio?.medidas || 
@@ -377,19 +538,6 @@ export default function CitaModal({
                       </div>
                     )}
                   </div>
-                </div>
-              )}
-
-              {/* Información Adicional */}
-              {cita.informacionAdicional && (
-                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                  <h3 className="mb-3 text-sm font-semibold text-primary flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-accent" />
-                    Información Adicional
-                  </h3>
-                  <p className="text-sm text-primary whitespace-pre-wrap">
-                    {cita.informacionAdicional}
-                  </p>
                 </div>
               )}
             </div>

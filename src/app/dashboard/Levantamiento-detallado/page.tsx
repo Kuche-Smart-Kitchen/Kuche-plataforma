@@ -10,7 +10,15 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
-import { Check, CheckCircle2, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import {
+  Check,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  FilePenLine,
+  Search,
+} from "lucide-react";
+import { useCatalogEquipamiento } from "@/contexts/CatalogEquipamientoContext";
 import {
   activeCitaTaskStorageKey,
   kanbanStorageKey,
@@ -30,14 +38,16 @@ import {
 import {
   APPLIANCE_CATEGORIAS,
   APPLIANCE_ITEMS,
+  applianceFirstIndexForCategory,
   APPLIANCE_OTRO_STEP_INDEX,
   defaultLevantamientoDetalle,
+  emptyOtro,
   emptyWallMeasuresForId,
-  getApplianceCategoryProgress,
   getWallMeasureFieldDefs,
   cotizacionIluminacionTotal,
   isWallSlotKey,
   LIGHTING_ITEMS,
+  medidasCamposTieneValor,
   wallMeasuresTieneValor,
   WALL_SLOT_META_TYPE,
   WALL_SLOT_META_ALIAS,
@@ -73,6 +83,7 @@ import {
   type LevantamientoConfig,
   type MaterialGama,
 } from "@/lib/config-levantamiento";
+import type { Electrodomestico, Extra } from "@/lib/axios/equipamientoApi";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("es-MX", {
@@ -87,7 +98,84 @@ const parseMeasure = (raw: string | undefined): number | null => {
   return Number.isFinite(v) ? v : null;
 };
 
-const WALL_COUNT_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+const normalizeCatalogText = (value: string) =>
+  value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+const buildSearchText = (...parts: Array<string | undefined>) =>
+  normalizeCatalogText(parts.filter(Boolean).join(" "));
+
+const applianceKeywordMap: Record<string, string[]> = {
+  "micro-sobremesa": ["sobremesa", "libre instalacion", "libre instalacion", "encimera"],
+  "micro-empotrable": ["empotrable", "integracion", "integrado"],
+  "micro-campana": ["campana", "extractora"],
+  "estufa-gas": ["estufa de gas", "gas", "lp", "natural"],
+  "estufa-electrica": ["estufa electrica", "electrica", "vitroceramica", "induccion"],
+  "estufa-piso-material": ["piso", "material", "inox", "porcelanizada"],
+  "estufa-compacta": ["compacta", "puesto", "pequena"],
+  "refri-top-mount": ["top mount", "congelador superior", "superior"],
+  "refri-bottom-mount": ["bottom mount", "congelador inferior", "inferior"],
+  "refri-side-side": ["side by side", "duplex"],
+  "refri-french-door": ["french door", "puerta francesa"],
+  "refri-frigobar": ["frigobar", "compacto"],
+  "parrilla-gas": ["parrilla de gas", "gas"],
+  "parrilla-induccion": ["induccion"],
+  "parrilla-electrica-vitro": ["electrica", "vitroceramica"],
+  "parrilla-mixta": ["mixta"],
+  "parrilla-domino": ["domino"],
+  "tarja-simple": ["tarja simple", "seno unico", "cubeta unica"],
+  "tarja-doble": ["tarja doble", "doble taza"],
+  "tarja-farmhouse": ["farmhouse", "granja", "apron front"],
+  "tarja-trabajo": ["estacion de trabajo", "gran formato", "trabajo"],
+  "campana-telescopica": ["telescopica", "extraible", "extraible"],
+  "campana-decorativa-pared": ["decorativa", "pared"],
+  "campana-isla": ["isla", "colgante"],
+  "campana-integrada": ["integrada", "empotrable", "mueble"],
+  "otro-cafetera": ["cafetera"],
+  "otro-lavavajillas": ["lavavajillas"],
+  "otro-freidora-aire": ["freidora de aire", "air fryer"],
+  "otro-horno-gas": ["horno de gas", "horno"],
+  "otro-tostadora": ["tostadora"],
+  "otro-dispensador-agua": ["dispensador de agua", "agua"],
+  "otro-enfriador-vinos": ["enfriador de vinos", "vino"],
+  "otro-tarja-extra": ["tarja extra", "segunda tarja"],
+};
+
+type BackendCatalogRecord = Pick<
+  Electrodomestico | Extra,
+  "_id" | "nombre" | "categoria" | "descripcion" | "imagenUrl" | "thumbnailUrl" | "precio"
+>;
+
+const resolveBackendCatalogMatch = (item: ItemCatalogo, records: BackendCatalogRecord[]) => {
+  if (records.length === 0) return null;
+  const itemText = buildSearchText(item.id, item.label, item.categoria, item.hint);
+  const keywords = applianceKeywordMap[item.id] ?? [];
+
+  const exact = records.find((record) => normalizeCatalogText(record.nombre) === itemText);
+  if (exact) return exact;
+
+  const keywordMatch = records.find((record) => {
+    const recordText = buildSearchText(record.nombre, record.categoria, record.descripcion);
+    return keywords.some((keyword) => recordText.includes(normalizeCatalogText(keyword)));
+  });
+  if (keywordMatch) return keywordMatch;
+
+  const categoryMatch = records.find((record) => normalizeCatalogText(record.categoria ?? "") === normalizeCatalogText(item.categoria ?? ""));
+  if (categoryMatch) return categoryMatch;
+
+  return records.find((record) => buildSearchText(record.nombre, record.descripcion).includes(itemText)) ?? null;
+};
+
+const resolveBackendImage = (record: BackendCatalogRecord | null | undefined) =>
+  record?.thumbnailUrl || record?.imagenUrl || undefined;
+
+const WALL_COUNT_OPTIONS = [1, 2, 3, 4] as const;
+
+const WALL_LIBRE_FIELD_DEFS = getWallMeasureFieldDefs("pared-otro");
 
 const wallCountSvgProps = {
   viewBox: "0 0 24 24",
@@ -189,10 +277,27 @@ const streamRankClass =
   "w-[0.42em] min-w-[1.25rem] shrink-0 select-none self-end pb-1 text-center text-lg font-semibold tabular-nums leading-none text-zinc-500 sm:min-w-[1.4rem] sm:text-xl";
 const streamVerTodosClass =
   "shrink-0 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-400 underline-offset-2 transition hover:text-zinc-100 hover:underline";
-const streamPosterClass = (selected: boolean) =>
-  `relative z-10 aspect-[2/3] w-[min(10.5rem,52vw)] shrink-0 overflow-hidden rounded-lg bg-zinc-900 shadow-xl transition sm:w-[min(12.5rem,38vw)] lg:w-[min(13.5rem,32vw)] ${
-    selected ? "ring-2 ring-white ring-offset-2 ring-offset-zinc-950" : "ring-1 ring-white/10 hover:ring-white/55"
-  }`;
+const streamPosterClass = (selected: boolean, item?: ItemCatalogo) => {
+  const ring = selected
+    ? "ring-2 ring-white ring-offset-2 ring-offset-zinc-950"
+    : "ring-1 ring-white/10 hover:ring-white/55";
+  if (item?.id === "otro-tostadora" || item?.id === "otro-tarja-extra") {
+    return `relative z-10 aspect-[2/3] w-[min(10.5rem,52vw)] shrink-0 overflow-hidden rounded-lg bg-white shadow-xl transition sm:w-[min(12.5rem,38vw)] lg:w-[min(13.5rem,32vw)] ${ring}`;
+  }
+  if (item?.id === "estufa-compacta" || item?.id === "parrilla-mixta") {
+    return `relative z-10 h-[calc(min(10.5rem,52vw)*3/2)] w-[min(20rem,92vw)] shrink-0 overflow-hidden rounded-lg bg-zinc-900 shadow-xl transition sm:h-[calc(min(12.5rem,38vw)*3/2)] sm:w-[min(21.5rem,80vw)] lg:h-[calc(min(13.5rem,32vw)*3/2)] lg:w-[min(22.5rem,58vw)] ${ring}`;
+  }
+  if (item?.id === "parrilla-domino") {
+    return `relative z-10 h-[calc(min(10.5rem,52vw)*3/2)] w-[min(17.6rem,81vw)] shrink-0 overflow-hidden rounded-lg bg-zinc-900 shadow-xl transition sm:h-[calc(min(12.5rem,38vw)*3/2)] sm:w-[min(18.9rem,70vw)] lg:h-[calc(min(13.5rem,32vw)*3/2)] lg:w-[min(19.8rem,51vw)] ${ring}`;
+  }
+  if (item?.categoria === "Tarjas") {
+    return `relative z-10 aspect-[3/2] w-[min(17.5rem,92vw)] shrink-0 overflow-hidden rounded-lg bg-zinc-900 shadow-xl transition sm:w-[min(19.5rem,68vw)] lg:w-[min(20.5rem,56vw)] ${ring}`;
+  }
+  if (item?.categoria === "Campanas") {
+    return `relative z-10 aspect-[40/39] w-[min(12.5rem,58vw)] shrink-0 overflow-hidden rounded-lg bg-zinc-900 shadow-xl transition sm:w-[min(15rem,42vw)] lg:w-[min(16.25rem,35vw)] ${ring}`;
+  }
+  return `relative z-10 aspect-[2/3] w-[min(10.5rem,52vw)] shrink-0 overflow-hidden rounded-lg bg-zinc-900 shadow-xl transition sm:w-[min(12.5rem,38vw)] lg:w-[min(13.5rem,32vw)] ${ring}`;
+};
 const streamPosterTitleOverlay =
   "pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent px-2 pb-2.5 pt-14";
 const streamPosterLabelClass =
@@ -200,6 +305,21 @@ const streamPosterLabelClass =
 /** Miniaturas de carrusel: `cover` sin `object-center` aquí — el centro choca con `object-[…]` en iluminación. */
 const streamCatalogThumbBase = "absolute inset-0 z-0 h-full w-full object-cover";
 const streamCatalogThumbImageClass = `${streamCatalogThumbBase} object-center`;
+function applianceStreamCatalogThumbClass(item: ItemCatalogo): string {
+  if (item.categoria === "Campanas") {
+    return `${streamCatalogThumbBase} object-[center_40%]`;
+  }
+  if (item.id === "estufa-compacta" || item.id === "parrilla-mixta") {
+    return "absolute inset-0 z-0 box-border h-full w-full object-contain object-center p-3 sm:p-4";
+  }
+  if (item.id === "parrilla-domino") {
+    return streamCatalogThumbImageClass;
+  }
+  if (item.id === "otro-tostadora" || item.id === "otro-tarja-extra") {
+    return "absolute inset-0 z-0 h-full w-full object-contain object-center";
+  }
+  return streamCatalogThumbImageClass;
+}
 /** Encuadre por ítem: `LightingTypeImage` aplica `object-position` inline (catálogo). */
 const streamLightingThumbClass = `${streamCatalogThumbBase} object-center`;
 const streamScrollClass =
@@ -234,28 +354,36 @@ const MaterialGrid = ({
   ...rest
 }: MaterialGridProps) => {
   const isMulti = rest.multiSelect === true;
-  const pageSize = 4;
   const normalizedSearch = materialSearch.trim().toLowerCase();
   const filtered = options.filter((option) => {
     const matchesSearch = !normalizedSearch || option.name.toLowerCase().includes(normalizedSearch);
     const matchesTier = tierFilter === "Todos" || option.tier === tierFilter;
     return matchesSearch && matchesTier;
   });
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const start = (safePage - 1) * pageSize;
-  const paginated = filtered.slice(start, start + pageSize);
 
   return (
-    <div className="space-y-4">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-secondary">{title}</p>
-        {isMulti ? (
-          <p className="mt-1 text-[11px] font-medium text-secondary/85">Puedes elegir más de uno.</p>
-        ) : null}
+    <div className="space-y-4 rounded-3xl border border-primary/10 bg-white/90 px-4 py-4 shadow-inner sm:px-5 sm:py-5">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-secondary">{title}</p>
+          {isMulti ? <p className="mt-1 text-[11px] font-medium text-secondary/85">Puedes elegir más de uno.</p> : null}
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            const row = document.getElementById(`material-row-${category}`);
+            if (row) row.scrollTo({ left: row.scrollWidth, behavior: "smooth" });
+          }}
+          className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.18em] text-secondary underline-offset-2 transition hover:text-primary hover:underline"
+        >
+          Ver todos
+        </button>
       </div>
-      <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
-        {paginated.map((option) => {
+      <div
+        id={`material-row-${category}`}
+        className="flex gap-3 overflow-x-auto pb-2 pt-1 pl-0.5 [-ms-overflow-style:none] [scrollbar-color:rgba(139,28,28,0.25)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8B1C1C]/20 sm:gap-4"
+      >
+        {filtered.map((option) => {
           const isActive = isMulti ? rest.selectedIds.includes(option.id) : option.id === rest.selectedId;
           const imageSrc = resolveMaterialImage(option.name, category, option.image);
           const pricePerM = tierPriceByTier[option.tier];
@@ -265,39 +393,37 @@ const MaterialGrid = ({
               key={option.id}
               type="button"
               onClick={() => (isMulti ? rest.onToggle(option.id) : rest.onSelect(option.id))}
-              className={`group w-full rounded-2xl border border-primary/10 bg-white p-3 text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl ${
-                isActive ? "ring-2 ring-[#8B1C1C] ring-offset-2 ring-offset-white" : ""
+              className={`group flex shrink-0 w-[min(10.75rem,52vw)] flex-col overflow-hidden rounded-2xl border bg-white text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl sm:w-[min(12.5rem,34vw)] lg:w-[min(13rem,28vw)] ${
+                isActive ? "border-[#8B1C1C]/50 ring-2 ring-[#8B1C1C] ring-offset-2 ring-offset-white" : "border-primary/10"
               }`}
             >
-              <div className="relative overflow-hidden rounded-2xl">
-                <div className="relative aspect-square w-full overflow-hidden bg-primary/[0.04]">
-                  <img
-                    src={imageSrc}
-                    alt={option.name}
-                    className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                    onError={(event) => {
-                      event.currentTarget.src = "/images/hero-placeholder.svg";
-                    }}
-                  />
-                </div>
-                <div className="pointer-events-none absolute left-3 top-3 z-[1] max-w-[calc(100%-1.5rem)] truncate rounded-full bg-white/70 px-3 py-1 text-[11px] font-semibold text-primary shadow-md backdrop-blur">
-                  {option.name}
+              <div className="relative aspect-[4/5] w-full overflow-hidden bg-primary/[0.04]">
+                <img
+                  src={imageSrc}
+                  alt={option.name}
+                  className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  onError={(event) => {
+                    event.currentTarget.src = "/images/hero-placeholder.svg";
+                  }}
+                />
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/88 via-black/30 to-transparent px-2 pb-2.5 pt-14">
+                  <p className="line-clamp-2 text-xs font-medium leading-snug text-white/95 sm:text-sm">{option.name}</p>
                 </div>
                 {isActive ? (
-                  <span className="absolute right-3 top-3 z-[1] rounded-full bg-[#8B1C1C] p-1 text-white shadow-md">
+                  <span className="absolute right-2 top-2 z-[1] rounded-full bg-[#8B1C1C] p-1 text-white shadow-md">
                     <Check className="h-3 w-3" />
                   </span>
                 ) : null}
               </div>
-              <p className="mt-3 text-xs font-medium text-secondary">{option.name}</p>
-              <span className="mt-2 inline-flex w-fit rounded-full bg-primary/5 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-secondary">
-                {option.tier}
-              </span>
-              <p className="mt-2 text-xs font-semibold text-[#8B1C1C]">
-                Estimado con tus medidas {formatCurrency(optionPrice)}
-              </p>
+              <div className="flex flex-1 flex-col gap-2 px-3 py-3">
+                <span className="inline-flex w-fit rounded-full bg-primary/5 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-secondary">
+                  {option.tier}
+                </span>
+                <p className="text-xs font-medium text-secondary">Estimado con tus medidas</p>
+                <p className="text-xs font-semibold text-[#8B1C1C]">{formatCurrency(optionPrice)}</p>
+              </div>
             </button>
           );
         })}
@@ -305,24 +431,6 @@ const MaterialGrid = ({
       {filtered.length === 0 ? (
         <div className="rounded-2xl border border-primary/10 bg-white px-4 py-3 text-xs text-secondary">
           No encontramos materiales con ese criterio.
-        </div>
-      ) : null}
-      {totalPages > 1 ? (
-        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-secondary">
-          {Array.from({ length: totalPages }, (_, index) => index + 1).map((pageNumber) => (
-            <button
-              key={`${title}-${pageNumber}`}
-              type="button"
-              onClick={() => onPageChange(pageNumber)}
-              className={`h-8 w-8 rounded-full transition ${
-                safePage === pageNumber
-                  ? "bg-[#8B1C1C] text-white"
-                  : "border border-primary/10 bg-white hover:border-primary/30"
-              }`}
-            >
-              {pageNumber}
-            </button>
-          ))}
         </div>
       ) : null}
     </div>
@@ -767,6 +875,7 @@ function autoScenarioFromShowroom(
 
 export default function CotizadorPreliminarPage() {
   const router = useRouter();
+  const { electrodomesticos, extras } = useCatalogEquipamiento();
   const [activeCitaTaskId, setActiveCitaTaskId] = useState<string | null>(null);
   const [activeCitaTask, setActiveCitaTask] = useState<KanbanTask | null>(null);
   const [clientName, setClientName] = useState("");
@@ -806,17 +915,115 @@ export default function CotizadorPreliminarPage() {
   /** Un paso por electrodoméstico (orden por categoría); el último índice es «Otro». */
   const [applianceStep, setApplianceStep] = useState(0);
   const [applianceSearch, setApplianceSearch] = useState("");
+  const [applianceCategory, setApplianceCategory] = useState<string>(APPLIANCE_CATEGORIAS[0] ?? "Microondas");
   /** true = carruseles; false = detalle en la misma página (sin modal). */
   const [applianceBrowseMode, setApplianceBrowseMode] = useState(true);
+  const [accessorySearch, setAccessorySearch] = useState("");
   const [lightingSearch, setLightingSearch] = useState("");
   const [lightingShowOtro, setLightingShowOtro] = useState(false);
   const [lightingBrowseMode, setLightingBrowseMode] = useState(true);
   /** id del luminario en vista detalle (cuando lightingBrowseMode es false). */
   const [lightingFocusedId, setLightingFocusedId] = useState<string | null>(null);
-  const applianceRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   /** Al pasar de carrusel → detalle el documento se acorta y el scroll absoluto deja la vista en la sección siguiente; se reencuadra la sección C. */
   const applianceSectionRef = useRef<HTMLDivElement | null>(null);
   const lightingSectionRef = useRef<HTMLDivElement | null>(null);
+  const applianceRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const accessoryRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  const applianceBackendIndex = useMemo(() => {
+    const records = [...electrodomesticos, ...extras] as BackendCatalogRecord[];
+    const index: Record<string, { image?: string; price?: number; name?: string }> = {};
+
+    for (const item of APPLIANCE_ITEMS) {
+      const matched = resolveBackendCatalogMatch(item, records);
+      index[item.id] = {
+        image: resolveBackendImage(matched),
+        price: typeof matched?.precio === "number" ? matched.precio : undefined,
+        name: matched?.nombre,
+      };
+    }
+
+    return index;
+  }, [electrodomesticos, extras]);
+
+  const applianceCatalogTotal = useMemo(() => {
+    const selectedIds = levantamiento.applianceDocumentIds ?? [];
+    const selectedTotal = selectedIds.reduce((acc, id) => acc + (applianceBackendIndex[id]?.price ?? 0), 0);
+    const otroPrice = levantamiento.applianceOtroInDocument ? levantamiento.applianceOtro.precioEstimado ?? 0 : 0;
+    return selectedTotal + otroPrice;
+  }, [applianceBackendIndex, levantamiento.applianceDocumentIds, levantamiento.applianceOtro.precioEstimado, levantamiento.applianceOtroInDocument]);
+
+  const accessoryBackendIndex = useMemo(() => {
+    const index: Record<string, { image?: string; price?: number; name?: string; categoria?: string }> = {};
+    for (const item of extras) {
+      index[item._id] = {
+        image: resolveBackendImage(item),
+        price: typeof item.precio === "number" ? item.precio : undefined,
+        name: item.nombre,
+        categoria: item.categoria,
+      };
+    }
+    return index;
+  }, [extras]);
+
+  const accessoryCatalogTotal = useMemo(() => {
+    const selectedIds = levantamiento.accessoryDocumentIds ?? [];
+    const selectedTotal = selectedIds.reduce((acc, id) => acc + (accessoryBackendIndex[id]?.price ?? 0), 0);
+    const otroPrice = levantamiento.accessoryOtroInDocument ? levantamiento.accessoryOtro.precioEstimado ?? 0 : 0;
+    return selectedTotal + otroPrice;
+  }, [accessoryBackendIndex, levantamiento.accessoryDocumentIds, levantamiento.accessoryOtro.precioEstimado, levantamiento.accessoryOtroInDocument]);
+
+  const applianceSearchNorm = applianceSearch.trim().toLowerCase();
+  const filteredApplianceMatches = useMemo(() => {
+    if (!applianceSearchNorm) return null;
+    return APPLIANCE_ITEMS.map((item, idx) => ({ item, idx })).filter(({ item }) => {
+      const hay = `${item.label} ${item.hint ?? ""} ${item.categoria ?? ""}`.toLowerCase();
+      return hay.includes(applianceSearchNorm);
+    });
+  }, [applianceSearchNorm]);
+
+  const applianceCarouselRows = useMemo(() => {
+    if (applianceSearchNorm) {
+      const entries = APPLIANCE_ITEMS.map((item, idx) => ({ item, idx })).filter(({ item }) => {
+        const hay = `${item.label} ${item.hint ?? ""} ${item.categoria ?? ""}`.toLowerCase();
+        return hay.includes(applianceSearchNorm);
+      });
+      return entries.length ? [{ key: "busqueda", title: "Resultados de búsqueda", entries }] : [];
+    }
+
+    return APPLIANCE_CATEGORIAS.map((cat) => ({
+      key: cat,
+      title: cat,
+      entries: APPLIANCE_ITEMS.map((item, idx) => ({ item, idx })).filter(({ item }) => item.categoria === cat),
+    })).filter((row) => row.entries.length > 0);
+  }, [applianceSearchNorm]);
+
+  const accessorySearchNorm = accessorySearch.trim().toLowerCase();
+  const accessoryCarouselRows = useMemo(() => {
+    const entries = extras
+      .filter((item) => {
+        if (!accessorySearchNorm) return true;
+        const hay = `${item.nombre} ${item.categoria ?? ""} ${item.descripcion ?? ""}`.toLowerCase();
+        return hay.includes(accessorySearchNorm);
+      })
+      .map((item) => ({ item, id: item._id }));
+
+    if (accessorySearchNorm) {
+      return entries.length
+        ? [{ key: "busqueda", title: "Resultados de búsqueda", entries }]
+        : [];
+    }
+
+    const order = [...new Set(extras.map((item) => item.categoria).filter((value): value is string => Boolean(value)))]
+      .map((category) => ({
+        key: category,
+        title: category,
+        entries: extras.filter((item) => item.categoria === category).map((item) => ({ item, id: item._id })),
+      }))
+      .filter((row) => row.entries.length > 0);
+
+    return order;
+  }, [accessorySearchNorm, extras]);
 
   const setSectionComment = (key: "a" | "b" | "c" | "d" | "e", value: string) => {
     setLevantamiento((prev) => ({
@@ -853,7 +1060,13 @@ export default function CotizadorPreliminarPage() {
         const idx = Number(key.slice(5));
         if (Number.isFinite(idx) && idx >= n) delete wm[key];
       }
-      return { ...prev, wallSlotCount: n, wallMeasures: wm };
+      return {
+        ...prev,
+        wallSlotCount: n,
+        wallMeasures: wm,
+        wallMedidasModoLibre: false,
+        wallOtro: emptyOtro(),
+      };
     });
     setCurrentWallIndex(0);
   };
@@ -865,9 +1078,42 @@ export default function CotizadorPreliminarPage() {
       for (const key of Object.keys(wm)) {
         if (isWallSlotKey(key)) delete wm[key];
       }
-      return { ...prev, wallSlotCount: 0, wallMeasures: wm };
+      return {
+        ...prev,
+        wallSlotCount: 0,
+        wallMeasures: wm,
+        wallMedidasModoLibre: false,
+        wallOtro: emptyOtro(),
+      };
     });
     setCurrentWallIndex(0);
+  };
+
+  const startWallMedidasLibre = () => {
+    setWallSearch("");
+    setLevantamiento((prev) => {
+      const wm = { ...prev.wallMeasures };
+      for (const key of Object.keys(wm)) {
+        if (isWallSlotKey(key)) delete wm[key];
+      }
+      return {
+        ...prev,
+        wallSlotCount: 0,
+        wallMeasures: wm,
+        wallMedidasModoLibre: true,
+        wallOtro: emptyOtro(),
+      };
+    });
+    setCurrentWallIndex(0);
+  };
+
+  const volverAElegirCantidadParedes = () => {
+    setWallSearch("");
+    setLevantamiento((prev) => ({
+      ...prev,
+      wallMedidasModoLibre: false,
+      wallOtro: emptyOtro(),
+    }));
   };
 
   useEffect(() => {
@@ -986,6 +1232,15 @@ export default function CotizadorPreliminarPage() {
       if (included) next.add(id);
       else next.delete(id);
       return { ...prev, applianceDocumentIds: [...next] };
+    });
+  }, []);
+
+  const setAccessoryInDocument = useCallback((id: string, included: boolean) => {
+    setLevantamiento((prev) => {
+      const next = new Set(prev.accessoryDocumentIds ?? []);
+      if (included) next.add(id);
+      else next.delete(id);
+      return { ...prev, accessoryDocumentIds: [...next] };
     });
   }, []);
 
@@ -1340,8 +1595,9 @@ export default function CotizadorPreliminarPage() {
     setCurrentWallIndex(0);
     setWallSearch("");
     setApplianceStep(0);
-    setApplianceSearch("");
+    setApplianceCategory(APPLIANCE_CATEGORIAS[0] ?? "Microondas");
     setApplianceBrowseMode(true);
+    setAccessorySearch("");
     setLightingShowOtro(false);
     setLightingBrowseMode(true);
     setLightingFocusedId(null);
@@ -1363,11 +1619,13 @@ export default function CotizadorPreliminarPage() {
     const avgCubierta = getAveragePriceByTier(mats, "cubierta", tierC);
     const avgHerraje = getAveragePriceByTier(mats, "herraje", tierH);
     const costoMateriales = largoValue * (avgCubierta + sumPrecioFrentePorM + avgHerraje);
+    const costoElectrodomesticos = applianceCatalogTotal;
+    const costoAccesorios = accessoryCatalogTotal;
     const costoIluminacion = cotizacionIluminacionTotal(levantamiento);
     const precioEscenario =
       levantamientoConfig.scenarioPrices[selectedScenario] ?? 5000;
     const costoBase = largoValue * precioEscenario;
-    const subtotal = costoBase + costoMateriales + costoIluminacion;
+    const subtotal = costoBase + costoMateriales + costoElectrodomesticos + costoAccesorios + costoIluminacion;
     const iva = subtotal * levantamientoConfig.ivaPercent;
     const total = subtotal + iva;
     const m = levantamientoConfig.marginPercent;
@@ -1378,6 +1636,8 @@ export default function CotizadorPreliminarPage() {
       largoValue,
       costoBase,
       costoMateriales,
+      costoElectrodomesticos,
+      costoAccesorios,
       costoIluminacion,
       subtotal,
       iva,
@@ -1395,6 +1655,8 @@ export default function CotizadorPreliminarPage() {
     levantamiento,
     selectedScenario,
     levantamientoConfig,
+    applianceCatalogTotal,
+    accessoryCatalogTotal,
   ]);
 
   const selectedSummary = useMemo(() => {
@@ -1452,13 +1714,14 @@ export default function CotizadorPreliminarPage() {
     const costoMateriales =
       largoValue *
       (getAveragePriceByTier(mats, "cubierta", tierC) + sumPrecioFrentePorM + getAveragePriceByTier(mats, "herraje", tierH));
+    const costoElectrodomesticos = applianceCatalogTotal;
     const costoIluminacion = cotizacionIluminacionTotal(levantamiento);
     const ivaP = levantamientoConfig.ivaPercent;
     const m = levantamientoConfig.marginPercent;
     const def = createDefaultLevantamientoConfig().scenarioPrices;
     return scenarioOptions.map((s) => {
       const costoBaseS = largoValue * (levantamientoConfig.scenarioPrices[s.id as keyof typeof def] ?? def.esencial);
-      const sub = costoBaseS + costoMateriales + costoIluminacion;
+      const sub = costoBaseS + costoMateriales + costoElectrodomesticos + costoIluminacion;
       const tot = sub + sub * ivaP;
       return { id: s.id, min: tot * (1 - m), max: tot * (1 + m) };
     });
@@ -1470,6 +1733,7 @@ export default function CotizadorPreliminarPage() {
     levantamiento,
     scenarioOptions,
     levantamientoConfig,
+    applianceCatalogTotal,
   ]);
 
   const materialTierAverages = useMemo(() => {
@@ -1503,23 +1767,8 @@ export default function CotizadorPreliminarPage() {
     downloadPreliminarPdf(data, "levantamiento-detallado.pdf");
   };
 
-  const applianceStepMeta = useMemo(() => {
-    const isOtro = applianceStep >= APPLIANCE_OTRO_STEP_INDEX;
-    if (isOtro) return { isOtro: true as const, progress: null };
-    return { isOtro: false as const, progress: getApplianceCategoryProgress(applianceStep) };
-  }, [applianceStep]);
-
   const currentApplianceItem =
     applianceStep < APPLIANCE_OTRO_STEP_INDEX ? APPLIANCE_ITEMS[applianceStep] : null;
-
-  const applianceSearchNorm = applianceSearch.trim().toLowerCase();
-  const filteredApplianceMatches = useMemo(() => {
-    if (!applianceSearchNorm) return null;
-    return APPLIANCE_ITEMS.map((item, idx) => ({ item, idx })).filter(({ item }) => {
-      const hay = `${item.label} ${item.hint ?? ""} ${item.categoria ?? ""}`.toLowerCase();
-      return hay.includes(applianceSearchNorm);
-    });
-  }, [applianceSearchNorm]);
 
   const lightingSearchNorm = lightingSearch.trim().toLowerCase();
   const filteredLightingItems = useMemo(() => {
@@ -1530,26 +1779,13 @@ export default function CotizadorPreliminarPage() {
     });
   }, [lightingSearchNorm]);
 
-  const applianceCarouselRows = useMemo(() => {
-    const norm = applianceSearchNorm;
-    const matchesSearch = (item: ItemCatalogo) => {
-      if (!norm) return true;
-      const hay = `${item.label} ${item.hint ?? ""} ${item.categoria ?? ""}`.toLowerCase();
-      return hay.includes(norm);
-    };
-    if (norm) {
-      const entries = APPLIANCE_ITEMS.map((item, idx) => ({ item, idx })).filter(({ item }) =>
-        matchesSearch(item),
-      );
-      return entries.length ? [{ key: "busqueda", title: "Resultados de búsqueda", entries }] : [];
-    }
-    return APPLIANCE_CATEGORIAS.map((cat) => {
-      const entries = APPLIANCE_ITEMS.map((item, idx) => ({ item, idx })).filter(
-        ({ item }) => item.categoria === cat,
-      );
-      return { key: cat, title: cat, entries };
-    }).filter((row) => row.entries.length > 0);
-  }, [applianceSearchNorm]);
+  const applianceCategoryEntries = useMemo(
+    () =>
+      APPLIANCE_ITEMS.map((item, idx) => ({ item, idx })).filter(
+        ({ item }) => item.categoria === applianceCategory,
+      ),
+    [applianceCategory],
+  );
 
   const applianceIndicesInCurrentCategory = useMemo(() => {
     if (applianceStep >= APPLIANCE_OTRO_STEP_INDEX) return [] as number[];
@@ -1955,34 +2191,120 @@ export default function CotizadorPreliminarPage() {
               </Link>
             </div>
 
-            {!levantamiento.wallSlotCount ? (
+            {!levantamiento.wallSlotCount && !levantamiento.wallMedidasModoLibre ? (
               <div className="space-y-5">
                 <p className="text-lg font-semibold text-primary">¿Cuántas paredes tiene el proyecto?</p>
                 <p className="text-sm text-secondary">
                   Elige un número para comenzar. Podrás cambiarlo después (se pedirá confirmación si ya había datos).
                 </p>
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                  {WALL_COUNT_OPTIONS.map((count) => {
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+                  {WALL_COUNT_OPTIONS.map((count) => (
+                    <button
+                      key={count}
+                      type="button"
+                      onClick={() => applyWallSlotCount(count)}
+                      className="group flex min-h-[140px] flex-col items-center justify-center gap-3 rounded-3xl border border-primary/10 bg-white p-6 text-center shadow-md transition duration-300 ease-out hover:-translate-y-0.5 hover:border-[#8B1C1C]/30 hover:shadow-lg"
+                    >
+                      <div className="flex h-24 w-full max-w-[8.5rem] items-center justify-center rounded-2xl bg-primary/[0.06] text-primary transition duration-300 group-hover:bg-primary/10">
+                        <WallCountIcon count={count} className="h-11 w-11 shrink-0" />
+                      </div>
+                      <div>
+                        <span className="text-3xl font-bold tabular-nums text-[#8B1C1C]">{count}</span>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-secondary">
+                          {count === 1 ? "pared" : "paredes"}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={startWallMedidasLibre}
+                    className="flex min-h-[140px] flex-col items-center justify-center gap-1.5 rounded-3xl border border-dashed border-primary/25 bg-stone-50 p-5 text-center transition-colors hover:border-[#8B1C1C]/40 hover:bg-[#8B1C1C]/[0.04]"
+                  >
+                    <FilePenLine className="h-8 w-8 shrink-0 text-[#8B1C1C]" aria-hidden />
+                    <span className="text-sm font-bold text-primary">Otra situación de muros</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-secondary">
+                      Texto + medidas
+                    </span>
+                    <span className="mt-1 max-w-[12rem] text-[11px] leading-snug text-secondary">
+                      Más de cuatro muros, planta irregular o caso que no encaja en el flujo por pared.
+                    </span>
+                  </button>
+                </div>
+              </div>
+            ) : levantamiento.wallMedidasModoLibre ? (
+              <div className="space-y-6 rounded-3xl border border-primary/15 bg-white/90 p-6 shadow-md">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-lg font-semibold text-primary">Otra situación de muros</p>
+                    <p className="mt-2 text-sm text-secondary">
+                      Describe con claridad la configuración real (cantidad de tramos, vanos, ángulos, etc.) y registra
+                      medidas de referencia en metros. Esto sustituye el flujo por pared 1–4 para este proyecto.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={volverAElegirCantidadParedes}
+                    className="shrink-0 rounded-2xl border border-primary/15 bg-white px-4 py-2 text-xs font-semibold text-[#8B1C1C] transition hover:border-primary/30"
+                  >
+                    Volver a 1–4 paredes
+                  </button>
+                </div>
+                <div className="grid gap-5 sm:grid-cols-2">
+                  {WALL_LIBRE_FIELD_DEFS.map((field) => {
+                    const fk = field.key as keyof LevantamientoDetalle["wallOtro"];
+                    const rawVal = levantamiento.wallOtro[fk];
+                    const value = typeof rawVal === "string" ? rawVal : "";
                     return (
-                      <button
-                        key={count}
-                        type="button"
-                        onClick={() => applyWallSlotCount(count)}
-                        className="group flex flex-col items-center justify-center gap-3 rounded-3xl border border-primary/10 bg-white p-6 text-center shadow-md transition duration-300 ease-out hover:-translate-y-0.5 hover:border-[#8B1C1C]/30 hover:shadow-lg"
+                      <label
+                        key={field.key}
+                        className={`text-xs font-semibold uppercase tracking-[0.2em] text-secondary ${field.key === "descripcion" ? "sm:col-span-2" : ""}`}
                       >
-                        <div className="flex h-24 w-full max-w-[8.5rem] items-center justify-center rounded-2xl bg-primary/[0.06] text-primary transition duration-300 group-hover:bg-primary/10">
-                          <WallCountIcon count={count} className="h-11 w-11 shrink-0" />
-                        </div>
-                        <div>
-                          <span className="text-3xl font-bold tabular-nums text-[#8B1C1C]">{count}</span>
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-secondary">
-                            {count === 1 ? "pared" : "paredes"}
-                          </p>
-                        </div>
-                      </button>
+                        {field.label}
+                        {field.verifyHint ? (
+                          <span className="mt-1 block text-[10px] font-normal normal-case tracking-normal text-secondary/80">
+                            {field.verifyHint}
+                          </span>
+                        ) : null}
+                        {field.key === "descripcion" ? (
+                          <textarea
+                            value={value}
+                            onChange={(e) => patchOtro("wallOtro", fk, e.target.value)}
+                            rows={4}
+                            className="mt-2 w-full resize-y rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm font-normal normal-case tracking-normal outline-none placeholder:text-secondary/45"
+                            placeholder="Ej. Seis tramos en L con muro cortina, dos tabiques nuevos…"
+                          />
+                        ) : (
+                          <input
+                            value={value}
+                            onChange={(e) => patchOtro("wallOtro", fk, e.target.value)}
+                            inputMode="decimal"
+                            placeholder="Metros"
+                            className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-2.5 text-sm font-normal normal-case tracking-normal outline-none"
+                          />
+                        )}
+                      </label>
                     );
                   })}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!medidasCamposTieneValor(levantamiento.wallOtro) || levantamiento.wallOtro.descripcion.trim() === "") {
+                      window.alert("Escribe una descripción de la situación y al menos una medida de referencia en metros.");
+                      return;
+                    }
+                    document.getElementById("seccion-electrodomesticos")?.scrollIntoView({
+                      behavior: "smooth",
+                      block: "start",
+                    });
+                  }}
+                  className="w-full rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-700"
+                >
+                  {medidasCamposTieneValor(levantamiento.wallOtro) && levantamiento.wallOtro.descripcion.trim() !== ""
+                    ? "Listo — ir a la siguiente sección"
+                    : "Completa descripción y medidas para continuar"}
+                </button>
               </div>
             ) : (
               (() => {
@@ -2261,7 +2583,7 @@ export default function CotizadorPreliminarPage() {
                 <span className="font-medium text-primary/90">tarjas</span>,{" "}
                 <span className="font-medium text-primary/90">campanas</span> y una fila{" "}
                 <span className="font-medium text-primary/90">Otros</span> (cafetera, lavavajillas, freidora de aire,
-                horno de gas, tostadora, dispensador de agua, enfriador de vinos, tarja extra).
+                horno de gas, tostadora, dispensador de agua, enfriador de vinos).
               </p>
             </div>
             {!applianceBrowseMode ? (
@@ -2277,11 +2599,17 @@ export default function CotizadorPreliminarPage() {
                 {currentApplianceItem ? (
                   <div className="grid gap-6 lg:grid-cols-[minmax(0,280px)_1fr]">
                     <div className="relative mx-auto aspect-[2/3] w-full max-w-[min(20rem,92vw)] overflow-hidden rounded-2xl border border-primary/10 bg-white lg:mx-0">
-                      <ApplianceTypeImage
-                        item={currentApplianceItem}
-                        alt=""
-                        className="absolute inset-0 z-0 box-border h-full w-full object-contain object-center p-2"
-                      />
+                      {(() => {
+                        const pricing = applianceBackendIndex[currentApplianceItem.id];
+                        return (
+                          <ApplianceTypeImage
+                            item={currentApplianceItem}
+                            alt=""
+                            preferredSrcs={[pricing?.image]}
+                            className="absolute inset-0 z-0 box-border h-full w-full object-contain object-center p-2"
+                          />
+                        );
+                      })()}
                       <span className="pointer-events-none absolute left-2 top-2 z-10 rounded-lg bg-black/55 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white">
                         {currentApplianceItem.categoria ?? "Electrodoméstico"}
                       </span>
@@ -2295,6 +2623,11 @@ export default function CotizadorPreliminarPage() {
                           {currentApplianceItem.categoria}
                         </p>
                         <p className="text-base font-semibold text-primary">{currentApplianceItem.label}</p>
+                        {applianceBackendIndex[currentApplianceItem.id]?.price != null ? (
+                          <p className="mt-1 text-xs font-semibold text-[#8B1C1C]">
+                            Precio catálogo {formatCurrency(applianceBackendIndex[currentApplianceItem.id]!.price!)}
+                          </p>
+                        ) : null}
                         {currentApplianceItem.hint ? (
                           <p className="mt-2 text-sm text-secondary">{currentApplianceItem.hint}</p>
                         ) : null}
@@ -2392,6 +2725,27 @@ export default function CotizadorPreliminarPage() {
                         className="mt-2 w-full resize-y rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
                       />
                     </label>
+                    <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
+                      Precio estimado (MXN)
+                      <input
+                        value={
+                          levantamiento.applianceOtro.precioEstimado == null || levantamiento.applianceOtro.precioEstimado === 0
+                            ? ""
+                            : String(levantamiento.applianceOtro.precioEstimado)
+                        }
+                        onChange={(e) => {
+                          const raw = e.target.value.trim();
+                          const nextValue = raw === "" ? undefined : Math.max(0, Number.parseFloat(raw.replace(",", ".")) || 0);
+                          setLevantamiento((prev) => ({
+                            ...prev,
+                            applianceOtro: { ...prev.applianceOtro, precioEstimado: nextValue },
+                          }));
+                        }}
+                        inputMode="decimal"
+                        placeholder="0"
+                        className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
+                      />
+                    </label>
                     <div className="grid gap-3 sm:grid-cols-3">
                       {(["ancho", "alto", "fondo"] as const).map((field) => (
                         <label
@@ -2412,7 +2766,7 @@ export default function CotizadorPreliminarPage() {
                 )}
               </div>
             ) : (
-              <>
+              <div className="space-y-6">
                 <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
                   Buscar electrodoméstico
                   <span className="relative mt-2 block">
@@ -2431,25 +2785,17 @@ export default function CotizadorPreliminarPage() {
                       Resultados ({filteredApplianceMatches.length}) · clic para ir al detalle
                     </p>
                     <div className="mt-3 flex max-h-40 flex-wrap gap-2 overflow-y-auto">
-                      {filteredApplianceMatches.map(({ item, idx }) => {
-                        const isCurrent = applianceStep === idx && !applianceStepMeta.isOtro;
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => openApplianceDetailByIndex(idx)}
-                            className={`max-w-full truncate rounded-full px-3 py-1.5 text-left text-xs font-semibold transition ${
-                              isCurrent
-                                ? "bg-[#8B1C1C] text-white"
-                                : "border border-primary/15 bg-white text-primary hover:border-primary/35"
-                            }`}
-                            title={`${item.categoria ?? ""} — ${item.label}`}
-                          >
-                            <span className="text-secondary/80">{item.categoria ?? ""}: </span>
-                            {item.label}
-                          </button>
-                        );
-                      })}
+                      {filteredApplianceMatches.map(({ item, idx }) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => openApplianceDetailByIndex(idx)}
+                          className="max-w-full truncate rounded-full border border-primary/15 bg-white px-3 py-1.5 text-left text-xs font-semibold text-primary transition hover:border-primary/35"
+                          title={`${item.categoria ?? ""} — ${item.label}`}
+                        >
+                          {item.categoria ?? ""}: {item.label}
+                        </button>
+                      ))}
                     </div>
                     <button
                       type="button"
@@ -2464,6 +2810,7 @@ export default function CotizadorPreliminarPage() {
                     Sin coincidencias. Prueba otro término o borra el texto del buscador.
                   </div>
                 ) : null}
+
                 {!applianceSearchNorm && applianceCarouselRows.length > 0 ? (
                   <div className="space-y-8">
                     {applianceCarouselRows.map((row) => (
@@ -2490,11 +2837,8 @@ export default function CotizadorPreliminarPage() {
                           }}
                           className={streamScrollClass}
                         >
-                          {row.entries.map(({ item, idx }, rank) => (
-                            <div key={item.id} className="flex shrink-0 items-end gap-1">
-                              <span className={streamRankClass} aria-hidden>
-                                {rank + 1}
-                              </span>
+                          {row.entries.map(({ item, idx }) => (
+                            <div key={item.id} className="flex shrink-0 flex-col gap-2">
                               <button
                                 type="button"
                                 onClick={() => openApplianceDetailByIndex(idx)}
@@ -2503,6 +2847,7 @@ export default function CotizadorPreliminarPage() {
                                 <div className={streamPosterClass(applianceStep === idx)}>
                                   <ApplianceTypeImage
                                     item={item}
+                                    preferredSrcs={[applianceBackendIndex[item.id]?.image]}
                                     alt=""
                                     className={streamCatalogThumbImageClass}
                                   />
@@ -2511,6 +2856,11 @@ export default function CotizadorPreliminarPage() {
                                   </div>
                                 </div>
                               </button>
+                              {applianceBackendIndex[item.id]?.price != null ? (
+                                <p className="max-w-[11rem] text-[10px] font-semibold text-[#8B1C1C]">
+                                  {formatCurrency(applianceBackendIndex[item.id]!.price!)}
+                                </p>
+                              ) : null}
                             </div>
                           ))}
                         </div>
@@ -2523,9 +2873,6 @@ export default function CotizadorPreliminarPage() {
                       </div>
                       <div className={streamScrollClass}>
                         <div className="flex shrink-0 items-end gap-1">
-                          <span className={`${streamRankClass} pb-2 font-semibold text-zinc-500`} aria-hidden title="Otro">
-                            +
-                          </span>
                           <button type="button" onClick={openApplianceOtroDetail} className="text-left">
                             <div
                               className={`${streamPosterClass(false)} flex flex-col items-center justify-end border-2 border-dashed border-white/25 bg-zinc-900/80 pb-3 pt-10`}
@@ -2540,58 +2887,110 @@ export default function CotizadorPreliminarPage() {
                       </div>
                     </div>
                   </div>
-                ) : applianceSearchNorm && applianceCarouselRows.length > 0 ? (
-                  <div className={streamRowShell}>
-                    <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-                      <div>
-                        <p className={streamRowHeading}>Resultados de búsqueda</p>
-                        <p className={streamRowHint}>Electrodomésticos</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const el = applianceRowRefs.current.busqueda;
-                          if (el) el.scrollTo({ left: el.scrollWidth, behavior: "smooth" });
-                        }}
-                        className={streamVerTodosClass}
-                      >
-                        Ver todos
-                      </button>
-                    </div>
-                    <div
-                      ref={(el) => {
-                        applianceRowRefs.current.busqueda = el;
-                      }}
-                      className={streamScrollClass}
-                    >
-                      {applianceCarouselRows[0]?.entries.map(({ item, idx }, rank) => (
-                        <div key={item.id} className="flex shrink-0 items-end gap-1">
-                          <span className={streamRankClass} aria-hidden>
-                            {rank + 1}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => openApplianceDetailByIndex(idx)}
-                            className="text-left"
-                          >
-                            <div className={streamPosterClass(applianceStep === idx)}>
-                              <ApplianceTypeImage
-                                item={item}
-                                alt=""
-                                className={streamCatalogThumbImageClass}
-                              />
-                              <div className={streamPosterTitleOverlay}>
-                                <p className={streamPosterLabelClass}>{item.label}</p>
-                              </div>
-                            </div>
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
                 ) : null}
-              </>
+              </div>
             )}
+            <div className="space-y-4 rounded-3xl border border-primary/10 bg-primary/[0.03] p-4 sm:p-5">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-secondary">
+                  Accesorios de Organización y Tecnología
+                </p>
+                <p className="mt-2 text-sm text-secondary">
+                  Selecciona accesorios desde el catálogo del backend. El acomodo es en slide, igual que en los
+                  electrodomésticos, pero con una superficie más clara.
+                </p>
+              </div>
+              <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
+                Buscar accesorio
+                <span className="relative mt-2 block">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-secondary/70" />
+                  <input
+                    value={accessorySearch}
+                    onChange={(e) => setAccessorySearch(e.target.value)}
+                    placeholder="Organización, tecnología, categoría o nombre…"
+                    className="w-full rounded-2xl border border-primary/10 bg-white py-2.5 pl-10 pr-4 text-sm outline-none placeholder:text-secondary/45"
+                  />
+                </span>
+              </label>
+              {accessoryCarouselRows.length > 0 ? (
+                <div className="space-y-6">
+                  {accessoryCarouselRows.map((row) => (
+                    <div key={row.key} className="rounded-3xl bg-white/90 px-3 py-4 shadow-inner ring-1 ring-primary/10 sm:px-4 sm:py-5">
+                      <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary/90">{row.title}</p>
+                          <p className="mt-1 text-sm font-medium tracking-wide text-secondary">Catálogo de backend</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const el = accessoryRowRefs.current[row.key];
+                            if (el) el.scrollTo({ left: el.scrollWidth, behavior: "smooth" });
+                          }}
+                          className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.18em] text-secondary underline-offset-2 transition hover:text-primary hover:underline"
+                        >
+                          Ver todos
+                        </button>
+                      </div>
+                      <div
+                        ref={(el) => {
+                          accessoryRowRefs.current[row.key] = el;
+                        }}
+                        className="flex gap-3 overflow-x-auto pb-2 pt-1 pl-0.5 [-ms-overflow-style:none] [scrollbar-color:rgba(139,28,28,0.25)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8B1C1C]/20 sm:gap-4"
+                      >
+                        {row.entries.map(({ item }) => {
+                          const pricing = accessoryBackendIndex[item._id];
+                          const selected = levantamiento.accessoryDocumentIds.includes(item._id);
+                          const previewItem: ItemCatalogo = {
+                            id: item._id,
+                            label: item.nombre,
+                            categoria: item.categoria,
+                            hint: item.descripcion ?? undefined,
+                            image: "",
+                            allowFallbackImage: false,
+                          };
+                          return (
+                            <div key={item._id} className="flex shrink-0 flex-col gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setAccessoryInDocument(item._id, !selected)}
+                                className="text-left"
+                              >
+                                <div className={`relative z-10 aspect-[2/3] w-[min(10.5rem,52vw)] shrink-0 overflow-hidden rounded-lg bg-white shadow-xl transition sm:w-[min(12.25rem,36vw)] lg:w-[min(13rem,30vw)] ${selected ? "ring-2 ring-[#8B1C1C] ring-offset-2 ring-offset-white" : "ring-1 ring-[#8B1C1C]/10 hover:ring-[#8B1C1C]/40"}`}>
+                                  <ApplianceTypeImage
+                                    item={previewItem}
+                                    preferredSrcs={[pricing?.image]}
+                                    alt=""
+                                    className="absolute inset-0 z-0 h-full w-full object-cover"
+                                  />
+                                  <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/88 via-black/30 to-transparent px-2 pb-2.5 pt-14">
+                                    <p className="line-clamp-2 text-xs font-medium leading-snug text-white/95 sm:text-sm">
+                                      {item.nombre}
+                                    </p>
+                                  </div>
+                                  {selected ? (
+                                    <span className="absolute right-2 top-2 z-[1] rounded-full bg-[#8B1C1C] p-1 text-white shadow-md">
+                                      <Check className="h-3 w-3" />
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </button>
+                              <p className="max-w-[11rem] text-[10px] font-semibold text-[#8B1C1C]">
+                                {pricing?.price != null ? formatCurrency(pricing.price) : "Precio por definir"}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-primary/20 bg-white px-4 py-3 text-sm text-secondary">
+                  No hay accesorios disponibles con ese criterio.
+                </div>
+              )}
+            </div>
             <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
               Comentarios de esta sección
               <textarea
@@ -3196,6 +3595,14 @@ export default function CotizadorPreliminarPage() {
                   <div className="flex justify-between gap-3">
                     <span>Materiales</span>
                     <span className="shrink-0 text-primary/90">{formatCurrency(metrics.costoMateriales)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span>Electrodomésticos</span>
+                    <span className="shrink-0 text-primary/90">{formatCurrency(metrics.costoElectrodomesticos)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span>Accesorios de organización y tecnología</span>
+                    <span className="shrink-0 text-primary/90">{formatCurrency(metrics.costoAccesorios)}</span>
                   </div>
                   <div className="flex justify-between gap-3">
                     <span>Iluminación</span>

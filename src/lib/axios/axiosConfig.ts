@@ -13,6 +13,15 @@ type AxiosInternalFlags = {
   skipNetworkLog?: boolean;
 };
 
+const safeSerialize = (value: unknown) => {
+  try {
+    if (typeof value === 'string') return value;
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+};
+
 const resolveBaseUrl = () => {
   const raw = (process.env.NEXT_PUBLIC_API_URL || '').trim();
   if (!raw) return 'http://localhost:3001';
@@ -66,7 +75,7 @@ axiosInstance.interceptors.request.use(
       const separator = config.url?.includes('?') ? '&' : '?';
       config.url = `${config.url}${separator}_t=${Date.now()}`;
     }
-    
+
     return config;
   },
   (error: AxiosError) => {
@@ -82,6 +91,7 @@ axiosInstance.interceptors.response.use(
     if (response.status === 304) {
       console.warn('Respuesta 304 - Usando datos en caché. Considera desactivar caché.');
     }
+
     return response;
   },
   (error: AxiosError<ApiErrorResponse>) => {
@@ -91,6 +101,21 @@ axiosInstance.interceptors.response.use(
       const flags = (error.config ?? {}) as AxiosInternalFlags;
       const skipAuthRedirect = flags.skipAuthRedirect === true;
       const skipNotFoundLog = flags.skipNotFoundLog === true;
+      const isClientError = status >= 400 && status < 500;
+
+      try {
+        const logMethod = isClientError ? console.warn : console.error;
+        logMethod('[axios error response]', {
+          status,
+          url: error.config?.baseURL ? `${error.config.baseURL}${error.config.url ?? ''}` : error.config?.url,
+          method: error.config?.method,
+          requestData: safeSerialize((error.config as any)?.data),
+          params: safeSerialize((error.config as any)?.params),
+          responseData: data,
+        });
+      } catch (e) {
+        // ignore logging failures
+      }
       
       // Token expirado o no autorizado
       if (status === 401 && !skipAuthRedirect) {
@@ -122,6 +147,16 @@ axiosInstance.interceptors.response.use(
       const flags = (error.config ?? {}) as AxiosInternalFlags;
       const skipNetworkLog = flags.skipNetworkLog === true;
       if (!skipNetworkLog) {
+        try {
+          console.warn('[axios network error]', {
+            url: error.config?.baseURL ? `${error.config.baseURL}${error.config.url ?? ''}` : error.config?.url,
+            method: error.config?.method,
+            requestData: safeSerialize((error.config as any)?.data),
+            params: safeSerialize((error.config as any)?.params),
+          });
+        } catch (e) {
+          // ignore logging failures
+        }
         console.error('No se recibio respuesta del servidor');
       }
     } else {

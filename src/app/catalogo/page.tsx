@@ -62,7 +62,7 @@ const projects: Project[] = [
     ],
     images: [
       {
-        src: "/images/cocina10.jpg",
+        src: "/images/pagina-catalogo/terra-clara/imagen-01-cocina-hero.jpg",
         alt: "Cocina Terra Clara en tonos cálidos",
         hotspots: [
           {
@@ -92,7 +92,7 @@ const projects: Project[] = [
         ],
       },
       {
-        src: "/images/render1.jpg",
+        src: "/images/pagina-catalogo/terra-clara/imagen-02-render-principal.jpg",
         alt: "Render de isla minimalista",
         hotspots: [
           {
@@ -114,7 +114,7 @@ const projects: Project[] = [
         ],
       },
       {
-        src: "/images/render2.jpg",
+        src: "/images/pagina-catalogo/terra-clara/imagen-03-render-secundario.jpg",
         alt: "Render de detalles minimalistas",
         hotspots: [
           {
@@ -128,7 +128,7 @@ const projects: Project[] = [
         ],
       },
       {
-        src: "/images/cocina3.jpg",
+        src: "/images/pagina-catalogo/terra-clara/imagen-04-galeria.jpg",
         alt: "Vista amplia de cocina minimalista",
         hotspots: [
           {
@@ -175,7 +175,7 @@ const projects: Project[] = [
     ],
     images: [
       {
-        src: "/images/cocina7.jpg",
+        src: "/images/pagina-catalogo/lumina-central/imagen-01-cocina-hero.jpg",
         alt: "Cocina con isla central protagonista",
         hotspots: [
           {
@@ -205,7 +205,7 @@ const projects: Project[] = [
         ],
       },
       {
-        src: "/images/render3.jpg",
+        src: "/images/pagina-catalogo/lumina-central/imagen-02-render-isla-lateral.jpg",
         alt: "Render de vista lateral de la isla",
         hotspots: [
           {
@@ -227,7 +227,7 @@ const projects: Project[] = [
         ],
       },
       {
-        src: "/images/cocina11.jpg",
+        src: "/images/pagina-catalogo/lumina-central/imagen-03-isla-angulo-alterno.jpg",
         alt: "Ángulo alterno de la isla central",
         hotspots: [
           {
@@ -241,7 +241,7 @@ const projects: Project[] = [
         ],
       },
       {
-        src: "/images/cocina8.jpg",
+        src: "/images/pagina-catalogo/lumina-central/imagen-04-detalle-acabados.jpg",
         alt: "Detalle de acabados en isla central",
         hotspots: [
           {
@@ -288,7 +288,7 @@ const projects: Project[] = [
     ],
     images: [
       {
-        src: "/images/cocina12.jpg",
+        src: "/images/pagina-catalogo/atelier-clasico/imagen-01-cocina-hero.jpg",
         alt: "Cocina clásica con molduras suaves",
         hotspots: [
           {
@@ -318,7 +318,7 @@ const projects: Project[] = [
         ],
       },
       {
-        src: "/images/render4.jpg",
+        src: "/images/pagina-catalogo/atelier-clasico/imagen-02-render-detalle.jpg",
         alt: "Render de detalle clásico",
         hotspots: [
           {
@@ -340,7 +340,7 @@ const projects: Project[] = [
         ],
       },
       {
-        src: "/images/render5.jpg",
+        src: "/images/pagina-catalogo/atelier-clasico/imagen-03-render-materiales.jpg",
         alt: "Render de materiales clásicos",
         hotspots: [
           {
@@ -354,7 +354,7 @@ const projects: Project[] = [
         ],
       },
       {
-        src: "/images/cocina9.jpg",
+        src: "/images/pagina-catalogo/atelier-clasico/imagen-04-vista-general.jpg",
         alt: "Vista general de cocina clásica",
         hotspots: [
           {

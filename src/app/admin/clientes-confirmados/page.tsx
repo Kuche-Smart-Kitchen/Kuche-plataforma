@@ -10,6 +10,7 @@ import { getAssignedLabel, isTaskConfirmed, type AdminWorkflowTask } from "@/lib
 import { subirArchivoConMetadata } from "@/lib/axios/uploadsApi";
 import { getCotizacionesFormalesList, getPreliminarList } from "@/lib/kanban";
 import { downloadFormalPdf, downloadPreliminarPdf } from "@/lib/pdf-preliminar";
+import { useClienteArchivos } from "@/hooks/useClienteArchivos";
 
 const stageLabel: Record<string, string> = {
   citas: "Citas",
@@ -118,6 +119,43 @@ const splitIntoColumns = <T,>(items: T[], columnCount: number): T[][] => {
   return columns;
 };
 
+const buildTrackingCodeFromTask = (task: AdminWorkflowTask) => {
+  console.log("=== DATOS COMPLETOS DEL TASK ===");
+  console.log("Task completo:", task);
+  console.log("task.clientId:", task.clientId);
+  console.log("task.sourceId:", task.sourceId);
+  console.log("task.id:", task.id);
+  console.log("task.project:", task.project);
+  console.log("task.title:", task.title);
+  console.log("task.cita:", task.cita);
+  console.log("task.sourceCitaId:", task.sourceCitaId);
+  console.log("task.codigoProyecto:", (task as any).codigoProyecto);
+  console.log("Todos los keys del task:", Object.keys(task));
+  console.log("====================================");
+
+  const rawTask = task as unknown as Record<string, unknown>;
+  const citaRecord = rawTask.cita && typeof rawTask.cita === "object"
+    ? (rawTask.cita as Record<string, unknown>)
+    : null;
+
+  const clientIdFromCita = citaRecord?.cliente && typeof citaRecord.cliente === "object"
+    ? ((citaRecord.cliente as Record<string, unknown>)._id as string | undefined)
+    : undefined;
+
+  const candidates = [
+    task.clientId,
+    clientIdFromCita,
+    typeof citaRecord?.clienteId === "string" ? citaRecord.clienteId : undefined,
+    task.sourceCitaId,
+    task.sourceId,
+    task.id,
+  ];
+
+  const base = candidates.find((value): value is string => Boolean(value && value.trim().length > 0)) ?? task.id;
+  const cleaned = base.replace(/[^a-zA-Z0-9]/g, "");
+  return (cleaned || base).slice(0, 6).toUpperCase();
+};
+
 export default function ClientesConfirmadosPage() {
   const { refresh, updateTask } = useAdminWorkflow();
   const [tasks, setTasks] = useState<AdminWorkflowTask[]>([]);
@@ -129,6 +167,7 @@ export default function ClientesConfirmadosPage() {
   const [uploadingReceiptKey, setUploadingReceiptKey] = useState<string | null>(null);
   const [isSavingPublicStatus, setIsSavingPublicStatus] = useState(false);
   const [publicStatusError, setPublicStatusError] = useState<string | null>(null);
+  const selectedTaskClientFiles = useClienteArchivos(selectedTask?.clientId, Boolean(selectedTask));
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -169,7 +208,7 @@ export default function ClientesConfirmadosPage() {
   }, [refresh]);
 
   const taskColumns = useMemo(() => splitIntoColumns(tasks, 3), [tasks]);
-
+  console.log("Clientes confirmados:", tasks);
   const publicStatusTask = useMemo(
     () => tasks.find((task) => task.id === publicStatusTaskId) ?? null,
     [publicStatusTaskId, tasks],
@@ -374,12 +413,10 @@ export default function ClientesConfirmadosPage() {
                             <div className="min-w-0">
                               <p className="text-[10px] font-semibold uppercase tracking-wide text-secondary">Proyecto</p>
                               <h3 className="break-words text-base font-semibold text-primary">{task.project}</h3>
-                              <p className="mt-0.5 text-sm text-secondary">{task.title}</p>
-                              {task.codigoProyecto ? (
-                                <p className="mt-2 break-all text-[11px] text-secondary">
-                                  Código: <span className="font-semibold text-primary">{task.codigoProyecto}</span>
-                                </p>
-                              ) : null}
+                              <p className="mt-2 inline-block rounded-lg bg-accent/15 px-2.5 py-1 text-xs font-bold text-accent">
+                                {buildTrackingCodeFromTask(task)}
+                              </p>
+                              <p className="mt-2 text-sm text-secondary">{task.title}</p>
                             </div>
                           </div>
                           <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${tone}`}>
@@ -456,12 +493,10 @@ export default function ClientesConfirmadosPage() {
                     Expediente
                   </p>
                   <p className="mt-1 break-words text-sm font-medium text-primary">{selectedTask.project}</p>
-                  <p className="text-xs text-secondary">{selectedTask.title}</p>
-                  {selectedTask.codigoProyecto ? (
-                    <p className="mt-2 break-all text-[11px] text-secondary">
-                      Código: <span className="font-semibold text-primary">{selectedTask.codigoProyecto}</span>
-                    </p>
-                  ) : null}
+                  <p className="mt-3 inline-block rounded-lg bg-accent/15 px-3 py-1.5 text-sm font-bold text-accent">
+                    {buildTrackingCodeFromTask(selectedTask)}
+                  </p>
+                  <p className="mt-2 text-xs text-secondary">{selectedTask.title}</p>
                 </div>
                 <button
                   type="button"
@@ -480,11 +515,11 @@ export default function ClientesConfirmadosPage() {
                   <p className="mt-1"><strong>Creado:</strong> {formatDate(selectedTask.createdAt)}</p>
                 </div>
 
-                {(selectedTask.clientFiles?.length ?? 0) > 0 ? (
+                {selectedTaskClientFiles.archivos.length > 0 ? (
                   <div className="rounded-2xl border border-sky-100 bg-sky-50 p-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-800">Archivos del cliente</p>
                     <div className="mt-3 space-y-2">
-                      {selectedTask.clientFiles?.map((file) => (
+                      {selectedTaskClientFiles.archivos.map((file) => (
                         <a
                           key={`client-file-${file.id}`}
                           href={file.src}
@@ -552,7 +587,7 @@ export default function ClientesConfirmadosPage() {
                   </div>
                 ) : null}
 
-                {(selectedTask.clientFiles?.length ?? 0) === 0 && getPreliminarList(selectedTask).length === 0 && getCotizacionesFormalesList(selectedTask).length === 0 ? (
+                {selectedTaskClientFiles.archivos.length === 0 && getPreliminarList(selectedTask).length === 0 && getCotizacionesFormalesList(selectedTask).length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-primary/15 bg-primary/5 px-4 py-3 text-xs text-secondary">
                     <div className="flex items-center gap-2">
                       <FileText className="h-4 w-4" />
@@ -614,8 +649,12 @@ export default function ClientesConfirmadosPage() {
                   <div className="rounded-2xl border border-primary/10 bg-primary/[0.03] p-4 text-sm">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-secondary">Información del cliente</p>
                     <p className="mt-3"><strong>Proyecto:</strong> {publicStatusTask.project}</p>
-                    <p className="mt-1"><strong>Código:</strong> {publicStatusTask.codigoProyecto || "Por definir"}</p>
-                    <p className="mt-1"><strong>Etapa:</strong> {stageLabel[publicStatusTask.stage] ?? publicStatusTask.stage}</p>
+                    <p className="mt-2">
+                      <span className="inline-block rounded-lg bg-accent/15 px-3 py-1.5 text-xs font-bold text-accent">
+                        {buildTrackingCodeFromTask(publicStatusTask)}
+                      </span>
+                    </p>
+                    <p className="mt-3"><strong>Etapa:</strong> {stageLabel[publicStatusTask.stage] ?? publicStatusTask.stage}</p>
                     <p className="mt-1"><strong>Asignado:</strong> {getAssignedLabel(publicStatusTask)}</p>
                   </div>
 

@@ -9,6 +9,7 @@ type Props = {
   item: ItemCatalogo;
   className?: string;
   alt?: string;
+  preferredSrcs?: Array<string | null | undefined>;
 };
 
 /**
@@ -19,8 +20,17 @@ export default function ApplianceTypeImage({
   item,
   className = "absolute inset-0 z-0 box-border h-full w-full object-contain object-center p-2 sm:p-3",
   alt,
+  preferredSrcs = [],
 }: Props) {
-  const candidates = useMemo(() => applianceLevantamientoImageCandidates(item), [item]);
+  const candidates = useMemo(() => {
+    const backendCandidates = preferredSrcs.filter((value): value is string => Boolean(value?.trim()));
+    return [...new Set([...backendCandidates, ...applianceLevantamientoImageCandidates(item)])];
+  }, [item, preferredSrcs]);
+
+  if (candidates.length === 0) {
+    return <div aria-hidden="true" className={className} />;
+  }
+
   const [index, setIndex] = useState(0);
   const stopRef = useRef(false);
 

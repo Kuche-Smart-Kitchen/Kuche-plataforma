@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Manrope } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import NumberInputWheelGuard from "@/components/NumberInputWheelGuard";
 import Navbar from "@/components/Navbar";
@@ -21,6 +22,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
+      <head>
+        {/* Cloudflare Turnstile */}
+        <Script
+          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+          async
+          defer
+        />
+      </head>
       <body className={`${manrope.variable} font-sans antialiased`}>
         <NumberInputWheelGuard />
         <Navbar />

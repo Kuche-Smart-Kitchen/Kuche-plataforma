@@ -9,6 +9,7 @@ import { useAdminWorkflow } from "@/contexts/AdminWorkflowContext";
 import { getAssignedLabel, isTaskDiscarded, type AdminWorkflowTask } from "@/lib/admin-workflow";
 import { getCotizacionesFormalesList, getPreliminarList } from "@/lib/kanban";
 import { downloadFormalPdf, downloadPreliminarPdf } from "@/lib/pdf-preliminar";
+import { useClienteArchivos } from "@/hooks/useClienteArchivos";
 
 const stageLabel: Record<string, string> = {
 	citas: "Citas",
@@ -49,6 +50,7 @@ export default function ProyectosInactivosPage() {
 	const [error, setError] = useState<string | null>(null);
 	const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
 	const [selectedTask, setSelectedTask] = useState<AdminWorkflowTask | null>(null);
+	const selectedTaskClientFiles = useClienteArchivos(selectedTask?.clientId, Boolean(selectedTask));
 
 	const load = async () => {
 		try {
@@ -270,11 +272,11 @@ export default function ProyectosInactivosPage() {
 									<p className="mt-1"><strong>Creado:</strong> {formatDate(selectedTask.createdAt)}</p>
 								</div>
 
-								{(selectedTask.clientFiles?.length ?? 0) > 0 ? (
+								{selectedTaskClientFiles.archivos.length > 0 ? (
 									<div className="rounded-2xl border border-sky-100 bg-sky-50 p-4">
 										<p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-800">Archivos del cliente</p>
 										<div className="mt-3 space-y-2">
-											{selectedTask.clientFiles?.map((file) => (
+											{selectedTaskClientFiles.archivos.map((file) => (
 												<a
 													key={`client-file-${file.id}`}
 													href={file.src}
@@ -342,7 +344,7 @@ export default function ProyectosInactivosPage() {
 									</div>
 								) : null}
 
-								{(selectedTask.clientFiles?.length ?? 0) === 0 && getPreliminarList(selectedTask).length === 0 && getCotizacionesFormalesList(selectedTask).length === 0 ? (
+								{selectedTaskClientFiles.archivos.length === 0 && getPreliminarList(selectedTask).length === 0 && getCotizacionesFormalesList(selectedTask).length === 0 ? (
 									<div className="rounded-2xl border border-dashed border-primary/15 bg-primary/5 px-4 py-3 text-xs text-secondary">
 										<div className="flex items-center gap-2">
 											<FileText className="h-4 w-4" />

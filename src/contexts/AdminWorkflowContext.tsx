@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 
-import { buildTaskUpdatePayload, type AdminWorkflowTask } from "@/lib/admin-workflow";
+import { type AdminWorkflowTask } from "@/lib/admin-workflow";
 import {
   actualizarTarjetaCita,
   actualizarTarjetaTarea,
@@ -15,9 +15,15 @@ import {
   promoverCitaATarea,
 } from "@/lib/axios/adminWorkflowApi";
 import type { ActualizarTareaData, CrearTareaData } from "@/lib/axios/tareasApi";
+import { asignarTrabajadoresTarea } from "@/lib/axios/tareasApi";
+import { asignarIngenierosCita } from "@/lib/axios/citasApi";
 import type { TaskStage } from "@/lib/kanban";
 
-type WorkflowTaskPatch = Partial<AdminWorkflowTask>;
+type WorkflowTaskPatch = Partial<AdminWorkflowTask> & {
+  notaSeguimiento?: string;
+};
+
+type CitaUpdatePayload = Parameters<typeof actualizarTarjetaCita>[1];
 
 type AdminWorkflowContextValue = {
   tasks: AdminWorkflowTask[];
@@ -31,6 +37,7 @@ type AdminWorkflowContextValue = {
   deleteTask: (task: AdminWorkflowTask) => Promise<void>;
   reactivateTask: (task: AdminWorkflowTask) => Promise<void>;
   markFollowUpAlerts: (daysWithoutChanges?: number) => Promise<number>;
+  assignWorkers: (task: AdminWorkflowTask, assignedToIds: string[]) => Promise<void>;
 };
 
 const AdminWorkflowContext = createContext<AdminWorkflowContextValue | null>(null);
@@ -47,6 +54,79 @@ const getResponseMessage = (response: unknown): string | undefined => {
     return (response as { message: string }).message;
   }
   return undefined;
+};
+
+const buildTaskUpdatePayload = (patch: WorkflowTaskPatch): ActualizarTareaData => {
+  const payload: ActualizarTareaData = {};
+  const assignedToIds = Array.isArray(patch.assignedToIds)
+    ? patch.assignedToIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+    : [];
+
+  if (patch.title !== undefined) payload.titulo = patch.title;
+  if (patch.stage !== undefined) payload.etapa = patch.stage;
+  if (patch.status !== undefined) payload.estado = patch.status;
+  // NOTE: assignment of workers is intentionally handled by a separate endpoint
+  // per DOCUMENTACION_SEPARACION_EDICION_Y_ASIGNACION_TAREAS.md. Do not include
+  // `asignadoA` in the general edit payload.
+  if (patch.project !== undefined) payload.nombreProyecto = patch.project;
+  if (patch.notes !== undefined) payload.notas = patch.notes;
+  if (patch.priority !== undefined) payload.prioridad = patch.priority;
+  if (patch.dueDate !== undefined) payload.fechaLimite = patch.dueDate;
+  if (patch.location !== undefined) payload.ubicacion = patch.location;
+  if (patch.mapsUrl !== undefined) payload.mapsUrl = patch.mapsUrl;
+  if (patch.followUpEnteredAt !== undefined) payload.followUpEnteredAt = patch.followUpEnteredAt;
+  if (patch.followUpStatus !== undefined) payload.followUpStatus = patch.followUpStatus;
+  if (patch.citaStarted !== undefined) payload.citaStarted = patch.citaStarted;
+  if (patch.citaFinished !== undefined) payload.citaFinished = patch.citaFinished;
+  if (patch.designApprovedByAdmin !== undefined) payload.designApprovedByAdmin = patch.designApprovedByAdmin;
+  if (patch.designApprovedByClient !== undefined) payload.designApprovedByClient = patch.designApprovedByClient;
+  if (patch.visitScheduledAt !== undefined) payload.visitScheduledAt = patch.visitScheduledAt;
+  if (patch.scheduledAt !== undefined) payload.scheduledAt = patch.scheduledAt;
+  if (patch.sourceType !== undefined) payload.sourceType = patch.sourceType;
+  if (patch.sourceId !== undefined) payload.sourceId = patch.sourceId;
+  if (patch.sourceCitaId !== undefined) payload.sourceCitaId = patch.sourceCitaId;
+  if (patch.sourceDisenoId !== undefined) payload.sourceDisenoId = patch.sourceDisenoId;
+  if (patch.preliminarData !== undefined) payload.preliminarData = patch.preliminarData;
+  if (patch.cotizacionFormalData !== undefined) payload.cotizacionFormalData = patch.cotizacionFormalData;
+  if (patch.preliminarCotizaciones !== undefined) payload.preliminarCotizaciones = patch.preliminarCotizaciones;
+  if (patch.cotizacionesFormales !== undefined) payload.cotizacionesFormales = patch.cotizacionesFormales;
+  if (patch.codigoProyecto !== undefined) payload.codigoProyecto = patch.codigoProyecto;
+  if (patch.cita !== undefined) payload.cita = patch.cita;
+  if (patch.visita !== undefined) payload.visita = patch.visita;
+  if (patch.pagos !== undefined) (payload as Record<string, unknown>).pagos = patch.pagos;
+  if (patch.seguimientoNota !== undefined) (payload as Record<string, unknown>).seguimientoNota = patch.seguimientoNota;
+  if (patch.notaSeguimiento !== undefined) (payload as Record<string, unknown>).notaSeguimiento = patch.notaSeguimiento;
+
+  return payload;
+};
+
+const buildCitaUpdatePayload = (patch: WorkflowTaskPatch): CitaUpdatePayload => {
+  const payload: CitaUpdatePayload = {};
+  const cita: NonNullable<CitaUpdatePayload["cita"]> = {};
+
+  if (patch.project !== undefined) cita.nombreCliente = patch.project;
+  if (patch.location !== undefined) cita.ubicacion = patch.location;
+  if (patch.mapsUrl !== undefined) cita.mapsUrl = patch.mapsUrl;
+  if (patch.notes !== undefined || patch.title !== undefined) {
+    cita.informacionAdicional = patch.notes ?? patch.title;
+  }
+  if (patch.dueDate !== undefined) cita.fechaAgendada = patch.dueDate;
+
+  if (Object.keys(cita).length > 0) {
+    payload.cita = cita;
+  }
+
+  if (patch.status !== undefined) {
+    payload.estado = patch.status === "completada" ? "completada" : "programada";
+  }
+  if (patch.citaStarted === true) {
+    payload.estado = "en_proceso";
+  }
+  if (patch.citaFinished === true) {
+    payload.estado = "completada";
+  }
+
+  return payload;
 };
 
 export function AdminWorkflowProvider({ children }: { children: React.ReactNode }) {
@@ -116,174 +196,70 @@ export function AdminWorkflowProvider({ children }: { children: React.ReactNode 
     async (task: AdminWorkflowTask, patch: WorkflowTaskPatch) => {
       setIsMutating(true);
       try {
-      const patchKeys = Object.keys(patch);
-      const isFollowUpOnlyPatch =
-        patchKeys.length > 0 &&
-        patchKeys.every((key) => key === "followUpStatus" || key === "status" || key === "followUpEnteredAt");
-
-      const mergedTask: AdminWorkflowTask = {
-        ...task,
-        ...patch,
-        visita: {
-          fechaProgramada:
-            patch.visita?.fechaProgramada ??
-            patch.visitScheduledAt ??
-            task.visita?.fechaProgramada ??
-            task.visitScheduledAt,
-          aprobadaPorAdmin:
-            patch.visita?.aprobadaPorAdmin ??
-            patch.designApprovedByAdmin ??
-            task.visita?.aprobadaPorAdmin ??
-            task.designApprovedByAdmin ??
-            false,
-          aprobadaPorCliente:
-            patch.visita?.aprobadaPorCliente ??
-            patch.designApprovedByClient ??
-            task.visita?.aprobadaPorCliente ??
-            task.designApprovedByClient ??
-            false,
-        },
-      };
-
-      if (task.backendSource === "cita") {
-        if (mergedTask.stage !== "citas") {
-          await moveTask(task, mergedTask.stage);
-          return;
+        const backendTaskId = task.sourceId?.trim() || task.id?.trim();
+        if (!backendTaskId) {
+          throw new Error("No se encontro un id valido para guardar la tarjeta.");
         }
 
-        // For citas, prefer the edited title when present so it becomes cita.informacionAdicional.
-        const titleFromPatch = typeof patch.title === "string" ? patch.title.trim() : "";
-        const notesFromPatch = typeof patch.notes === "string" ? patch.notes.trim() : "";
-        const citaInfo =
-          titleFromPatch ||
-          notesFromPatch ||
-          mergedTask.notes?.trim() ||
-          mergedTask.title?.trim() ||
-          "";
+        if (task.backendSource === "cita") {
+          const payload = buildCitaUpdatePayload(patch);
+          if (Object.keys(payload).length === 0 || (payload.cita && Object.keys(payload.cita).length === 0 && !payload.estado && !payload.ingenieroId)) {
+            await refresh();
+            return;
+          }
 
-        const estadoCita =
-          mergedTask.status === "completada" || mergedTask.citaFinished
-            ? "completada"
-            : mergedTask.citaStarted || (mergedTask.assignedToIds?.length ?? 0) > 0
-              ? "en_proceso"
-              : "programada";
-
-        const response = await actualizarTarjetaCita(task.sourceId, {
-          cita: {
-            nombreCliente: mergedTask.project,
-            informacionAdicional: citaInfo,
-            ubicacion: mergedTask.location,
-          },
-          ingenieroId: mergedTask.assignedToIds?.[0],
-          estado: estadoCita,
-        });
-
-        if (!response.success) {
-          throw new Error(getResponseMessage(response) || "No se pudo actualizar la cita");
-        }
-        await refresh();
-        return;
-      }
-
-      // Algunos backends ignoran followUpStatus cuando llega en un payload "full".
-      // Para confirmar/inactivar/reactivar, enviamos payload minimo y estable.
-      if (isFollowUpOnlyPatch) {
-        const followUp = typeof patch.followUpStatus === "string" ? patch.followUpStatus : undefined;
-        const estado = typeof patch.status === "string" ? patch.status : undefined;
-        const followUpEnteredAt =
-          typeof patch.followUpEnteredAt === "number" ? patch.followUpEnteredAt : undefined;
-
-        const basePayload: Record<string, unknown> = {};
-        if (followUp) basePayload.followUpStatus = followUp;
-        if (estado) basePayload.estado = estado;
-        if (followUpEnteredAt !== undefined) basePayload.followUpEnteredAt = followUpEnteredAt;
-
-        const candidatePayloads: Array<Record<string, unknown>> = [basePayload];
-        if (followUp === "inactivo") {
-          candidatePayloads.push({ ...basePayload, followUpStatus: "descartado" });
-        }
-        if (followUp) {
-          candidatePayloads.push({ ...basePayload, seguimiento: followUp });
-          candidatePayloads.push({ ...basePayload, estadoSeguimiento: followUp });
-        }
-
-        const seen = new Set<string>();
-        const uniquePayloads = candidatePayloads.filter((candidate) => {
-          const fingerprint = JSON.stringify(candidate);
-          if (seen.has(fingerprint)) return false;
-          seen.add(fingerprint);
-          return true;
-        });
-
-        let lastErrorMessage = "No se pudo actualizar seguimiento de la tarea";
-        let hadSuccessfulWrite = false;
-
-        for (const candidate of uniquePayloads) {
-          const response = await actualizarTarjetaTarea(task.sourceId, candidate as ActualizarTareaData);
+          const response = await actualizarTarjetaCita(backendTaskId, payload);
           if (!response.success) {
-            lastErrorMessage = getResponseMessage(response) || lastErrorMessage;
-            continue;
+            throw new Error(getResponseMessage(response) || "No se pudo actualizar la cita");
           }
 
-          hadSuccessfulWrite = true;
-
-          const rawResponseData = (response as { data?: unknown }).data;
-          const responseData =
-            typeof rawResponseData === "object" && rawResponseData !== null
-              ? (rawResponseData as Record<string, unknown>)
-              : null;
-
-          const followUpInResponse = responseData
-            ? (responseData.followUpStatus ?? responseData.seguimiento ?? responseData.estadoSeguimiento)
-            : undefined;
-
-          if (followUp && typeof followUpInResponse === "string") {
-            const normalized = followUpInResponse === "descartado" ? "inactivo" : followUpInResponse;
-            if (normalized === followUp) {
-              await refresh();
-              return;
-            }
-          }
-
-          const refreshed = await refresh();
-          if (!followUp) return;
-
-          const updated = refreshed.find(
-            (item) => item.id === task.id || item.sourceId === task.sourceId,
-          );
-          if (updated?.followUpStatus === followUp) {
-            return;
-          }
-
-          if (followUp === "inactivo" && updated?.followUpStatus === "inactivo") {
-            return;
-          }
-        }
-
-        if (hadSuccessfulWrite) {
-          // Evita falso negativo cuando backend persiste pero no expone follow-up en el shape esperado.
           await refresh();
           return;
         }
 
-        throw new Error(lastErrorMessage);
-      }
+        const payload = buildTaskUpdatePayload(patch);
+        if (Object.keys(payload).length === 0) {
+          await refresh();
+          return;
+        }
 
-      const payload = buildTaskUpdatePayload(mergedTask);
-      const payloadForApi = { ...payload } as Record<string, unknown>;
-      if (payloadForApi.sourceId == null) {
-        delete payloadForApi.sourceId;
-      }
-      const response = await actualizarTarjetaTarea(task.sourceId, payloadForApi as ActualizarTareaData);
-      if (!response.success) {
-        throw new Error(getResponseMessage(response) || "No se pudo actualizar la tarea");
-      }
-      await refresh();
+        const response = await actualizarTarjetaTarea(backendTaskId, payload);
+        if (!response.success) {
+          throw new Error(getResponseMessage(response) || "No se pudo actualizar la tarea");
+        }
+
+        await refresh();
       } finally {
         setIsMutating(false);
       }
     },
-    [moveTask, refresh],
+    [refresh],
+  );
+
+  const assignWorkers = useCallback(
+    async (task: AdminWorkflowTask, assignedToIds: string[]) => {
+      setIsMutating(true);
+      try {
+        const backendTaskId = task.sourceId?.trim() || task.id?.trim();
+        if (!backendTaskId) throw new Error("No se encontro un id valido para asignar trabajadores.");
+
+        if (task.backendSource === "cita") {
+          // For cita-sourced items, delegate to the citas API assignment endpoint
+          const response = await asignarIngenierosCita(backendTaskId, { ingenieroIds: assignedToIds });
+          if (!response.success) throw new Error(response.message || "No se pudo asignar ingenieros a la cita");
+          await refresh();
+          return;
+        }
+
+        // Default: tarea backend
+        const resp = await asignarTrabajadoresTarea(backendTaskId, assignedToIds);
+        if (!resp.success) throw new Error(resp.message || "No se pudo asignar trabajadores a la tarea");
+        await refresh();
+      } finally {
+        setIsMutating(false);
+      }
+    },
+    [refresh],
   );
 
   const createTask = useCallback(
@@ -369,8 +345,9 @@ export function AdminWorkflowProvider({ children }: { children: React.ReactNode 
       deleteTask,
       reactivateTask,
       markFollowUpAlerts,
+      assignWorkers,
     }),
-    [createTask, deleteTask, error, isLoading, isMutating, markFollowUpAlerts, moveTask, reactivateTask, refresh, tasks, updateTask],
+    [createTask, deleteTask, error, isLoading, isMutating, markFollowUpAlerts, moveTask, reactivateTask, refresh, tasks, updateTask, assignWorkers],
   );
 
   return <AdminWorkflowContext.Provider value={value}>{children}</AdminWorkflowContext.Provider>;

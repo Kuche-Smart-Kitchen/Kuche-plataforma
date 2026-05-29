@@ -4,9 +4,22 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Captcha from "@/components/Captcha";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
-import { runtimeStore } from "@/lib/runtime-store";
+import { useAgendarCita } from "@/contexts/AgendarCitaContext";
+import {
+  getDateKey,
+  loadAppointments,
+  loadAppointmentsFromBackend,
+  getBlockedHours,
+  isPastHour,
+  isWithinMinimumAnticipation,
+  isWeekend,
+  isPastDate,
+  registerAppointment,
+  type AppointmentsByDateAndTime,
+} from "@/lib/validaciones/validacionesAgendaCitas";
 
 export default function BookingSection() {
+  const { isLoading, error, success, enviar, limpiar } = useAgendarCita();
   const weekDays = ["L", "M", "M", "J", "V", "S", "D"];
   const monthNames = [
     "Enero",
@@ -22,7 +35,10 @@ export default function BookingSection() {
     "Noviembre",
     "Diciembre",
   ];
-  const timeSlots = ["10:00", "12:00", "16:00"];
+  const timeSlots = Array.from({ length: 9 }, (_, i) => {
+    const hour = 9 + i;
+    return String(hour).padStart(2, "0") + ":00";
+  });
   const today = new Date();
   const todayStart = useMemo(
     () => new Date(today.getFullYear(), today.getMonth(), today.getDate()),
@@ -38,8 +54,6 @@ export default function BookingSection() {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  const [formMessage, setFormMessage] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const modalRef = useRef<HTMLDivElement | null>(null);
   const [captchaToken, setCaptchaToken] = useState("");
@@ -49,50 +63,128 @@ export default function BookingSection() {
     locationLabel: string;
     date: Date;
   } | null>(null);
-  const [appointmentsByDate, setAppointmentsByDate] = useState<Record<string, number>>(
-    {},
-  );
+  const [appointmentsByDateAndTime, setAppointmentsByDateAndTime] =
+    useState<AppointmentsByDateAndTime>({});
 
-  const MAX_APPOINTMENTS_PER_DAY = 3;
+  const isSameDay = (left: Date, right: Date) =>
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate();
 
-  const getDateKey = (date: Date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  };
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const stored = runtimeStore.getItem("kuche_appointments");
-      if (!stored) return;
-      const parsed = JSON.parse(stored) as Record<string, number>;
-      if (parsed && typeof parsed === "object") {
-        setAppointmentsByDate(parsed);
-      }
-    } catch {
-      // ignore parse errors
+  const getAvailableTimesForDate = (date: Date, now: Date) => {
+    if (isPastDate(date, todayStart) || isWeekend(date)) {
+      return [] as string[];
     }
-  }, []);
 
-  const registerAppointment = (date: Date) => {
-    if (typeof window === "undefined") return;
-    const key = getDateKey(date);
-    setAppointmentsByDate((prev) => {
-      const currentCount = prev[key] ?? 0;
-      const next = {
-        ...prev,
-        [key]: currentCount + 1,
-      };
-      try {
-        runtimeStore.setItem("kuche_appointments", JSON.stringify(next));
-      } catch {
-        // ignore storage errors
-      }
-      return next;
+    const blockedHours = getBlockedHours(date, appointmentsByDateAndTime);
+
+    return timeSlots.filter((time) => {
+      const isPastTime = isPastHour(date, time, now, todayStart);
+      const isWithinMinimum = isWithinMinimumAnticipation(
+        date,
+        time,
+        now,
+        todayStart,
+      );
+      return !isPastTime && !isWithinMinimum && !blockedHours.has(time);
     });
   };
+
+  const findNextAvailableSlot = (startDate: Date) => {
+    const referenceDate = new Date(
+      startDate.getFullYear(),
+      startDate.getMonth(),
+      startDate.getDate(),
+    );
+    const now = new Date();
+
+    for (let offset = 0; offset < 60; offset += 1) {
+      const candidateDate = new Date(
+        referenceDate.getFullYear(),
+        referenceDate.getMonth(),
+        referenceDate.getDate() + offset,
+      );
+      const availableTimes = getAvailableTimesForDate(candidateDate, now);
+
+      if (availableTimes.length > 0) {
+        return {
+          date: candidateDate,
+          time: availableTimes[0],
+        };
+      }
+    }
+
+    return null;
+  };
+
+  // Cargar citas del backend y localStorage
+  useEffect(() => {
+    const loadCitas = async () => {
+      try {
+        // Cargar citas del backend
+        const backendCitas = await loadAppointmentsFromBackend();
+        
+        // Cargar citas del localStorage (recientemente agendadas)
+        const localCitas = loadAppointments();
+        
+        // Combinar ambas fuentes
+        const combined: AppointmentsByDateAndTime = {};
+        
+        // Agregar citas del backend
+        Object.entries(backendCitas).forEach(([dateKey, times]) => {
+          combined[dateKey] = [...(combined[dateKey] || []), ...times];
+        });
+        
+        // Agregar citas del localStorage
+        Object.entries(localCitas).forEach(([dateKey, times]) => {
+          combined[dateKey] = [...(combined[dateKey] || []), ...times];
+        });
+        
+        setAppointmentsByDateAndTime(combined);
+      } catch (error) {
+        console.error("Error al cargar citas:", error);
+        // Fallback: cargar solo del localStorage
+        const localCitas = loadAppointments();
+        setAppointmentsByDateAndTime(localCitas);
+      }
+    };
+    
+    loadCitas();
+  }, []);
+
+      useEffect(() => {
+        const referenceDate = selectedDate ?? today;
+        const nextAvailableSlot = findNextAvailableSlot(referenceDate);
+
+        if (!nextAvailableSlot) {
+          return;
+        }
+
+        const shouldMoveDate =
+          !selectedDate || !isSameDay(selectedDate, nextAvailableSlot.date);
+
+        if (shouldMoveDate) {
+          setSelectedDate(nextAvailableSlot.date);
+          setSelectedTime(nextAvailableSlot.time);
+          setCurrentMonth(
+            new Date(
+              nextAvailableSlot.date.getFullYear(),
+              nextAvailableSlot.date.getMonth(),
+              1,
+            ),
+          );
+          return;
+        }
+
+        const availableTimesForSelectedDate = getAvailableTimesForDate(
+          referenceDate,
+          new Date(),
+        );
+
+        if (!availableTimesForSelectedDate.includes(selectedTime)) {
+          setSelectedTime(nextAvailableSlot.time);
+        }
+      }, [appointmentsByDateAndTime, selectedDate, selectedTime]);
 
   useEscapeClose(isModalOpen, () => setIsModalOpen(false));
   useFocusTrap(isModalOpen, modalRef);
@@ -117,26 +209,7 @@ export default function BookingSection() {
         className="mx-auto grid max-w-6xl grid-cols-1 overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl md:grid-cols-[1fr_1.1fr]"
         onSubmit={(event) => {
           event.preventDefault();
-          if (!selectedDate || !selectedTime || !location) {
-            setFormMessage(null);
-            setFormError("Selecciona fecha, horario y ubicación.");
-            return;
-          }
-          if (!fullName.trim() || !phone.trim() || !email.trim()) {
-            setFormMessage(null);
-            setFormError("Completa tu nombre, teléfono y correo.");
-            return;
-          }
-          if (location === "otro" && !otherLocation.trim()) {
-            setFormMessage(null);
-            setFormError("Indica tu ubicación.");
-            return;
-          }
-          if (!captchaToken) {
-            setFormMessage(null);
-            setFormError("Confirma el captcha para continuar.");
-            return;
-          }
+          // Mostrar modal sin validaciones
           const dateLabel = selectedDate
             ? new Intl.DateTimeFormat("es-MX", {
                 weekday: "long",
@@ -149,13 +222,11 @@ export default function BookingSection() {
             location === "capital"
               ? "Durango Capital"
               : otherLocation.trim() || "Otro municipio";
-          setFormError(null);
-          setFormMessage(null);
           setPendingSummary({
             dateLabel,
             time: selectedTime,
             locationLabel,
-            date: selectedDate,
+            date: selectedDate || new Date(),
           });
           setIsModalOpen(true);
         }}
@@ -225,36 +296,31 @@ export default function BookingSection() {
                   currentMonth.getMonth(),
                   day,
                 );
-                const isPast = dateValue < todayStart;
-                const dayOfWeek = dateValue.getDay();
-                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-                const dateKey = getDateKey(dateValue);
-                const dayAppointments = appointmentsByDate[dateKey] ?? 0;
-                const isFull = dayAppointments >= MAX_APPOINTMENTS_PER_DAY;
+                const isPastDate_val = isPastDate(dateValue, todayStart);
+                const isWeekend_val = isWeekend(dateValue);
                 const isSelected =
                   selectedDate &&
                   selectedDate.getDate() === day &&
                   selectedDate.getMonth() === currentMonth.getMonth() &&
                   selectedDate.getFullYear() === currentMonth.getFullYear();
+                const isDisabled = isPastDate_val || isWeekend_val;
+
                 return (
                   <button
                     key={`day-${day}`}
                     type="button"
-                    disabled={isPast || isWeekend || isFull}
+                    disabled={isDisabled}
                     onClick={() => {
-                      if (isPast || isWeekend || isFull) return;
-                      setSelectedDate(dateValue);
-                      setFormMessage(null);
-                      setFormError(null);
+                      if (!isDisabled) {
+                        setSelectedDate(dateValue);
+                      }
                     }}
                     className={`flex h-8 items-center justify-center rounded-lg border text-sm font-medium ${
                       isSelected
                         ? "border-accent bg-accent text-white shadow-sm"
-                        : isPast || isWeekend
-                          ? "border-transparent text-gray-300"
-                          : isFull
-                            ? "border-transparent text-gray-300 line-through"
-                            : "border-transparent text-secondary hover:border-gray-200"
+                        : isDisabled
+                          ? "border-transparent text-gray-300 cursor-not-allowed"
+                          : "border-transparent text-secondary hover:border-gray-200"
                     }`}
                   >
                     {day}
@@ -268,28 +334,119 @@ export default function BookingSection() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-secondary">
               Horarios disponibles
             </p>
-            <div className="mt-3 grid grid-cols-3 gap-3">
-              {timeSlots.map((time) => {
-                const isActive = time === selectedTime;
-                return (
-                  <button
-                    key={time}
-                    type="button"
-                    onClick={() => {
-                      setSelectedTime(time);
-                      setFormMessage(null);
-                      setFormError(null);
-                    }}
-                    className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
-                      isActive
-                        ? "border-accent bg-accent text-white shadow-sm"
-                        : "border-gray-200 text-secondary hover:border-gray-300"
-                    }`}
-                  >
-                    {time}
-                  </button>
-                );
-              })}
+            <div className="mt-3 space-y-3">
+              {/* Primera fila: 9 AM - 1 PM */}
+              <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+                {timeSlots.slice(0, 5).map((time) => {
+                  const [hourStr] = time.split(":");
+                  const hour = parseInt(hourStr, 10);
+                  const displayHour = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
+                  const displayPeriod = hour >= 12 ? "PM" : "AM";
+                  const isActive = time === selectedTime;
+
+                  // Verificar si esta hora está pasada (solo si es hoy)
+                  const isPastTime = isPastHour(
+                    selectedDate,
+                    time,
+                    today,
+                    todayStart
+                  );
+
+                  // Verificar si está dentro del rango de anticipación mínima (2 horas)
+                  const isWithinMinimum = isWithinMinimumAnticipation(
+                    selectedDate,
+                    time,
+                    today,
+                    todayStart
+                  );
+
+                  // Verificar si esta hora está bloqueada por citas existentes
+                  const blockedHours = selectedDate
+                    ? getBlockedHours(selectedDate, appointmentsByDateAndTime)
+                    : new Set<string>();
+                  const isBlocked = blockedHours.has(time);
+
+                  const isDisabled_time = isPastTime || isBlocked || isWithinMinimum;
+
+                  return (
+                    <button
+                      key={time}
+                      type="button"
+                      disabled={isDisabled_time}
+                      onClick={() => {
+                        if (!isDisabled_time) {
+                          setSelectedTime(time);
+                        }
+                      }}
+                      className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                        isActive
+                          ? "border-accent bg-accent text-white shadow-sm"
+                          : isDisabled_time
+                            ? "border-transparent text-gray-300 cursor-not-allowed line-through"
+                            : "border-gray-200 text-secondary hover:border-gray-300"
+                      }`}
+                    >
+                      {displayHour} {displayPeriod}
+                    </button>
+                  );
+                })}
+              </div>
+              {/* Segunda fila: 2 PM - 5 PM */}
+              <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+                {timeSlots.slice(5).map((time) => {
+                  const [hourStr] = time.split(":");
+                  const hour = parseInt(hourStr, 10);
+                  const displayHour = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
+                  const displayPeriod = hour >= 12 ? "PM" : "AM";
+                  const isActive = time === selectedTime;
+
+                  // Verificar si esta hora está pasada (solo si es hoy)
+                  const isPastTime = isPastHour(
+                    selectedDate,
+                    time,
+                    today,
+                    todayStart
+                  );
+
+                  // Verificar si está dentro del rango de anticipación mínima (2 horas)
+                  const isWithinMinimum = isWithinMinimumAnticipation(
+                    selectedDate,
+                    time,
+                    today,
+                    todayStart
+                  );
+
+                  // Verificar si esta hora está bloqueada por citas existentes
+                  const blockedHours = selectedDate
+                    ? getBlockedHours(selectedDate, appointmentsByDateAndTime)
+                    : new Set<string>();
+                  const isBlocked = blockedHours.has(time);
+
+                  const isDisabled_time = isPastTime || isBlocked || isWithinMinimum;
+
+                  return (
+                    <button
+                      key={time}
+                      type="button"
+                      disabled={isDisabled_time}
+                      onClick={() => {
+                        if (!isDisabled_time) {
+                          setSelectedTime(time);
+                        }
+                      }}
+                      className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                        isActive
+                          ? "border-accent bg-accent text-white shadow-sm"
+                          : isDisabled_time
+                            ? "border-transparent text-gray-300 cursor-not-allowed line-through"
+                            : "border-gray-200 text-secondary hover:border-gray-300"
+                      }`}
+                    >
+                      {displayHour} {displayPeriod}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
@@ -342,8 +499,6 @@ export default function BookingSection() {
                 onClick={() => {
                   setLocation("capital");
                   setOtherLocation("");
-                  setFormMessage(null);
-                  setFormError(null);
                 }}
                 className={`rounded-lg px-4 py-3 text-xs font-semibold uppercase tracking-[0.25em] ${
                   location === "capital"
@@ -357,8 +512,6 @@ export default function BookingSection() {
                 type="button"
                 onClick={() => {
                   setLocation("otro");
-                  setFormMessage(null);
-                  setFormError(null);
                 }}
                 className={`rounded-lg px-4 py-3 text-xs font-semibold uppercase tracking-[0.25em] ${
                   location === "otro"
@@ -388,23 +541,12 @@ export default function BookingSection() {
             <Captcha
               onVerify={(token) => {
                 setCaptchaToken(token);
-                setFormMessage(null);
-                setFormError(null);
               }}
               onExpire={() => setCaptchaToken("")}
               onError={() => setCaptchaToken("")}
               className="mt-3"
             />
           </div>
-
-          {formError ? (
-            <p className="mt-6 text-xs font-semibold text-red-600">{formError}</p>
-          ) : null}
-          {formMessage ? (
-            <p className="mt-6 text-xs font-semibold text-emerald-600">
-              {formMessage}
-            </p>
-          ) : null}
 
           <button
             type="submit"
@@ -424,52 +566,189 @@ export default function BookingSection() {
               tabIndex={-1}
               className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
             >
-              <div className="text-xs font-semibold uppercase tracking-[0.3em] text-secondary">
-                Confirmación
-              </div>
-              <h3 className="mt-3 text-xl font-semibold text-primary">
-                ¿Agendar esta visita?
-              </h3>
-              <div className="mt-5 space-y-2 text-sm text-secondary">
-                <p>
-                  <span className="font-semibold text-primary">Fecha:</span>{" "}
-                  {pendingSummary.dateLabel}
-                </p>
-                <p>
-                  <span className="font-semibold text-primary">Horario:</span>{" "}
-                  {pendingSummary.time}
-                </p>
-                <p>
-                  <span className="font-semibold text-primary">Ubicación:</span>{" "}
-                  {pendingSummary.locationLabel}
-                </p>
-              </div>
+              {/* Mensaje de Éxito */}
+              {success ? (
+                <div className="flex flex-col items-center text-center">
+                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
+                    <span className="text-2xl">✓</span>
+                  </div>
+                  <h3 className="text-lg font-semibold text-primary">
+                    ¡Cita Registrada!
+                  </h3>
+                  <p className="mt-2 text-sm text-secondary">
+                    Tu cita ha sido registrada correctamente. Nos comunicaremos contigo pronto para confirmar los detalles.
+                  </p>
+                  <button
+                    type="button"
+                    className="mt-6 w-full rounded-lg bg-green-600 px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-white transition hover:bg-green-700"
+                    onClick={() => {
+                      setIsModalOpen(false);
+                      setPendingSummary(null);
+                      limpiar();
+                    }}
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              ) : error ? (
+                /* Mensaje de Error */
+                <div className="flex flex-col items-center text-center">
+                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
+                    <span className="text-2xl">✕</span>
+                  </div>
+                  <h3 className="text-lg font-semibold text-primary">
+                    Error al Registrar
+                  </h3>
+                  <p className="mt-2 text-sm text-red-600 font-medium">
+                    {error}
+                  </p>
+                  <p className="mt-1 text-xs text-secondary">
+                    Por favor, intenta nuevamente.
+                  </p>
+                  <div className="mt-6 flex w-full gap-3">
+                    <button
+                      type="button"
+                      className="flex-1 rounded-lg border border-gray-200 px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-secondary transition hover:border-gray-300"
+                      onClick={() => {
+                        setIsModalOpen(false);
+                        setPendingSummary(null);
+                        limpiar();
+                      }}
+                    >
+                      Cerrar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isLoading}
+                      className="flex-1 rounded-lg bg-accent px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-white transition hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={async () => {
+                        if (!pendingSummary) return;
 
-              <div className="mt-6 flex gap-3">
-                <button
-                  type="button"
-                  className="flex-1 rounded-lg border border-gray-200 px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-secondary"
-                  onClick={() => setIsModalOpen(false)}
-                >
-                  Editar
-                </button>
-                <button
-                  type="button"
-                  className="flex-1 rounded-lg bg-accent px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-white"
-                  onClick={() => {
-                    setIsModalOpen(false);
-                    if (pendingSummary?.date) {
-                      registerAppointment(pendingSummary.date);
-                    }
-                    setFormMessage(
-                      "Listo. Te contactaremos para confirmar tu visita.",
-                    );
-                    setPendingSummary(null);
-                  }}
-                >
-                  Confirmar
-                </button>
-              </div>
+                        const response = await enviar({
+                          nombreCliente: fullName,
+                          correoCliente: email,
+                          telefonoCliente: phone,
+                          fechaAgendada: pendingSummary.date,
+                          horaAgendada: pendingSummary.time,
+                          ubicacion:
+                            location === "capital"
+                              ? "Durango Capital"
+                              : otherLocation,
+                          informacionAdicional: "",
+                          captchaToken,
+                        });
+
+                        if (response.success) {
+                          const updated = registerAppointment(
+                            pendingSummary.date,
+                            pendingSummary.time
+                          );
+                          setAppointmentsByDateAndTime(updated);
+
+                          setFullName("");
+                          setPhone("");
+                          setEmail("");
+                          setOtherLocation("");
+                          setCaptchaToken("");
+
+                          setTimeout(() => {
+                            setIsModalOpen(false);
+                            setPendingSummary(null);
+                            limpiar();
+                          }, 2000);
+                        }
+                      }}
+                    >
+                      {isLoading ? "Reintentando..." : "Reintentar"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Modal de Confirmación */
+                <>
+                  <div className="text-xs font-semibold uppercase tracking-[0.3em] text-secondary">
+                    Confirmación
+                  </div>
+                  <h3 className="mt-3 text-xl font-semibold text-primary">
+                    ¿Agendar esta visita?
+                  </h3>
+                  <div className="mt-5 space-y-3 text-sm text-secondary">
+                    <div className="rounded-lg bg-gray-50 p-3">
+                      <p>
+                        <span className="font-semibold text-primary">Fecha:</span>{" "}
+                        {pendingSummary?.dateLabel}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-gray-50 p-3">
+                      <p>
+                        <span className="font-semibold text-primary">Horario:</span>{" "}
+                        {pendingSummary?.time}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-gray-50 p-3">
+                      <p>
+                        <span className="font-semibold text-primary">Ubicación:</span>{" "}
+                        {pendingSummary?.locationLabel}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 flex gap-3">
+                    <button
+                      type="button"
+                      className="flex-1 rounded-lg border border-gray-200 px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-secondary transition hover:border-gray-300"
+                      onClick={() => setIsModalOpen(false)}
+                      disabled={isLoading}
+                    >
+                      Editar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isLoading}
+                      className="flex-1 rounded-lg bg-accent px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-white transition hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={async () => {
+                        if (!pendingSummary) return;
+
+                        const response = await enviar({
+                          nombreCliente: fullName,
+                          correoCliente: email,
+                          telefonoCliente: phone,
+                          fechaAgendada: pendingSummary.date,
+                          horaAgendada: pendingSummary.time,
+                          ubicacion:
+                            location === "capital"
+                              ? "Durango Capital"
+                              : otherLocation,
+                          informacionAdicional: "",
+                          captchaToken,
+                        });
+
+                        if (response.success) {
+                          const updated = registerAppointment(
+                            pendingSummary.date,
+                            pendingSummary.time
+                          );
+                          setAppointmentsByDateAndTime(updated);
+
+                          setFullName("");
+                          setPhone("");
+                          setEmail("");
+                          setOtherLocation("");
+                          setCaptchaToken("");
+
+                          setTimeout(() => {
+                            setIsModalOpen(false);
+                            setPendingSummary(null);
+                            limpiar();
+                          }, 2000);
+                        }
+                      }}
+                    >
+                      {isLoading ? "Enviando..." : "Confirmar"}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         ) : null}

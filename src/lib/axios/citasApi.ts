@@ -61,7 +61,13 @@ export interface Cita {
     correo: string;
     telefono?: string;
     rol: string;
-  } | string;
+  } | string | ({
+    _id: string;
+    nombre: string;
+    correo: string;
+    telefono?: string;
+    rol: string;
+  } | string)[];
   especificacionesInicio: EspecificacionesInicio;
   createdAt: string;
   updatedAt: string;
@@ -75,14 +81,27 @@ export interface CitaUpdate {
   correoCliente?: string;
   telefonoCliente?: string;
   ubicacion?: string;
+  mapsUrl?: string;
   informacionAdicional?: string;
   estado?: 'programada' | 'en_proceso' | 'completada' | 'cancelada';
   diseno?: string;
   ingenieroAsignado?: string;
 }
 
-export interface AsignarIngenieroData {
-  ingenieroId?: string;
+/**
+ * Interfaz para actualizar datos de la cita
+ */
+export interface ActualizarDatosCitaData {
+  nombreCliente?: string;
+  correoCliente?: string;
+  telefonoCliente?: string;
+  ubicacion?: string;
+  mapsUrl?: string;
+  informacionAdicional?: string;
+}
+
+export interface AsignarIngenierosCitaData {
+  ingenieroIds: string[];
 }
 
 export interface IniciarCitaData {
@@ -103,6 +122,15 @@ export interface ActualizarEstadoData {
   fechaTermino?: Date | string;
 }
 
+/**
+ * Interfaz para horario ocupado de cita pública
+ * Solo contiene fecha y hora, sin información del cliente
+ */
+export interface HorarioOcupadoPublico {
+  fecha: string; // Formato "YYYY-MM-DD"
+  hora: string;  // Formato "HH:00"
+}
+
 export interface HorarioOcupado {
   hora: string; // Formato "HH:mm"
 }
@@ -119,8 +147,9 @@ export interface DisponibilidadDia {
 export const obtenerDisponibilidadDia = async (fecha: string): Promise<ApiResponse<DisponibilidadDia>> => {
   try {
     const response = await axiosInstance.get('/api/citas/disponibilidad', {
-      params: { fecha }
-    });
+      params: { fecha },
+      skipAuthToken: true,
+    } as any);
     
     // Si la respuesta tiene la estructura esperada
     if (response.data && 'horariosOcupados' in response.data) {
@@ -143,6 +172,38 @@ export const obtenerDisponibilidadDia = async (fecha: string): Promise<ApiRespon
 };
 
 /**
+ * Obtener TODOS los horarios ocupados (PÚBLICA - No requiere autenticación)
+ * Devuelve SOLO fecha y hora de todas las citas sin información sensible
+ * Endpoint: GET /api/citas/horarios-ocupados
+ */
+export const obtenerHorariosOcupados = async (): Promise<ApiResponse<HorarioOcupadoPublico[]>> => {
+  try {
+    const response = await axiosInstance.get('/api/citas/horarios-ocupados', {
+      skipAuthToken: true,
+    } as any);
+    
+    // Si la respuesta es directamente un array (respuesta del backend)
+    if (Array.isArray(response.data)) {
+      return {
+        success: true,
+        data: response.data
+      };
+    }
+    
+    // Si ya viene con el formato ApiResponse
+    return response.data;
+  } catch (error) {
+    console.error('Error en obtenerHorariosOcupados:', error);
+    // Retornar respuesta de error en formato correcto
+    return {
+      success: false,
+      message: 'Error al obtener horarios ocupados',
+      error: error instanceof Error ? error.message : 'Error desconocido'
+    } as ApiResponse<HorarioOcupadoPublico[]>;
+  }
+};
+
+/**
  * Crear nueva cita (PÚBLICA - No requiere autenticación)
  * @param data - Datos de la cita a crear
  * @param captchaToken - Token reCAPTCHA para validación de seguridad
@@ -159,7 +220,8 @@ export const crearCita = async (
         headers: {
           'captcha-token': captchaToken,
         },
-      }
+        skipAuthToken: true,
+      } as any
     );
 
     // Si la respuesta es un objeto con estructura ApiResponse
@@ -389,17 +451,26 @@ export const actualizarCita = async (id: string, data: CitaUpdate): Promise<ApiR
 };
 
 /**
- * Asignar ingeniero a una cita (Solo admin)
+ * Actualizar datos de una cita (cliente, ubicación, etc.)
  */
-export const asignarIngeniero = async (
+export const actualizarDatosCita = async (
   id: string,
-  data: AsignarIngenieroData
+  data: ActualizarDatosCitaData
 ): Promise<ApiResponse<{ message: string; cita: Cita }>> => {
-  const response = await axiosInstance.put<ApiResponse<{ message: string; cita: Cita }>>(
-    `/api/citas/${id}/asignarIngeniero`,
-    data
-  );
-  return response.data;
+  try {
+    const response = await axiosInstance.put<ApiResponse<{ message: string; cita: Cita }>>(
+      `/api/citas/${id}/actualizarDatos`,
+      data
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('Error al actualizar datos de la cita:', error);
+    return {
+      success: false,
+      message: error.response?.data?.message || 'Error al actualizar datos',
+      error: error.message
+    };
+  }
 };
 
 /**
@@ -461,8 +532,37 @@ export const actualizarEstadoCita = async (
   id: string,
   data: ActualizarEstadoData
 ): Promise<ApiResponse<Cita>> => {
-  const response = await axiosInstance.put<ApiResponse<Cita>>(`/api/citas/updateEstado/${id}`, data);
-  return response.data;
+  try {
+    const response = await axiosInstance.put<ApiResponse<Cita>>(`/api/citas/updateEstado/${id}`, data);
+    return response.data;
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('[citasApi] actualizarEstadoCita error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Asignar uno o varios ingenieros a una cita
+ */
+export const asignarIngenierosCita = async (
+  id: string,
+  data: AsignarIngenierosCitaData,
+): Promise<ApiResponse<{ message: string; cita: Cita }>> => {
+  try {
+    const response = await axiosInstance.put<ApiResponse<{ message: string; cita: Cita }>>(
+      `/api/citas/${id}/asignarIngenieros`,
+      data,
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('Error al asignar ingenieros a la cita:', error);
+    return {
+      success: false,
+      message: error.response?.data?.message || 'Error al asignar ingenieros',
+      error: error.message,
+    };
+  }
 };
 
 /**

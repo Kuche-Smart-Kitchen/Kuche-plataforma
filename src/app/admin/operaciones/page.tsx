@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertCircle, UserPlus, Calculator, FileText, MapPin, Calendar, Loader2, CheckCircle2, Clock, PencilLine, Upload, XCircle, AlertTriangle, FileUp } from "lucide-react";
+import { AlertCircle, UserPlus, Calculator, FileText, MapPin, Calendar, Loader2, CheckCircle2, Clock, Upload, XCircle, AlertTriangle, FileUp, PencilLine } from "lucide-react";
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
@@ -26,6 +26,7 @@ import { crearUsuario, listarEmpleados, listarUsuarios, type Usuario } from "@/l
 import { isTaskInProgress, type AdminWorkflowTask } from "@/lib/admin-workflow";
 import { VisitScheduleModal } from "@/components/admin/VisitScheduleModal";
 import { FinalDesignUploadModal } from "@/components/admin/FinalDesignUploadModal";
+import TaskDetailModal from "@/components/admin/TaskDetailModal";
 
 const stageStyles: Record<TaskStage, { border: string; badge: string }> = {
   citas: { border: "border-sky-500", badge: "bg-sky-50 text-sky-600" },
@@ -167,7 +168,7 @@ const buildTrackingCodeFromTask = (task: AdminWorkflowTask) => {
 
 export default function OperacionesPage() {
   const router = useRouter();
-  const { tasks, refresh, updateTask, moveTask, createTask, isLoading } = useAdminWorkflow();
+  const { tasks, refresh, updateTask, moveTask, createTask, isLoading, assignWorkers } = useAdminWorkflow();
 
   const [employees, setEmployees] = useState<Usuario[]>([]);
   const [selectedEmployeeFilter, setSelectedEmployeeFilter] = useState("Todos");
@@ -182,6 +183,7 @@ export default function OperacionesPage() {
   const [uploadingTaskId, setUploadingTaskId] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<ActionFeedbackState>(null);
   const [taskDraft, setTaskDraft] = useState<TaskDraft>(emptyDraft);
+  const [assignedWorkersByTaskId, setAssignedWorkersByTaskId] = useState<Record<string, string[]>>({});
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [taskModalError, setTaskModalError] = useState<string | null>(null);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
@@ -217,13 +219,11 @@ export default function OperacionesPage() {
     setEmployees(source.filter((user) => user.activo !== false));
   };
 
-  useEscapeClose(Boolean(isTaskModalOpen), () => setIsTaskModalOpen(false));
   useEscapeClose(Boolean(isAssignModalOpen), () => setIsAssignModalOpen(false));
   useEscapeClose(Boolean(isTeamModalOpen), () => setIsTeamModalOpen(false));
   useEscapeClose(Boolean(visitModalTaskId), () => setVisitModalTaskId(null));
   useEscapeClose(Boolean(cotizacionEntregadaTaskId), () => setCotizacionEntregadaTaskId(null));
 
-  useFocusTrap(Boolean(isTaskModalOpen), taskModalRef);
   useFocusTrap(Boolean(isAssignModalOpen), assignModalRef);
   useFocusTrap(Boolean(isTeamModalOpen), teamModalRef);
 
@@ -243,6 +243,146 @@ export default function OperacionesPage() {
 
     return () => clearInterval(interval);
   }, [refresh]);
+
+  // Helper to show transient action feedback
+  const showActionFeedback = (message: string, tone: ActionFeedbackTone = "info") => {
+    setActionFeedback({ message, tone });
+    window.setTimeout(() => setActionFeedback(null), 5_000);
+  };
+
+  // Columns derived from kanbanColumns and current tasks
+  const columns = useMemo(() => {
+    return kanbanColumns.map((col) => ({ id: col.id, label: col.label, tasks: tasks.filter((t) => t.stage === col.id) }));
+  }, [tasks]);
+
+  const openTeamModal = () => setIsTeamModalOpen(true);
+  const openAssignModal = () => setIsAssignModalOpen(true);
+
+  const openTaskModal = (taskId: string) => {
+    const t = tasks.find((x) => x.id === taskId);
+    if (!t) return;
+    setActiveTaskId(t.id);
+    setIsTaskModalOpen(true);
+    setTaskModalError(null);
+    const cachedAssignedToIds = assignedWorkersByTaskId[t.id] ?? t.assignedToIds ?? [];
+    setTaskDraft((prev) => ({
+      title: t.title ?? "",
+      project: t.project ?? "",
+      assignedToIds: cachedAssignedToIds,
+      notes: (t as any).notes ?? "",
+      priority: (t.priority as TaskPriority) ?? "media",
+      dueDate: (t as any).dueDate ?? "",
+      location: (t as any).location ?? "",
+      mapsUrl: (t as any).mapsUrl ?? "",
+      stage: t.stage,
+      status: t.status,
+    }));
+  };
+
+  const requestDesignUpload = (taskId: string) => {
+    setPendingUploadTaskId(taskId);
+    designUploadInputRef.current?.click();
+  };
+
+  const handleFinalDesignUpload = async (task: AdminWorkflowTask, file: File) => {
+    return handleDesignUpload(task, file);
+  };
+
+  const visitModalTask = tasks.find((t) => t.id === visitModalTaskId) ?? null;
+  const finalDesignUploadTask = tasks.find((t) => t.id === finalDesignUploadTaskId) ?? null;
+  const cotizacionEntregadaTask = tasks.find((t) => t.id === cotizacionEntregadaTaskId) ?? null;
+  const activeTask = tasks.find((t) => t.id === activeTaskId) ?? null;
+
+  const occupiedVisitSlots = useMemo(() => {
+    return tasks
+      .map((t) => toLocalSlot((t as any).visitScheduledAt))
+      .filter((s): s is string => Boolean(s));
+  }, [tasks]);
+
+  const handleSaveVisitForTask = async (task: AdminWorkflowTask, isoDateTime?: string) => {
+    if (!task) return;
+    await updateTask(task, { visitScheduledAt: isoDateTime ?? undefined });
+    await refresh();
+    setVisitModalTaskId(null);
+    showActionFeedback("Visita guardada.", "success");
+  };
+
+  const handleAddMember = async () => {
+    try {
+      setIsSaving(true);
+      await crearUsuario({ nombre: newMemberName, correo: newMemberEmail, rol: newMemberRole, password: newMemberPassword });
+      setNewMemberName("");
+      setNewMemberEmail("");
+      setNewMemberPassword("");
+      await loadEmployees();
+      setIsTeamModalOpen(false);
+      showActionFeedback("Miembro creado.", "success");
+    } catch (error) {
+      setTeamError(error instanceof Error ? error.message : "No se pudo crear el miembro");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleAssignWorkers = async () => {
+    if (!activeTask) {
+      setTaskModalError("Selecciona una tarea para asignar");
+      return;
+    }
+    try {
+      setIsSaving(true);
+      await assignWorkers(activeTask, taskDraft.assignedToIds);
+      setTaskModalError(null);
+      setAssignedWorkersByTaskId((prev) => ({
+        ...prev,
+        [activeTask.id]: [...taskDraft.assignedToIds],
+      }));
+      showActionFeedback("Responsables asignados.", "success");
+      await refresh();
+    } catch (error) {
+      setTaskModalError(error instanceof Error ? error.message : "No se pudo asignar");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveTask = async () => {
+    if (!activeTask) {
+      setTaskModalError("No hay tarea activa seleccionada");
+      return;
+    }
+    const payload = {
+      title: taskDraft.title,
+      project: taskDraft.project,
+      assignedToIds: taskDraft.assignedToIds,
+      notes: taskDraft.notes,
+      priority: taskDraft.priority,
+      dueDate: taskDraft.dueDate || undefined,
+      location: taskDraft.location || undefined,
+      mapsUrl: taskDraft.mapsUrl || undefined,
+      stage: taskDraft.stage,
+      status: taskDraft.status,
+    };
+
+    console.log(JSON.stringify(payload, null, 2));
+
+    try {
+      setIsSaving(true);
+      await updateTask(activeTask, payload);
+      setAssignedWorkersByTaskId((prev) => {
+        const next = { ...prev };
+        delete next[activeTask.id];
+        return next;
+      });
+      setIsTaskModalOpen(false);
+      showActionFeedback("Tarea guardada.", "success");
+      await refresh();
+    } catch (error) {
+      setTaskModalError(error instanceof Error ? error.message : "No se pudo guardar la tarea");
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   useEffect(() => {
     const finishedTaskId = runtimeStore.getItem(finishedCitaTaskStorageKey);
@@ -313,26 +453,15 @@ export default function OperacionesPage() {
   const handleTaskAction = async (task: AdminWorkflowTask, action: string) => {
     const hasAssignedPeople = (task.assignedToIds?.length ?? 0) > 0;
 
-    if (action === "start-cita" && !hasAssignedPeople) {
-      showActionFeedback("No puedes iniciar la cita sin asignar al menos una persona responsable.", "warning");
-      return;
-    }
-
-    if (action === "pass-to-seguimiento" && !task.citaFinished) {
-      showActionFeedback("No puedes pasar a seguimiento si la cita no está completada.", "warning");
-      return;
-    }
-
-    if (action === "pass-to-seguimiento" && getCotizacionesFormalesList(task).length === 0) {
-      showActionFeedback("Debes generar al menos una cotización formal antes de pasar a seguimiento.", "warning");
-      return;
-    }
-
     try {
       setIsSaving(true);
       setActionFeedback(null);
 
       if (action === "start-cita") {
+        if (!hasAssignedPeople) {
+          showActionFeedback("No puedes iniciar la cita sin asignar al menos una persona responsable.", "warning");
+          return;
+        }
         await updateTask(task, { citaStarted: true, status: "pendiente" });
         showActionFeedback("Cita iniciada. Abriendo cotizador preliminar...", "success");
         window.setTimeout(() => {
@@ -342,15 +471,20 @@ export default function OperacionesPage() {
         }, 220);
         return;
       }
+
       if (action === "finish-cita") {
         await updateTask(task, { citaFinished: true, status: "completada", priority: "alta" });
         showActionFeedback("Cita completada correctamente.", "success");
+        return;
       }
+
       if (action === "approve-design-admin") {
         await updateTask(task, { designApprovedByAdmin: true });
         setVisitModalTaskId(task.id);
         showActionFeedback("Diseño aprobado por admin. Ahora puedes agendar la visita.", "success");
+        return;
       }
+
       if (action === "approve-design-client") {
         await updateTask(task, {
           designApprovedByClient: true,
@@ -360,7 +494,9 @@ export default function OperacionesPage() {
           citaFinished: false,
         });
         showActionFeedback("Diseño aprobado por cliente. Se movió a cotización formal.", "success");
+        return;
       }
+
       if (action === "start-cotizacion") {
         await updateTask(task, { citaStarted: true, citaFinished: false, status: "pendiente" });
         showActionFeedback("Cotización formal iniciada. Abriendo cotizador...", "success");
@@ -371,10 +507,13 @@ export default function OperacionesPage() {
         }, 220);
         return;
       }
+
       if (action === "finish-cotizacion") {
         await updateTask(task, { citaFinished: true, status: "completada", priority: "alta" });
         showActionFeedback("Cotización terminada correctamente.", "success");
+        return;
       }
+
       if (action === "pass-to-seguimiento") {
         await updateTask(task, {
           stage: "contrato",
@@ -385,7 +524,9 @@ export default function OperacionesPage() {
           citaFinished: false,
         });
         showActionFeedback("Proyecto movido a seguimiento.", "success");
+        return;
       }
+
       if (action === "confirm-client") {
         await updateTask(task, { followUpStatus: "confirmado", status: "completada" });
         const reloaded = await refresh();
@@ -395,7 +536,9 @@ export default function OperacionesPage() {
         } else {
           showActionFeedback("Cliente confirmado correctamente.", "success");
         }
+        return;
       }
+
       if (action === "discard-client") {
         await updateTask(task, { followUpStatus: "inactivo", status: "completada" });
         const reloaded = await refresh();
@@ -405,7 +548,9 @@ export default function OperacionesPage() {
         } else {
           showActionFeedback("Proyecto marcado como inactivo correctamente.", "success");
         }
+        return;
       }
+
       if (action === "reactivate-client") {
         await updateTask(task, {
           followUpStatus: "pendiente",
@@ -413,6 +558,7 @@ export default function OperacionesPage() {
           followUpEnteredAt: Date.now(),
         });
         showActionFeedback("Seguimiento reactivado.", "success");
+        return;
       }
     } catch (error) {
       console.error("Error de acción de tarjeta:", error);
@@ -422,310 +568,41 @@ export default function OperacionesPage() {
     }
   };
 
-  const handleAddMember = async () => {
-    const nombre = newMemberName.trim();
-    const correo = newMemberEmail.trim();
-    const password = newMemberPassword.trim();
-
-    if (!nombre || !correo) {
-      setTeamError("Nombre y correo son obligatorios.");
-      return;
-    }
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) {
-      setTeamError("Ingresa un correo valido.");
-      return;
-    }
+  const handleDrop = async (stage: TaskStage) => {
+    if (!draggedTaskId) return;
+    const task = tasks.find((t) => t.id === draggedTaskId);
+    setDraggedTaskId(null);
+    if (!task || task.stage === stage) return;
 
     try {
       setIsSaving(true);
-      setTeamError("");
-
-      const response = await crearUsuario({
-        nombre,
-        correo,
-        rol: newMemberRole,
-        password: password || undefined,
-      });
-
-      if (!response.success) {
-        throw new Error(response.message || "No se pudo crear el integrante");
-      }
-
-      setNewMemberName("");
-      setNewMemberEmail("");
-      setNewMemberRole("empleado");
-      setNewMemberPassword("");
-      await loadEmployees();
+      await moveTask(task, stage);
+      showActionFeedback("Tarjeta movida correctamente.", "success");
     } catch (error) {
-      setTeamError(error instanceof Error ? error.message : "No se pudo crear el integrante");
+      console.error("Error al mover tarea:", error);
+      showActionFeedback(error instanceof Error ? error.message : "No se pudo mover la tarjeta.", "error");
     } finally {
       setIsSaving(false);
     }
-  };
-
-  const openAssignModal = () => {
-    setAssignError("");
-    setNewTaskProject("");
-    setNewTaskStage("citas");
-    setNewTaskPriority("media");
-    setNewTaskAssignedToIds([]);
-    setIsAssignModalOpen(true);
-  };
-
-  const openTeamModal = () => {
-    setTeamError("");
-    setNewMemberName("");
-    setNewMemberEmail("");
-    setNewMemberRole("empleado");
-    setNewMemberPassword("");
-    setIsTeamModalOpen(true);
-  };
-
-  const filteredTasks = useMemo(() => {
-    if (selectedEmployeeFilter === "Todos") return tasks;
-    return tasks.filter((task) =>
-      task.assignedToIds.includes(selectedEmployeeFilter)
-    );
-  }, [selectedEmployeeFilter, tasks]);
-
-  const inProgressTasks = useMemo(() => tasks.filter(isTaskInProgress).length, [tasks]);
-  const contractFollowUpTasks = useMemo(
-    () => tasks.filter((task) => task.stage === "contrato" && task.followUpStatus === "pendiente").length,
-    [tasks],
-  );
-  const teamSize = employees.length;
-
-  const columns = kanbanColumns.map((column) => ({
-    ...column,
-    tasks: filteredTasks.filter((task) => {
-      if (task.stage !== column.id) return false;
-      if (column.id === "contrato") return isTaskInProgress(task);
-      return true;
-    }),
-  }));
-
-  const activeTask = useMemo(
-    () => tasks.find((task) => task.id === activeTaskId) ?? null,
-    [activeTaskId, tasks],
-  );
-
-  const visitModalTask = useMemo(
-    () => tasks.find((task) => task.id === visitModalTaskId) ?? null,
-    [tasks, visitModalTaskId],
-  );
-
-  const finalDesignUploadTask = useMemo(
-    () => tasks.find((task) => task.id === finalDesignUploadTaskId) ?? null,
-    [tasks, finalDesignUploadTaskId],
-  );
-
-  const cotizacionEntregadaTask = useMemo(
-    () => tasks.find((task) => task.id === cotizacionEntregadaTaskId) ?? null,
-    [tasks, cotizacionEntregadaTaskId],
-  );
-
-  const occupiedVisitSlots = useMemo(
-    () =>
-      tasks
-        .filter((task) => task.id !== visitModalTaskId)
-        .map((task) => toLocalSlot(task.visitScheduledAt ?? task.scheduledAt ?? task.cita?.fechaAgendada))
-        .filter((slot): slot is string => Boolean(slot)),
-    [tasks, visitModalTaskId],
-  );
-
-  const handleSaveVisitForTask = async (task: AdminWorkflowTask, isoDateTime: string) => {
-    try {
-      setIsSaving(true);
-      await updateTask(task, {
-        designApprovedByAdmin: true,
-        visitScheduledAt: isoDateTime,
-      });
-      setVisitModalTaskId(null);
-    } catch (error) {
-      console.error("Error al agendar visita:", error);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!actionFeedback) return;
-
-    const timeout = window.setTimeout(() => {
-      setActionFeedback(null);
-    }, actionFeedback.tone === "error" ? 6000 : 3500);
-
-    return () => window.clearTimeout(timeout);
-  }, [actionFeedback]);
-
-  const showActionFeedback = (message: string, tone: ActionFeedbackTone = "info") => {
-    setActionFeedback({ message, tone });
-  };
-
-  useEffect(() => {
-    if (!activeTask) {
-      setTaskDraft(emptyDraft);
-      return;
-    }
-    setTaskDraft({
-      title: activeTask.title || "",
-      project: activeTask.project || "",
-      assignedToIds: activeTask.assignedToIds ?? [],
-      notes: activeTask.notes ?? "",
-      priority: activeTask.priority ?? "media",
-      dueDate: activeTask.dueDate ?? "",
-      location: activeTask.location ?? "",
-      mapsUrl: activeTask.mapsUrl ?? "",
-      stage: activeTask.stage,
-      status: activeTask.status,
-    });
-  }, [activeTask]);
-
-  const openTaskModal = (taskId: string) => {
-    setTaskModalError(null);
-    setActiveTaskId(taskId);
-    setIsTaskModalOpen(true);
-  };
-
-  const handleSaveTask = async () => {
-    if (!activeTask) return;
-
-    try {
-      setIsSaving(true);
-      await updateTask(activeTask, {
-        title: taskDraft.title.trim() || activeTask.title,
-        project: taskDraft.project.trim() || activeTask.project,
-        notes: taskDraft.notes,
-        priority: taskDraft.priority,
-        dueDate: taskDraft.dueDate || undefined,
-        location: taskDraft.location.trim() || undefined,
-        mapsUrl: taskDraft.mapsUrl.trim() || undefined,
-        stage: taskDraft.stage,
-        status: taskDraft.status,
-        assignedToIds: taskDraft.assignedToIds,
-        assignedTo:
-          taskDraft.assignedToIds.length > 0
-            ? taskDraft.assignedToIds
-                .map((employeeId) => employees.find((employee) => employee._id === employeeId)?.nombre)
-                .filter((name): name is string => Boolean(name && name.trim().length > 0))
-            : ["Sin asignar"],
-      });
-      setTaskModalError(null);
-      setIsTaskModalOpen(false);
-    } catch (error) {
-      setTaskModalError(error instanceof Error ? error.message : "No se pudo guardar la tarea");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const requestDesignUpload = (taskId: string) => {
-    setPendingUploadTaskId(taskId);
-    designUploadInputRef.current?.click();
   };
 
   const handleDesignUpload = async (task: AdminWorkflowTask, file: File) => {
     try {
-      setIsSaving(true);
       setUploadingTaskId(task.id);
-      if (task.stage === "disenos" && task.backendSource !== "tarea") {
+      setIsSaving(true);
+
+      if (task.backendSource !== "tarea") {
         throw new Error("No se encontro tarea backend valida para este diseño. No se puede subir sin tareasId real.");
       }
-      const backendTaskId = task.sourceId || task.id;
+
+      const backendTaskId = task.sourceId?.trim() || task.id;
       const uploadInfo = await subirArchivoConMetadata(file, {
-        tipo: task.stage === "disenos" ? "diseno" : "otro",
+        tipo: "diseno",
         relacionadoA: "tarea",
         relacionadoId: backendTaskId,
         clienteId: task.clientId,
         tareasId: backendTaskId,
       });
-
-      if (task.stage === "disenos") {
-        if (uploadInfo.provider !== "dropbox") {
-          throw new Error("El backend no devolvio Dropbox para un archivo de diseño. Verifica metadata y reglas de provider.");
-        }
-        if (!uploadInfo.key || !uploadInfo.key.toLowerCase().includes("dropbox")) {
-          console.warn("[admin/operaciones] upload diseno con key no estandar:", uploadInfo.key);
-        }
-        if (!/dropbox\.com|dropboxusercontent\.com/i.test(uploadInfo.url)) {
-          console.warn("[admin/operaciones] upload diseno con URL no-dropbox (posible proxy backend):", uploadInfo.url);
-        }
-
-        const isLinkedToTask =
-          uploadInfo.tareasId?.trim() === backendTaskId ||
-          (uploadInfo.relacionadoA === "tarea" && uploadInfo.relacionadoId?.trim() === backendTaskId);
-        if (!isLinkedToTask) {
-          throw new Error("El archivo se subio, pero no quedo relacionado con la tarea correcta en ClienteArchivo.");
-        }
-      }
-
-      const tipo = task.stage === "disenos" ? "diseno" : "otro";
-
-      try {
-        const response = await agregarArchivos(backendTaskId, [
-          {
-            nombre: file.name,
-            tipo,
-            url: uploadInfo.url,
-          },
-        ]);
-
-        if (!response.success) {
-          throw new Error(response.message || "No se pudo adjuntar el diseño");
-        }
-      } catch (syncError) {
-        // ClienteArchivo es la fuente principal. El sync legado no debe bloquear el flujo.
-        console.warn("[admin/operaciones] fallback agregarArchivos omitido:", syncError);
-      }
-
-      await refresh();
-      showActionFeedback("Diseño subido correctamente.", "success");
-    } catch (error) {
-      console.error("Error subiendo diseño:", error);
-      showActionFeedback(error instanceof Error ? error.message : "No se pudo subir el diseño", "error");
-    } finally {
-      setIsSaving(false);
-      setUploadingTaskId(null);
-      setPendingUploadTaskId(null);
-    }
-  };
-
-  const handleFinalDesignUpload = async (task: AdminWorkflowTask, file: File) => {
-    try {
-      setIsSaving(true);
-      if (task.stage !== "disenos" || task.backendSource !== "tarea") {
-        throw new Error("No se encontro tarea backend valida para este diseño final. No se puede subir sin tareasId real.");
-      }
-      const backendTaskId = task.sourceId || task.id;
-      
-      const uploadInfo = await subirArchivoConMetadata(file, {
-        tipo: "diseno",
-        nivel: "final",
-        relacionadoA: "tarea",
-        relacionadoId: backendTaskId,
-        clienteId: task.clientId,
-        tareasId: backendTaskId,
-      } as Parameters<typeof subirArchivoConMetadata>[1]);
-
-      if (uploadInfo.provider !== "dropbox") {
-        throw new Error("El backend no devolvio Dropbox para un archivo de diseño final. Verifica metadata y reglas de provider.");
-      }
-
-      if (!uploadInfo.key || !uploadInfo.key.toLowerCase().includes("dropbox")) {
-        console.warn("[admin/operaciones] upload diseno final con key no estandar:", uploadInfo.key);
-      }
-
-      if (!/dropbox\.com|dropboxusercontent\.com/i.test(uploadInfo.url)) {
-        console.warn("[admin/operaciones] upload diseno final con URL no-dropbox (posible proxy backend):", uploadInfo.url);
-      }
-
-      const isLinkedToTask =
-        uploadInfo.tareasId?.trim() === backendTaskId ||
-        (uploadInfo.relacionadoA === "tarea" && uploadInfo.relacionadoId?.trim() === backendTaskId);
-      if (!isLinkedToTask) {
-        throw new Error("El archivo se subio, pero no quedo relacionado con la tarea correcta en ClienteArchivo.");
-      }
 
       try {
         const response = await agregarArchivos(backendTaskId, [
@@ -760,24 +637,8 @@ export default function OperacionesPage() {
       throw error;
     } finally {
       setIsSaving(false);
-    }
-  };
-
-  const handleDrop = async (stage: TaskStage) => {
-    if (!draggedTaskId) return;
-    const task = tasks.find((t) => t.id === draggedTaskId);
-    setDraggedTaskId(null);
-    if (!task || task.stage === stage) return;
-
-    try {
-      setIsSaving(true);
-      await moveTask(task, stage);
-      showActionFeedback("Tarjeta movida correctamente.", "success");
-    } catch (error) {
-      console.error("Error al mover tarea:", error);
-      showActionFeedback(error instanceof Error ? error.message : "No se pudo mover la tarjeta.", "error");
-    } finally {
-      setIsSaving(false);
+      setUploadingTaskId(null);
+      setPendingUploadTaskId(null);
     }
   };
 
@@ -2111,6 +1972,15 @@ export default function OperacionesPage() {
                     className="rounded-2xl border border-primary/10 bg-white px-4 py-2.5 text-xs font-semibold text-secondary transition hover:bg-primary/5"
                   >
                     Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleAssignWorkers()}
+                    disabled={isSaving}
+                    className="flex items-center gap-2 rounded-2xl border border-primary/10 bg-white px-4 py-2.5 text-xs font-semibold text-secondary transition hover:bg-primary/5 disabled:opacity-50"
+                  >
+                    <UserPlus className="h-3.5 w-3.5" />
+                    Asignar
                   </button>
                   <button
                     type="button"

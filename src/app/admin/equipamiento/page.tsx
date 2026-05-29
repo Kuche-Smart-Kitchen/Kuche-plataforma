@@ -63,6 +63,8 @@ export default function EquipamientoPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("electro");
   const [electroForm, setElectroForm] = useState<FormItem>(emptyForm);
   const [extraForm, setExtraForm] = useState<FormItem>(emptyForm);
+  const [electroSearch, setElectroSearch] = useState("");
+  const [electroCategoryFilter, setElectroCategoryFilter] = useState<string>("Todas");
   const [newElectroCategoriaNombre, setNewElectroCategoriaNombre] = useState("");
   const [newCategoriaNombre, setNewCategoriaNombre] = useState("");
   const [editingElectroId, setEditingElectroId] = useState<string | null>(null);
@@ -79,11 +81,29 @@ export default function EquipamientoPage() {
     );
   }, [extrasCategorias]);
 
-  const electroCategorySuggestions = useMemo(() => {
-    const fromItems = electrodomesticos.map((item) => item.categoria).filter(Boolean);
-    const fromCatalog = electroCategorias.map((item) => item.nombre).filter(Boolean);
-    return Array.from(new Set([...fromCatalog, ...fromItems])).sort((a, b) => a.localeCompare(b, "es"));
+  const electroCategoryNames = useMemo(() => {
+    const backendNames = electroCategorias.map((item) => item.nombre).filter(Boolean);
+    if (backendNames.length > 0) return backendNames;
+
+    const inferredNames = electrodomesticos.map((item) => item.categoria?.trim()).filter(Boolean) as string[];
+    return Array.from(new Set(inferredNames)).sort((a, b) => a.localeCompare(b, "es"));
   }, [electroCategorias, electrodomesticos]);
+
+  const electroCategoryFilterOptions = useMemo(
+    () => ["Todas", ...electroCategoryNames],
+    [electroCategoryNames],
+  );
+
+  const filteredElectrodomesticos = useMemo(() => {
+    const search = electroSearch.trim().toLowerCase();
+    return electrodomesticos.filter((item) => {
+      const matchesSearch =
+        !search ||
+        `${item.nombre} ${item.categoria ?? ""} ${item.descripcion ?? ""}`.toLowerCase().includes(search);
+      const matchesCategory = electroCategoryFilter === "Todas" || item.categoria === electroCategoryFilter;
+      return matchesSearch && matchesCategory;
+    });
+  }, [electroCategoryFilter, electroSearch, electrodomesticos]);
 
   useEffect(() => {
     if (!isModalOpen) return;
@@ -275,8 +295,38 @@ export default function EquipamientoPage() {
             </button>
           </div>
 
+          <div className="flex flex-col gap-3 rounded-2xl border border-primary/10 bg-white/90 p-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex-1">
+              <input
+                value={electroSearch}
+                onChange={(event) => setElectroSearch(event.target.value)}
+                placeholder="Buscar electrodomestico..."
+                className="w-full rounded-2xl border border-primary/10 bg-white px-4 py-2.5 text-sm outline-none"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs font-semibold">
+              {electroCategoryFilterOptions.map((category) => {
+                const isActive = electroCategoryFilter === category;
+                return (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => setElectroCategoryFilter(category)}
+                    className={`rounded-full border px-4 py-2 transition ${
+                      isActive
+                        ? "border-[#8B1C1C] bg-[#8B1C1C] text-white"
+                        : "border-primary/10 bg-white text-secondary hover:border-[#8B1C1C]/40 hover:text-primary"
+                    }`}
+                  >
+                    {category}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {(loading ? [] : electrodomesticos).map((item) => (
+            {(loading ? [] : filteredElectrodomesticos).map((item) => (
               <article
                 key={item._id}
                 className="group overflow-hidden rounded-2xl border border-primary/10 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
@@ -333,6 +383,11 @@ export default function EquipamientoPage() {
               </article>
             ))}
           </div>
+          {!loading && filteredElectrodomesticos.length === 0 ? (
+            <p className="rounded-2xl border border-primary/10 bg-primary/[0.04] px-4 py-3 text-sm text-secondary">
+              No hay electrodomesticos que coincidan con el buscador o el filtro.
+            </p>
+          ) : null}
         </section>
       ) : null}
 
@@ -360,31 +415,37 @@ export default function EquipamientoPage() {
               </button>
             </div>
             <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {electroCategorySuggestions.map((name) => {
-                const existing = electroCategorias.find((item) => item.nombre === name);
+              {electroCategorias.map((category) => {
+                const name = category.nombre;
                 return (
                   <div
                     key={name}
-                    className="flex items-center justify-between rounded-2xl border border-primary/10 bg-white px-4 py-3"
+                    className="space-y-2 rounded-2xl border border-primary/10 bg-white px-4 py-3"
                   >
-                    <span className="text-sm font-medium text-primary">{name}</span>
-                    {existing ? (
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <span className="block text-sm font-medium text-primary">{name}</span>
+                        {category.descripcion ? (
+                          <p className="mt-1 text-xs text-secondary">{category.descripcion}</p>
+                        ) : null}
+                      </div>
                       <button
                         type="button"
                         disabled={!canDelete}
-                        onClick={() => void removeElectroCategoria(existing._id)}
+                        onClick={() => void removeElectroCategoria(category._id)}
                         className="inline-flex items-center gap-1 rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-700 disabled:opacity-45"
                       >
                         <Trash2 className="h-3.5 w-3.5" /> Eliminar
                       </button>
-                    ) : (
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-secondary/70">
-                        Usada en item
-                      </span>
-                    )}
+                    </div>
                   </div>
                 );
               })}
+              {!loading && electroCategorias.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-primary/15 bg-primary/[0.04] px-4 py-3 text-sm text-secondary md:col-span-2 xl:col-span-3">
+                  No llegaron categorias desde el backend. El filtro usa categorias inferidas de los electrodomesticos mientras se corrige el endpoint.
+                </div>
+              ) : null}
             </div>
           </div>
           <div className="rounded-2xl border border-primary/10 bg-white p-4">
@@ -548,20 +609,18 @@ export default function EquipamientoPage() {
                       placeholder="Nombre"
                       className="rounded-xl border border-primary/15 px-3 py-2 text-sm outline-none"
                     />
-                    <>
-                      <input
-                        list="electro-categorias"
-                        value={electroForm.categoria}
-                        onChange={(e) => setElectroForm((prev) => ({ ...prev, categoria: e.target.value }))}
-                        placeholder="Categoria (Microondas, Estufas, Refrigeradores, Parrillas, Iluminacion...)"
-                        className="rounded-xl border border-primary/15 px-3 py-2 text-sm outline-none"
-                      />
-                      <datalist id="electro-categorias">
-                        {electroCategorySuggestions.map((cat) => (
-                          <option key={cat} value={cat} />
-                        ))}
-                      </datalist>
-                    </>
+                    <select
+                      value={electroForm.categoria}
+                      onChange={(e) => setElectroForm((prev) => ({ ...prev, categoria: e.target.value }))}
+                      className="rounded-xl border border-primary/15 px-3 py-2 text-sm outline-none"
+                    >
+                      <option value="">Selecciona categoria</option>
+                      {electroCategoryNames.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
                     <input
                       value={electroForm.precio}
                       onChange={(e) => setElectroForm((prev) => ({ ...prev, precio: e.target.value }))}

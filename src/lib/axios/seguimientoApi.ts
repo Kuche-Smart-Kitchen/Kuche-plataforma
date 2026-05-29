@@ -8,16 +8,12 @@ type SeguimientoLoginPayload = {
 };
 
 export type SeguimientoLoginResponse = {
-  proyecto?: Record<string, unknown>;
-  project?: Record<string, unknown>;
-  token?: string;
-  expiresAt?: string;
+  token: string;
+  expiresAt: string;
+  project: Record<string, unknown>;
 };
 
-export type SeguimientoProyectoResponse = {
-  proyecto?: Record<string, unknown>;
-  project?: Record<string, unknown>;
-};
+export type SeguimientoProyectoResponse = Record<string, unknown>;
 
 const normalizeSeguimientoResponse = <T,>(data: unknown): ApiResponse<T> => {
   if (data && typeof data === "object" && "success" in data) {

@@ -5,7 +5,7 @@ import {
   obtenerKanbanContrato,
   type KanbanItem,
 } from "@/lib/axios/kanbanApi";
-import { obtenerArchivosCliente, obtenerArchivosTarea, type ClienteArchivo } from "@/lib/axios/archivosClienteApi";
+import { obtenerArchivosTarea, type ClienteArchivo } from "@/lib/axios/archivosClienteApi";
 import type { Usuario } from "@/lib/axios/usuariosApi";
 import {
   type EtapaTarea,
@@ -610,59 +610,9 @@ export async function fetchAdminWorkflowTasksSequentially(): Promise<AdminWorkfl
     }
   }
 
-  const clientFilesCache = new Map<string, TaskFile[]>();
-  const clientFilesRequests = new Map<string, Promise<TaskFile[]>>();
-
-  const getClientFiles = async (clientId: string) => {
-    const cached = clientFilesCache.get(clientId);
-    if (cached) {
-      return cached;
-    }
-
-    const pending = clientFilesRequests.get(clientId);
-    if (pending) {
-      return pending;
-    }
-
-    const request = (async () => {
-      try {
-        const clientFilesResponse = await obtenerArchivosCliente(clientId);
-        const files = clientFilesResponse.success
-          ? (clientFilesResponse.data ?? []).map(mapClienteArchivoToTaskFile)
-          : [];
-        clientFilesCache.set(clientId, files);
-        return files;
-      } catch (error) {
-        errors.push(
-          `cliente-archivos (${clientId}): ${error instanceof Error ? error.message : "Error desconocido"}`,
-        );
-        return [] as TaskFile[];
-      } finally {
-        clientFilesRequests.delete(clientId);
-      }
-    })();
-
-    clientFilesRequests.set(clientId, request);
-    return request;
-  };
-
   const hydratedTasks = await Promise.all(
     tasks.map(async (task) => {
       let nextTask: AdminWorkflowTask = task;
-
-      if (task.clientId) {
-        try {
-          const cached = await getClientFiles(task.clientId);
-          nextTask = {
-            ...nextTask,
-            clientFiles: cached,
-          };
-        } catch (error) {
-          errors.push(
-            `cliente-archivos (${task.id}): ${error instanceof Error ? error.message : "Error desconocido"}`,
-          );
-        }
-      }
 
       if (task.stage !== "disenos") {
         return nextTask;

@@ -103,8 +103,12 @@ type CalendarEntry = {
 };
 
 function citaToAppointment(cita: Cita): AppointmentLike {
-  const assigned =
-    typeof cita.ingenieroAsignado === "object" && cita.ingenieroAsignado !== null
+  const assigned = Array.isArray(cita.ingenieroAsignado)
+    ? cita.ingenieroAsignado
+        .map((item) => (typeof item === "string" ? item : item.nombre))
+        .filter((value) => Boolean(value))
+        .join(", ")
+    : typeof cita.ingenieroAsignado === "object" && cita.ingenieroAsignado !== null
       ? cita.ingenieroAsignado.nombre
       : typeof cita.ingenieroAsignado === "string"
         ? cita.ingenieroAsignado

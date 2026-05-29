@@ -62,10 +62,10 @@ export type {
   CitaCreate,
   Cita,
   CitaUpdate,
-  AsignarIngenieroData,
   IniciarCitaData,
   FinalizarCitaData,
   ActualizarEstadoData,
+  AsignarIngenierosCitaData,
 } from './citasApi';
 
 // Exportar APIs de tareas (Kanban)

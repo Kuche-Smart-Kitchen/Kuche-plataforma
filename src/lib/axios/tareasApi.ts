@@ -152,6 +152,8 @@ export interface ActualizarTareaData {
   citaFinished?: boolean;
   designApprovedByAdmin?: boolean;
   designApprovedByClient?: boolean;
+  scheduledAt?: string;
+  visitScheduledAt?: string;
   preliminarData?: PreliminarCotizacionTarea;
   cotizacionFormalData?: CotizacionFormalTarea;
   preliminarCotizaciones?: PreliminarCotizacionTarea[];
@@ -159,8 +161,13 @@ export interface ActualizarTareaData {
   codigoProyecto?: string;
   sourceType?: SourceTypeTarea;
   sourceId?: string;
+  sourceCitaId?: string;
+  sourceDisenoId?: string;
   cita?: CitaTarea;
   visita?: VisitaTarea;
+  pagos?: unknown;
+  seguimientoNota?: string;
+  notaSeguimiento?: string;
 }
 
 export interface FiltrosTareas {
@@ -224,7 +231,30 @@ export const actualizarTarea = async (
   id: string,
   data: ActualizarTareaData
 ): Promise<ApiResponse<Tarea>> => {
+  try {
+    console.log("[tarea] 3 request tarea raw", { id, data });
+    console.log("[tarea] 3 request tarea json", JSON.stringify(data, null, 2));
+  } catch {}
   const response = await axiosInstance.patch<ApiResponse<Tarea>>(`/api/tareas/${id}`, data);
+  try {
+    console.log("[tarea] 4 response tarea", response.data);
+  } catch {}
+  return response.data;
+};
+
+/**
+ * Asignar trabajadores a una tarea (flujo separado de edición de datos)
+ * Endpoint: PUT /api/tareas/:id/asignar-trabajadores
+ */
+export const asignarTrabajadoresTarea = async (
+  id: string,
+  asignadoA: string[] | string,
+): Promise<ApiResponse<Tarea>> => {
+  const payload = { asignadoA };
+  const response = await axiosInstance.put<ApiResponse<Tarea>>(
+    `/api/tareas/${id}/asignar-trabajadores`,
+    payload,
+  );
   return response.data;
 };
 

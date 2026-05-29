@@ -15,8 +15,11 @@ const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 declare global {
   interface Window {
     turnstile?: {
-      render: (container: HTMLElement, options: Record<string, unknown>) => string;
-      remove?: (widgetId: string) => void;
+      render: (container: HTMLElement | string, options: Record<string, unknown>) => string;
+      remove?: (container?: HTMLElement | string) => void;
+      reset?: (container?: HTMLElement | string) => void;
+      getResponse?: (container?: HTMLElement | string) => string;
+      isExpired?: (container?: HTMLElement | string) => boolean;
     };
   }
 }

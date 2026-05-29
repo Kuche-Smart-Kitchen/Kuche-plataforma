@@ -19,7 +19,7 @@ import {
   obtenerKanbanDisenos,
   type KanbanItem,
 } from "@/lib/axios/kanbanApi";
-import { obtenerArchivosCliente, obtenerArchivosTarea, type ClienteArchivo } from "@/lib/axios/archivosClienteApi";
+import { obtenerArchivosTarea, type ClienteArchivo } from "@/lib/axios/archivosClienteApi";
 import { subirArchivoConMetadata, type UploadTipo } from "@/lib/axios/uploadsApi";
 import {
   activeCitaTaskStorageKey,
@@ -33,6 +33,7 @@ import {
   type TaskStatus,
 } from "@/lib/kanban";
 import { runtimeStore } from "@/lib/runtime-store";
+import { loadClienteArchivosCached } from "@/hooks/useClienteArchivos";
 
 type DashboardFlowItem = Omit<KanbanTask, "assignedTo"> & {
   assignedTo: string;
@@ -440,32 +441,6 @@ export default function EmpleadoDashboard() {
 
     return archivos;
   };
-
-  const refreshTaskFilesFromSourceOfTruth = async (task: DashboardFlowItem): Promise<void> => {
-    try {
-      const backendTaskId = task.backendSource === "tarea" ? task.sourceId?.trim() || task.id?.trim() : "";
-      const clientId = task.clientId?.trim() || "";
-
-      let archivos: ClienteArchivo[] = [];
-      if (backendTaskId) {
-        const response = await obtenerArchivosTarea(backendTaskId);
-        archivos = response.success ? response.data : [];
-      } else if (clientId) {
-        const response = await obtenerArchivosCliente(clientId);
-        archivos = response.success ? response.data : [];
-      }
-
-      const mapped = pickFilesForStage(archivos, task.stage).map(mapArchivoToTaskFile);
-      updateTask(task.id, (current) => ({ ...current, files: mapped }));
-    } catch (error) {
-      console.warn("[EmpleadoDashboard] No se pudieron refrescar archivos desde ClienteArchivo:", error);
-    }
-  };
-
-  useEffect(() => {
-    if (!activeTask) return;
-    void refreshTaskFilesFromSourceOfTruth(activeTask);
-  }, [activeTaskId]);
 
   const handleFilesUpload = async (taskId: string, files: FileList | null) => {
     if (!files?.length) return;

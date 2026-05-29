@@ -2,10 +2,11 @@ import { fetchAdminWorkflowTasksSequentially, type AdminWorkflowTask, type Admin
 import axiosInstance from "@/lib/axios/axiosConfig";
 import {
   actualizarCita,
+  actualizarDatosCita,
   actualizarEstadoCita,
-  asignarIngeniero,
   eliminarCita,
   type ActualizarEstadoData,
+  type ActualizarDatosCitaData,
   type CitaUpdate,
 } from "@/lib/axios/citasApi";
 import {
@@ -65,18 +66,42 @@ export const actualizarTarjetaCita = async (
     estado?: ActualizarEstadoData["estado"];
   },
 ) => {
-  if (payload.cita) {
-    const citaResponse = await actualizarCita(citaId, payload.cita);
-    if (!citaResponse.success) return citaResponse;
+  // DEBUG: log payload and citaId
+  try {
+    // eslint-disable-next-line no-console
+    console.log('[adminWorkflowApi] actualizarTarjetaCita called', { citaId, payload });
+  } catch (e) {
+    // ignore
   }
 
-  if (payload.ingenieroId !== undefined) {
-    const asignacionResponse = await asignarIngeniero(citaId, { ingenieroId: payload.ingenieroId || undefined });
-    if (!asignacionResponse.success) return asignacionResponse;
+  if (payload.cita) {
+    try {
+      // DEBUG: mostrar exactamente qué se enviará al backend para edición de cita
+      // eslint-disable-next-line no-console
+      console.log('[adminWorkflowApi] actualizarCita request payload:', { citaId, cita: payload.cita });
+
+      const citaResponse = await actualizarCita(citaId, payload.cita);
+      // eslint-disable-next-line no-console
+      console.log('[adminWorkflowApi] actualizarCita response:', citaResponse);
+      if (!citaResponse.success) return citaResponse;
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('[adminWorkflowApi] actualizarCita error:', error);
+      throw error;
+    }
   }
 
   if (payload.estado) {
-    return actualizarEstadoCita(citaId, { estado: payload.estado });
+    try {
+      const estadoResp = await actualizarEstadoCita(citaId, { estado: payload.estado });
+      // eslint-disable-next-line no-console
+      console.log('[adminWorkflowApi] actualizarEstadoCita response:', estadoResp);
+      return estadoResp;
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('[adminWorkflowApi] actualizarEstadoCita error:', error);
+      throw error;
+    }
   }
 
   return { success: true };
