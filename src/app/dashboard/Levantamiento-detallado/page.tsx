@@ -1014,15 +1014,8 @@ export default function CotizadorPreliminarPage() {
         : [];
     }
 
-    const order = [...new Set(extras.map((item) => item.categoria).filter((value): value is string => Boolean(value)))]
-      .map((category) => ({
-        key: category,
-        title: category,
-        entries: extras.filter((item) => item.categoria === category).map((item) => ({ item, id: item._id })),
-      }))
-      .filter((row) => row.entries.length > 0);
-
-    return order;
+    // Mostrar todos los extras en un único slide (sin separación por categoría)
+    return entries.length ? [{ key: "extras", title: "Extras", entries }] : [];
   }, [accessorySearchNorm, extras]);
 
   const setSectionComment = (key: "a" | "b" | "c" | "d" | "e", value: string) => {
