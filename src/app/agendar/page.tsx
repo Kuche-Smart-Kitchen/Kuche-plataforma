@@ -1,5 +1,4 @@
 import BookingSection from "@/components/BookingSection";
-import LevantamientoSection from "@/components/LevantamientoSection";
 import Footer from "@/components/Footer";
 
 export default function AgendarPage() {
@@ -18,7 +17,6 @@ export default function AgendarPage() {
         </div>
       </section>
       <BookingSection />
-      <LevantamientoSection />
       <Footer />
     </main>
   );
