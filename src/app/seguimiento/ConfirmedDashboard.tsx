@@ -11,6 +11,7 @@ import {
 } from "@/lib/pdf-preliminar";
 import {
   isPagoRegistrado,
+  isProyectoEntregado,
   TIMELINE_STEPS,
   type TimelineStep,
 } from "@/lib/seguimiento-project";
@@ -399,7 +400,7 @@ export function ConfirmedDashboard({ project, onOpenImage }: Props) {
         </div>
       </section>
 
-      {project.estadoProyecto === "Completado/Entregado" && garantiaFechaValida ? (
+      {isProyectoEntregado(project.estadoProyecto) && garantiaFechaValida ? (
         <section>
           <GarantiaCountdown startDate={project.garantiaInicio} />
         </section>

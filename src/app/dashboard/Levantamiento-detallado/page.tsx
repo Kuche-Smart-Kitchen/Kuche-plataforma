@@ -85,6 +85,7 @@ import Link from "next/link";
 import { generatePublicProjectCode } from "@/lib/project-code";
 import {
   defaultPagosForInversion,
+  ESTADO_PROYECTO,
   formatSeguimientoDateLong,
   normalizeEtapaForStorage,
 } from "@/lib/seguimiento-project";
@@ -1038,7 +1039,7 @@ export default function CotizadorPreliminarPage() {
         fechaInicio: formatSeguimientoDateLong(),
         fechaEntrega: newPreliminar.date || "Por definir",
         etapaActual: normalizeEtapaForStorage(existingParsed.etapaActual),
-        estadoProyecto: "Prospecto",
+        estadoProyecto: ESTADO_PROYECTO.EN_PROCESO,
         pagos: defaultPagosForInversion(0),
         garantiaInicio: "",
         cotizacionPreliminarImage: "",

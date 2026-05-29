@@ -18,6 +18,7 @@ import {
 import { DueDateInput } from "@/components/DueDateInput";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { syncSeguimientoEstadoFromKanbanConfirm } from "@/lib/seguimiento-project";
 import {
   kanbanColumns,
   kanbanStorageKey,
@@ -223,7 +224,37 @@ const mergeTasks = (storedTasks: KanbanTask[]) => {
       };
     }
     return { ...task, createdAt: task.createdAt || generateDateFromId(task.id) };
-  });
+  }).map(repairTaskStatusAfterEarlyFollowUp);
+};
+
+/** Confirmar/descartar en Seguimiento cierra la tarjeta en el tablero; en otras columnas solo marca compromiso. */
+const followUpDecisionUpdates = (
+  task: KanbanTask,
+  decision: "confirmado" | "descartado",
+): Partial<Pick<KanbanTask, "followUpStatus" | "status">> => {
+  if (task.stage === "contrato") {
+    return { followUpStatus: decision, status: "completada" };
+  }
+  return { followUpStatus: decision };
+};
+
+/**
+ * Repara tareas guardadas cuando confirmar cliente puso `status: completada` fuera de Seguimiento.
+ */
+const repairTaskStatusAfterEarlyFollowUp = (task: KanbanTask): KanbanTask => {
+  if (task.stage === "contrato" || task.status !== "completada") return task;
+  if (task.followUpStatus !== "confirmado" && task.followUpStatus !== "descartado") return task;
+
+  const columnWorkComplete =
+    task.stage === "citas"
+      ? Boolean(task.citaStarted && task.citaFinished)
+      : task.stage === "disenos"
+        ? Boolean(task.designApprovedByAdmin && task.designApprovedByClient)
+        : task.stage === "cotizacion"
+          ? Boolean(task.citaStarted && task.citaFinished)
+          : false;
+
+  return columnWorkComplete ? task : { ...task, status: "pendiente" };
 };
 
 /** Mueve a la siguiente columna las tareas que ya completaron su flujo en la etapa actual. */
@@ -616,8 +647,9 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       task.stage === "citas" ? Boolean(task.citaStarted && task.citaFinished) :
       task.stage === "disenos" ? Boolean(task.designApprovedByAdmin && task.designApprovedByClient) :
       task.stage === "cotizacion" ? Boolean(task.citaStarted && task.citaFinished) :
-      task.stage === "contrato" ? (task.followUpStatus === "confirmado" || task.followUpStatus === "descartado") :
-      task.status === "completada";
+      task.stage === "contrato"
+        ? task.followUpStatus === "confirmado" || task.followUpStatus === "descartado"
+        : false;
     if (!flowComplete) {
       showError("Debes completar la tarea antes de moverla a otra columna");
       return false;
@@ -628,24 +660,32 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   };
 
   const confirmFollowUp = (taskId: string) => {
-    // Marcamos el cliente como confirmado y completado.
-    // La tarjeta se ocultará del tablero de seguimiento pero seguirá en localStorage
-    // para que las vistas de clientes confirmados la utilicen.
-    updateTask(taskId, (task) => ({
-      ...task,
-      followUpStatus: "confirmado" as FollowUpStatus,
-      status: "completada" as TaskStatus,
+    const task = kanbanTasks.find((t) => t.id === taskId);
+    // Compromiso del cliente: en Seguimiento la tarjeta sale del tablero; en Citas/Diseños/Cotización el flujo sigue.
+    updateTask(taskId, (t) => ({
+      ...t,
+      ...followUpDecisionUpdates(t, "confirmado"),
     }));
+    if (task) {
+      syncSeguimientoEstadoFromKanbanConfirm({
+        ...task,
+        followUpStatus: "confirmado",
+      });
+      if (task.stage === "contrato") {
+        setActiveTaskId(null);
+      }
+    }
   };
 
   const discardFollowUp = (taskId: string) => {
-    // Marcamos el cliente como descartado y completado.
-    // Se mantiene en localStorage para que la página de clientes descartados lo lea.
-    updateTask(taskId, (task) => ({
-      ...task,
-      followUpStatus: "descartado" as FollowUpStatus,
-      status: "completada" as TaskStatus,
+    const task = kanbanTasks.find((t) => t.id === taskId);
+    updateTask(taskId, (t) => ({
+      ...t,
+      ...followUpDecisionUpdates(t, "descartado"),
     }));
+    if (task?.stage === "contrato") {
+      setActiveTaskId(null);
+    }
     onAfterDiscard?.();
   };
 
@@ -1032,7 +1072,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                           <div className="mt-3 min-h-[1.75rem]">
                             <div className="flex flex-wrap gap-2">
                               {/* CITAS: Iniciar → Terminar */}
-                              {task.stage === "citas" && task.status === "pendiente" && !task.citaStarted ? (
+                              {task.stage === "citas" && !task.citaStarted ? (
                                 <button
                                   type="button"
                                   onClick={(event) => {
@@ -1056,7 +1096,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                                   Terminar cita
                                 </button>
                               ) : null}
-                              {task.stage === "citas" && task.status === "completada" ? (
+                              {task.stage === "citas" && task.citaFinished ? (
                                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-semibold text-emerald-700">
                                   <CheckCircle2 className="h-3 w-3" />
                                   Cita completada
@@ -1105,7 +1145,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                               {/* Pasar a Seguimiento: manual vía botón */}
 
                               {/* DISEÑOS: Subir → Admin aprueba → Subida Dropbox */}
-                              {task.stage === "disenos" && task.status === "pendiente" && (!task.files || task.files.length === 0) ? (
+                              {task.stage === "disenos" && (!task.files || task.files.length === 0) ? (
                                 <button
                                   type="button"
                                   onClick={(event) => {
@@ -1130,20 +1170,6 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                                   <CloudUpload className="h-3 w-3 shrink-0" />
                                   Subir diseños aceptados
                                 </button>
-                              ) : null}
-
-                              {/* Confirmar/Descartar solo en el panel lateral al hacer clic en la tarjeta */}
-                              {task.stage === "contrato" && task.followUpStatus === "confirmado" ? (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-semibold text-emerald-700">
-                                  <CheckCircle2 className="h-3 w-3" />
-                                  Cliente confirmado
-                                </span>
-                              ) : null}
-                              {task.stage === "contrato" && task.followUpStatus === "descartado" ? (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-[11px] font-semibold text-gray-500">
-                                  <XCircle className="h-3 w-3" />
-                                  Descartado
-                                </span>
                               ) : null}
                             </div>
                           </div>
@@ -1446,7 +1472,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                   </select>
                 </div>
 
-                {activeTask.stage === "citas" && activeTask.status === "pendiente" ? (
+                {activeTask.stage === "citas" ? (
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
                       Flujo de cita

@@ -2,10 +2,39 @@
  * Modelo y utilidades del proyecto de seguimiento del cliente (`kuche_project_${codigo}` en localStorage).
  */
 
-import type { KanbanTask } from "@/lib/kanban";
+import { seguimientoProjectStoragePrefix, type KanbanTask } from "@/lib/kanban";
 
 /** Orden del embudo en el tablero. Las etapas que se añadan después de `contrato` deben ir al final. */
 export const KANBAN_PIPELINE_STAGES = ["citas", "disenos", "cotizacion", "contrato"] as const;
+
+/** Valores de `estadoProyecto` en seguimiento (modal «Editar estatus público»). */
+export const ESTADO_PROYECTO = {
+  EN_PROCESO: "Cliente en proceso",
+  CONFIRMADO: "Cliente confirmado",
+  ENTREGADO: "Proyecto entregado",
+} as const;
+
+export type EstadoProyectoValue = (typeof ESTADO_PROYECTO)[keyof typeof ESTADO_PROYECTO];
+
+const LEGACY_ESTADO_MAP: Record<string, EstadoProyectoValue> = {
+  "En proceso": ESTADO_PROYECTO.EN_PROCESO,
+  Prospecto: ESTADO_PROYECTO.EN_PROCESO,
+  "Completado/Entregado": ESTADO_PROYECTO.ENTREGADO,
+};
+
+/** Normaliza valores guardados (incluye etiquetas antiguas). */
+export function normalizeEstadoProyecto(raw: unknown): EstadoProyectoValue {
+  const t = typeof raw === "string" ? raw.trim() : "";
+  if (!t) return ESTADO_PROYECTO.EN_PROCESO;
+  if (t === ESTADO_PROYECTO.EN_PROCESO || t === ESTADO_PROYECTO.CONFIRMADO || t === ESTADO_PROYECTO.ENTREGADO) {
+    return t;
+  }
+  return LEGACY_ESTADO_MAP[t] ?? ESTADO_PROYECTO.EN_PROCESO;
+}
+
+export function isProyectoEntregado(estado: unknown): boolean {
+  return normalizeEstadoProyecto(estado) === ESTADO_PROYECTO.ENTREGADO;
+}
 
 /**
  * Portal `/seguimiento` completo cuando:
@@ -214,10 +243,7 @@ export function mergeSeguimientoFromStorage(parsed: Record<string, unknown>): Se
         ? parsed.fechaEntrega
         : "Por definir",
     garantiaInicio: typeof parsed.garantiaInicio === "string" ? parsed.garantiaInicio : "",
-    estadoProyecto:
-      typeof parsed.estadoProyecto === "string" && parsed.estadoProyecto.trim()
-        ? parsed.estadoProyecto
-        : "En proceso",
+    estadoProyecto: normalizeEstadoProyecto(parsed.estadoProyecto),
     etapaActual: normalizeEtapaForStorage(parsed.etapaActual),
     pagos,
     archivos: Array.isArray(parsed.archivos) ? parsed.archivos : [],
@@ -230,4 +256,47 @@ export function mergeSeguimientoFromStorage(parsed: Record<string, unknown>): Se
 
 export function formatSeguimientoDateLong(d: Date = new Date()): string {
   return d.toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" });
+}
+
+/**
+ * Actualiza snapshot de Kanban en `kuche_project_*` y, si el cliente fue confirmado en el tablero,
+ * pone `estadoProyecto` en «Cliente confirmado» (sin pisar «Proyecto entregado»).
+ */
+export function mergeKanbanSnapshotIntoSeguimientoRecord(
+  parsed: Record<string, unknown>,
+  task: Pick<KanbanTask, "stage" | "followUpStatus">,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = {
+    ...parsed,
+    kanbanStage: task.stage,
+    kanbanFollowUpStatus: task.followUpStatus ?? "pendiente",
+  };
+  const estadoActual = normalizeEstadoProyecto(parsed.estadoProyecto);
+  if (task.followUpStatus === "confirmado" && estadoActual !== ESTADO_PROYECTO.ENTREGADO) {
+    next.estadoProyecto = ESTADO_PROYECTO.CONFIRMADO;
+  }
+  return next;
+}
+
+/** Tras «Confirmar cliente» en cualquier columna del tablero. */
+export function syncSeguimientoEstadoFromKanbanConfirm(
+  task: Pick<KanbanTask, "codigoProyecto" | "project" | "title" | "stage" | "followUpStatus">,
+): void {
+  if (typeof window === "undefined") return;
+  const code = task.codigoProyecto?.trim();
+  if (!code || task.followUpStatus !== "confirmado") return;
+  const key = `${seguimientoProjectStoragePrefix}${code}`;
+  try {
+    const raw = window.localStorage.getItem(key);
+    const base = raw
+      ? (JSON.parse(raw) as Record<string, unknown>)
+      : {
+          codigo: code,
+          cliente: String(task.project ?? task.title ?? "Cliente").trim() || "Cliente",
+        };
+    const merged = mergeKanbanSnapshotIntoSeguimientoRecord(base, task);
+    window.localStorage.setItem(key, JSON.stringify(merged));
+  } catch {
+    // ignore
+  }
 }

@@ -204,6 +204,8 @@ export const activeCitaTaskStorageKey = "kuche-active-cita-task";
 export const citaReturnUrlStorageKey = "kuche-cita-return-url";
 export const activeCotizacionFormalTaskStorageKey = "kuche-active-cotizacion-formal-task";
 
+import { mergeKanbanSnapshotIntoSeguimientoRecord } from "@/lib/seguimiento-project";
+
 /** Prefijo para guardar datos de seguimiento por código: kuche_project_${codigoProyecto} */
 export const seguimientoProjectStoragePrefix = "kuche_project_";
 
@@ -295,11 +297,7 @@ function syncSeguimientoKanbanSnapshotForTasks(tasks: KanbanTask[]): void {
       const raw = window.localStorage.getItem(key);
       if (!raw) continue;
       const parsed = JSON.parse(raw) as Record<string, unknown>;
-      const next: Record<string, unknown> = {
-        ...parsed,
-        kanbanStage: task.stage,
-        kanbanFollowUpStatus: task.followUpStatus ?? "pendiente",
-      };
+      const next = mergeKanbanSnapshotIntoSeguimientoRecord(parsed, task);
       window.localStorage.setItem(key, JSON.stringify(next));
     } catch {
       // ignore

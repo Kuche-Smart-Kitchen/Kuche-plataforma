@@ -5,12 +5,15 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2 } from "lucide-react";
 
+import { DateInput } from "@/components/DateInput";
 import DateMaskInput from "@/components/ui/DateMaskInput";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { seguimientoProjectStoragePrefix } from "@/lib/kanban";
 import { persistSeguimientoRecordForLocalStorage } from "@/lib/seguimiento-storage-blobs";
 import {
+  ESTADO_PROYECTO,
   mergeSeguimientoFromStorage,
+  normalizeEstadoProyecto,
   pagosMatchDefaultInversionSplit,
   TIMELINE_STEPS,
   type SeguimientoClienteProject,
@@ -544,17 +547,17 @@ export function PublicStatusEditorModal({
                   reparten solos.
                 </p>
               </div>
-              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="mt-4">
                 <label className="text-xs font-semibold text-secondary">
                   Estado del proyecto
                   <select
-                    value={draft.estadoProyecto}
+                    value={normalizeEstadoProyecto(draft.estadoProyecto)}
                     onChange={(e) => {
-                      const v = e.target.value;
+                      const v = normalizeEstadoProyecto(e.target.value);
                       setDraft((prev) => {
                         if (!prev) return prev;
                         const next = { ...prev, estadoProyecto: v };
-                        if (v === "Completado/Entregado" && !String(prev.garantiaInicio ?? "").trim()) {
+                        if (v === ESTADO_PROYECTO.ENTREGADO && !String(prev.garantiaInicio ?? "").trim()) {
                           next.garantiaInicio = new Date().toISOString().slice(0, 10);
                         }
                         return next;
@@ -562,27 +565,65 @@ export function PublicStatusEditorModal({
                     }}
                     className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
                   >
-                    <option value="En proceso">En proceso</option>
-                    <option value="Prospecto">Prospecto</option>
-                    <option value="Completado/Entregado">Completado/Entregado</option>
+                    <option value={ESTADO_PROYECTO.EN_PROCESO}>{ESTADO_PROYECTO.EN_PROCESO}</option>
+                    <option value={ESTADO_PROYECTO.CONFIRMADO}>{ESTADO_PROYECTO.CONFIRMADO}</option>
+                    <option value={ESTADO_PROYECTO.ENTREGADO}>{ESTADO_PROYECTO.ENTREGADO}</option>
                   </select>
                 </label>
-                <label className="text-xs font-semibold text-secondary">
-                  Inicio de garantía (entrega)
-                  <input
-                    type="date"
-                    value={toInputDate(draft.garantiaInicio)}
-                    onChange={(e) =>
-                      setDraft((prev) =>
-                        prev ? { ...prev, garantiaInicio: e.target.value || "" } : prev,
-                      )
-                    }
-                    className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-                  />
-                  <p className="mt-1 text-[10px] text-gray-500">
-                    Si pasas a «Completado/Entregado» sin fecha, se usa hoy; ajústala si hace falta.
-                  </p>
-                </label>
+
+                <AnimatePresence>
+                  {normalizeEstadoProyecto(draft.estadoProyecto) === ESTADO_PROYECTO.ENTREGADO ? (
+                    <motion.div
+                      key="garantia-inicio"
+                      role="region"
+                      aria-label="Inicio de garantía"
+                      initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                      animate={{
+                        opacity: 1,
+                        height: "auto",
+                        marginTop: 16,
+                        transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] },
+                      }}
+                      exit={{
+                        opacity: 0,
+                        height: 0,
+                        marginTop: 0,
+                        transition: { duration: 0.22 },
+                      }}
+                      className="overflow-hidden"
+                    >
+                      <motion.label
+                        initial={{ boxShadow: "0 0 0 0 rgba(16, 185, 129, 0.45)" }}
+                        animate={{
+                          boxShadow: [
+                            "0 0 0 0 rgba(16, 185, 129, 0)",
+                            "0 0 0 6px rgba(16, 185, 129, 0.22)",
+                            "0 0 0 2px rgba(16, 185, 129, 0.12)",
+                          ],
+                        }}
+                        transition={{ duration: 1.4, times: [0, 0.35, 1], ease: "easeOut" }}
+                        className="block rounded-2xl border border-emerald-200/90 bg-gradient-to-br from-emerald-50/90 to-white p-4 text-xs font-semibold text-secondary shadow-sm"
+                      >
+                        <span className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-600/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
+                          Disponible ahora
+                        </span>
+                        <span className="mt-1 block text-secondary">Inicio de garantía (entrega)</span>
+                        <DateInput
+                          value={toInputDate(draft.garantiaInicio)}
+                          onChange={(e) =>
+                            setDraft((prev) =>
+                              prev ? { ...prev, garantiaInicio: e.target.value || "" } : prev,
+                            )
+                          }
+                          className="mt-2 cursor-pointer rounded-2xl border border-emerald-200/80 bg-white transition focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-400/25"
+                        />
+                        <p className="mt-2 text-[10px] font-normal leading-relaxed text-gray-500">
+                          Si pasas a «Proyecto entregado» sin fecha, se usa hoy; ajústala si hace falta.
+                        </p>
+                      </motion.label>
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
               </div>
 
               <div className="mt-5 space-y-3">

@@ -34,6 +34,7 @@ import { formatDeliveryWeeksLabel, parseDeliveryWeeksRangeFromLabel } from "@/li
 import { emptyWhenZeroIntString, emptyWhenZeroNumericString } from "@/lib/numeric-input-empty-zero";
 import { generatePublicProjectCode } from "@/lib/project-code";
 import {
+  ESTADO_PROYECTO,
   formatSeguimientoDateLong,
   mergePagosPreservingReceipts,
   normalizeEtapaForStorage,
@@ -1323,7 +1324,7 @@ export default function CotizadorPage() {
         estadoProyecto:
           typeof base.estadoProyecto === "string" && base.estadoProyecto.trim()
             ? base.estadoProyecto
-            : "En proceso",
+            : ESTADO_PROYECTO.EN_PROCESO,
         pagos: pagosMerged,
         cotizacionesFormales,
         archivos: [...prevArchivos, ...pdfArchivos],
