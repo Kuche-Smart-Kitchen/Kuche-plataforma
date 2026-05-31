@@ -35,6 +35,27 @@ import {
   isCocinasProjectTypeForConIsla,
   normalizeLegacyProjectTypeToCatalog,
 } from "@/lib/catalog-project-types";
+import Link from "next/link";
+import { generatePublicProjectCode } from "@/lib/project-code";
+import {
+  defaultPagosForInversion,
+  formatSeguimientoDateLong,
+  normalizeEtapaForStorage,
+} from "@/lib/seguimiento-project";
+import {
+  createDefaultLevantamientoConfig,
+  getAveragePriceByTier,
+  getLevantamientoConfig,
+  type LevantamientoConfig,
+  type MaterialGama,
+} from "@/lib/config-levantamiento";
+import { formatDeliveryWeeksLabel } from "@/lib/delivery-weeks";
+import { buildPreliminarPdfDataUrl, downloadPreliminarPdf } from "@/lib/pdf-preliminar";
+import { createPreliminarSeguimientoPdfKey, saveFormalPdf } from "@/lib/formal-pdf-storage";
+import ApplianceTypeImage from "@/components/levantamiento/ApplianceTypeImage";
+import LightingTypeImage from "@/components/levantamiento/LightingTypeImage";
+import { WallTypeIcon } from "@/components/levantamiento/WallTypeIcons";
+import { InteractiveCroquis } from "@/components/levantamiento/InteractiveCroquis";
 import {
   APPLIANCE_CATEGORIAS,
   APPLIANCE_ITEMS,
@@ -59,31 +80,7 @@ import {
   type ItemCatalogo,
   type LevantamientoDetalle,
 } from "@/lib/levantamiento-catalog";
-import {
-  buildPreliminarPdfDataUrl,
-  downloadPreliminarPdf,
-} from "@/lib/pdf-preliminar";
-import { createPreliminarSeguimientoPdfKey, saveFormalPdf } from "@/lib/formal-pdf-storage";
-import { formatDeliveryWeeksLabel } from "@/lib/delivery-weeks";
-import ApplianceTypeImage from "@/components/levantamiento/ApplianceTypeImage";
-import LightingTypeImage from "@/components/levantamiento/LightingTypeImage";
-import { WallTypeIcon } from "@/components/levantamiento/WallTypeIcons";
-import { InteractiveCroquis } from "@/components/levantamiento/InteractiveCroquis";
-import Link from "next/link";
-import { generatePublicProjectCode } from "@/lib/project-code";
-import {
-  defaultPagosForInversion,
-  formatSeguimientoDateLong,
-  normalizeEtapaForStorage,
-} from "@/lib/seguimiento-project";
-import {
-  createDefaultLevantamientoConfig,
-  getAveragePriceByTier,
-  getLevantamientoConfig,
-  type LevantamientoConfig,
-  type MaterialGama,
-} from "@/lib/config-levantamiento";
-import type { Electrodomestico, Extra } from "@/lib/axios/equipamientoApi";
+import { obtenerHerrajes, obtenerMateriales, type Herraje, type Material } from "@/lib/axios/catalogosApi";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("es-MX", {
@@ -94,8 +91,8 @@ const formatCurrency = (value: number) =>
 
 const parseMeasure = (raw: string | undefined): number | null => {
   if (!raw) return null;
-  const v = Number.parseFloat(raw.replace(",", "."));
-  return Number.isFinite(v) ? v : null;
+  const value = Number.parseFloat(raw.replace(",", "."));
+  return Number.isFinite(value) ? value : null;
 };
 
 const normalizeCatalogText = (value: string) =>
@@ -106,8 +103,82 @@ const normalizeCatalogText = (value: string) =>
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 
-const buildSearchText = (...parts: Array<string | undefined>) =>
-  normalizeCatalogText(parts.filter(Boolean).join(" "));
+const buildSearchText = (...parts: Array<string | undefined>) => normalizeCatalogText(parts.filter(Boolean).join(" "));
+
+type MaterialOption = {
+  id: string;
+  name: string;
+  tier: "Estandar" | "Tendencia" | "Premium";
+  image: string;
+  pricePerM?: number;
+};
+
+type MaterialCategory = "cubiertas" | "frentes" | "herrajes";
+type MaterialTierFilter = "Todos" | MaterialOption["tier"];
+type MaterialCatalogState = Record<MaterialCategory, MaterialOption[]>;
+
+const materialImageMap: Record<MaterialCategory, { match: RegExp; src: string }[]> = {
+  cubiertas: [
+    { match: /calacatta|m?rmol|marble/i, src: "/images/materiales/calaccata_marble.jpg" },
+    { match: /granito negro/i, src: "/images/materiales/black_granite.jpg" },
+    { match: /cuarzo/i, src: "/images/materiales/quartz_texture.jpg" },
+    { match: /sinterizada/i, src: "/images/materiales/smooth_stone.jpg" },
+    { match: /porcelanato|terrazzo|terrazo/i, src: "/images/materiales/terazzo_texture.jpg" },
+    { match: /laminado|blanco|nieve/i, src: "/images/materiales/white_seamless_texture.jpg" },
+    { match: /granito/i, src: "/images/materiales/stone_texture.jpg" },
+  ],
+  frentes: [
+    { match: /nogal|parota|cedro|encino|madera|chapa/i, src: "/images/materiales/walnut_wood_texture.jpg" },
+    { match: /melamina blanca|blanca/i, src: "/images/materiales/white_seamless_texture.jpg" },
+    { match: /melamina|mdf/i, src: "/images/materiales/plywood_texture.jpg" },
+    { match: /laca met?lica|metalica/i, src: "/images/materiales/metalic_textures.jpg" },
+    { match: /laca/i, src: "/images/materiales/white_marble_texture.jpg" },
+  ],
+  herrajes: [
+    { match: /inox|stainless/i, src: "/images/materiales/stainless_steel_hinge.jpg" },
+    { match: /cierre|drawer|slide|push/i, src: "/images/materiales/drawer_slide.jpg" },
+    { match: /soft|hinge|amortiguado|hidr?ulico|smart|lux/i, src: "/images/materiales/cabinet_hinge.jpg" },
+  ],
+};
+
+const emptyMaterialCatalog: MaterialCatalogState = {
+  cubiertas: [],
+  frentes: [],
+  herrajes: [],
+};
+
+const extractCatalogList = <T,>(input: unknown): T[] => {
+  if (Array.isArray(input)) return input as T[];
+  if (input && typeof input === "object") {
+    const record = input as Record<string, unknown>;
+    for (const key of ["materiales", "herrajes", "items", "data", "results"]) {
+      const value = record[key];
+      if (Array.isArray(value)) return value as T[];
+    }
+  }
+  return [];
+};
+
+const readCatalogNumber = (...values: unknown[]) => {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string") {
+      const parsed = Number.parseFloat(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return 0;
+};
+
+type BackendCatalogRecord = {
+  _id?: string;
+  nombre?: string;
+  categoria?: string;
+  descripcion?: string;
+  imagenUrl?: string;
+  thumbnailUrl?: string;
+  precio?: number;
+};
 
 const applianceKeywordMap: Record<string, string[]> = {
   "micro-sobremesa": ["sobremesa", "libre instalacion", "libre instalacion", "encimera"],
@@ -145,17 +216,12 @@ const applianceKeywordMap: Record<string, string[]> = {
   "otro-tarja-extra": ["tarja extra", "segunda tarja"],
 };
 
-type BackendCatalogRecord = Pick<
-  Electrodomestico | Extra,
-  "_id" | "nombre" | "categoria" | "descripcion" | "imagenUrl" | "thumbnailUrl" | "precio"
->;
-
 const resolveBackendCatalogMatch = (item: ItemCatalogo, records: BackendCatalogRecord[]) => {
   if (records.length === 0) return null;
   const itemText = buildSearchText(item.id, item.label, item.categoria, item.hint);
   const keywords = applianceKeywordMap[item.id] ?? [];
 
-  const exact = records.find((record) => normalizeCatalogText(record.nombre) === itemText);
+  const exact = records.find((record) => normalizeCatalogText(record.nombre ?? "") === itemText);
   if (exact) return exact;
 
   const keywordMatch = records.find((record) => {
@@ -164,14 +230,61 @@ const resolveBackendCatalogMatch = (item: ItemCatalogo, records: BackendCatalogR
   });
   if (keywordMatch) return keywordMatch;
 
-  const categoryMatch = records.find((record) => normalizeCatalogText(record.categoria ?? "") === normalizeCatalogText(item.categoria ?? ""));
+  const categoryMatch = records.find(
+    (record) => normalizeCatalogText(record.categoria ?? "") === normalizeCatalogText(item.categoria ?? ""),
+  );
   if (categoryMatch) return categoryMatch;
 
   return records.find((record) => buildSearchText(record.nombre, record.descripcion).includes(itemText)) ?? null;
 };
 
-const resolveBackendImage = (record: BackendCatalogRecord | null | undefined) =>
-  record?.thumbnailUrl || record?.imagenUrl || undefined;
+const resolveBackendImage = (record: { thumbnailUrl?: unknown; imagenUrl?: unknown } | null | undefined) =>
+  (typeof record?.thumbnailUrl === "string" && record.thumbnailUrl) ||
+  (typeof record?.imagenUrl === "string" && record.imagenUrl) ||
+  undefined;
+
+const inferCatalogTier = (price: number, minPrice: number, maxPrice: number): MaterialOption["tier"] => {
+  if (maxPrice <= minPrice) return "Tendencia";
+  const ratio = (price - minPrice) / (maxPrice - minPrice);
+  if (ratio < 0.34) return "Estandar";
+  if (ratio < 0.67) return "Tendencia";
+  return "Premium";
+};
+
+const inferCatalogCategory = (item: Record<string, unknown>, kind: "material" | "herraje"): MaterialCategory | null => {
+  if (kind === "herraje") return "herrajes";
+
+  const seccion = typeof item.seccion === "string" ? item.seccion.trim().toLowerCase() : "";
+  const categoria = typeof item.categoria === "string" ? item.categoria.trim().toLowerCase() : "";
+  const nombre = typeof item.nombre === "string" ? item.nombre.trim().toLowerCase() : "";
+
+  if (seccion === "cubierta" || categoria.includes("cubierta") || nombre.includes("cubierta")) return "cubiertas";
+  if (seccion === "vistas" || seccion === "cajones_puertas" || categoria.includes("frente") || nombre.includes("frente")) {
+    return "frentes";
+  }
+  if (
+    seccion === "accesorios_modulo" ||
+    seccion === "extraibles_puertas_abatibles" ||
+    seccion === "herrajes" ||
+    categoria.includes("herraje") ||
+    nombre.includes("herraje")
+  ) {
+    return "herrajes";
+  }
+
+  return null;
+};
+
+const resolveMaterialImage = (name: string, category: MaterialCategory, fallback?: string) => {
+  const match = materialImageMap[category].find((entry) => entry.match.test(name));
+  if (match) return match.src;
+  if (fallback?.startsWith("/")) return fallback;
+  return {
+    cubiertas: "/images/materiales/stone_texture.jpg",
+    frentes: "/images/materiales/dark_wood_background.jpg",
+    herrajes: "/images/materiales/cabinet_hinge.jpg",
+  }[category];
+};
 
 const WALL_COUNT_OPTIONS = [1, 2, 3, 4] as const;
 
@@ -186,7 +299,6 @@ const wallCountSvgProps = {
   strokeLinejoin: "round" as const,
 };
 
-/** Pictogramas estilo planta arquitectónica 2D (vista superior): trazos ortogonales que sugieren el perímetro o la secuencia de muros según la cantidad seleccionada. */
 function WallCountIcon({ count, className }: { count: number; className?: string }) {
   const svg = (children: ReactNode) => (
     <svg className={className} aria-hidden {...wallCountSvgProps}>
@@ -215,52 +327,62 @@ function WallCountIcon({ count, className }: { count: number; className?: string
   }
 }
 
-type MaterialOption = {
-  id: string;
-  name: string;
-  tier: "Estandar" | "Tendencia" | "Premium";
-  image: string;
+const mapCatalogItem = (
+  item: Material | Herraje,
+  kind: "material" | "herraje",
+  minPrice: number,
+  maxPrice: number,
+): MaterialOption | null => {
+  const raw = item as unknown as Record<string, unknown>;
+  const category = inferCatalogCategory(raw, kind);
+  if (!category) return null;
+
+  const pricePerM = readCatalogNumber(raw.precioUnitario, raw.precioPorMetro, raw.precioMetroLineal);
+  const name = typeof raw.nombre === "string" && raw.nombre.trim() ? raw.nombre.trim() : "Material";
+
+  return {
+    id:
+      (typeof raw.idCotizador === "string" && raw.idCotizador.trim()) ||
+      (typeof raw._id === "string" && raw._id.trim()) ||
+      name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+    name,
+    tier: inferCatalogTier(pricePerM, minPrice, maxPrice),
+    image: resolveMaterialImage(name, category),
+    pricePerM,
+  };
 };
 
-type MaterialCategory = "cubiertas" | "frentes" | "herrajes";
-type MaterialTierFilter = "Todos" | MaterialOption["tier"];
+const buildMaterialCatalogFromBackend = (materiales: Material[], herrajes: Herraje[]): MaterialCatalogState => {
+  const materialRecords = materiales.map((item) => ({ item, kind: "material" as const }));
+  const herrajeRecords = herrajes.map((item) => ({ item, kind: "herraje" as const }));
+  const allPrices = [...materialRecords, ...herrajeRecords].map(({ item }) => {
+    const raw = item as unknown as Record<string, unknown>;
+    return readCatalogNumber(raw.precioUnitario, raw.precioPorMetro, raw.precioMetroLineal);
+  });
+  const minPrice = allPrices.length > 0 ? Math.min(...allPrices) : 0;
+  const maxPrice = allPrices.length > 0 ? Math.max(...allPrices) : 0;
 
-const materialImageMap: Record<MaterialCategory, { match: RegExp; src: string }[]> = {
-  cubiertas: [
-    { match: /calacatta|m?rmol|marble/i, src: "/images/materiales/calaccata_marble.jpg" },
-    { match: /granito negro/i, src: "/images/materiales/black_granite.jpg" },
-    { match: /cuarzo/i, src: "/images/materiales/quartz_texture.jpg" },
-    { match: /sinterizada/i, src: "/images/materiales/smooth_stone.jpg" },
-    { match: /porcelanato|terrazzo|terrazo/i, src: "/images/materiales/terazzo_texture.jpg" },
-    { match: /laminado|blanco|nieve/i, src: "/images/materiales/white_seamless_texture.jpg" },
-    { match: /granito/i, src: "/images/materiales/stone_texture.jpg" },
-  ],
-  frentes: [
-    { match: /nogal|parota|cedro|encino|madera|chapa/i, src: "/images/materiales/walnut_wood_texture.jpg" },
-    { match: /melamina blanca|blanca/i, src: "/images/materiales/white_seamless_texture.jpg" },
-    { match: /melamina|mdf/i, src: "/images/materiales/plywood_texture.jpg" },
-    { match: /laca met?lica|metalica/i, src: "/images/materiales/metalic_textures.jpg" },
-    { match: /laca/i, src: "/images/materiales/white_marble_texture.jpg" },
-  ],
-  herrajes: [
-    { match: /inox|stainless/i, src: "/images/materiales/stainless_steel_hinge.jpg" },
-    { match: /cierre|drawer|slide|push/i, src: "/images/materiales/drawer_slide.jpg" },
-    { match: /soft|hinge|amortiguado|hidr?ulico|smart|lux/i, src: "/images/materiales/cabinet_hinge.jpg" },
-  ],
+  const nextCatalog: MaterialCatalogState = { cubiertas: [], frentes: [], herrajes: [] };
+
+  for (const { item, kind } of [...materialRecords, ...herrajeRecords]) {
+    const mapped = mapCatalogItem(item, kind, minPrice, maxPrice);
+    if (!mapped) continue;
+    const category = inferCatalogCategory(item as unknown as Record<string, unknown>, kind);
+    if (!category) continue;
+    nextCatalog[category].push(mapped);
+  }
+
+  for (const key of Object.keys(nextCatalog) as MaterialCategory[]) {
+    nextCatalog[key].sort((a, b) => a.name.localeCompare(b.name, "es"));
+  }
+
+  return nextCatalog;
 };
 
 const defaultCategoryImage: Record<MaterialCategory, string> = {
   cubiertas: "/images/materiales/stone_texture.jpg",
   frentes: "/images/materiales/dark_wood_background.jpg",
   herrajes: "/images/materiales/cabinet_hinge.jpg",
-};
-
-const resolveMaterialImage = (name: string, category: MaterialCategory, fallback?: string) => {
-  const match = materialImageMap[category].find((entry) => entry.match.test(name));
-  if (match) return match.src;
-  /** Ignorar URLs externas (p. ej. pollinations): suelen fallar y el <img> cae en el placeholder. */
-  if (fallback?.startsWith("/")) return fallback;
-  return defaultCategoryImage[category];
 };
 
 const SectionCard = ({ children }: { children: React.ReactNode }) => (
@@ -386,7 +508,7 @@ const MaterialGrid = ({
         {filtered.map((option) => {
           const isActive = isMulti ? rest.selectedIds.includes(option.id) : option.id === rest.selectedId;
           const imageSrc = resolveMaterialImage(option.name, category, option.image);
-          const pricePerM = tierPriceByTier[option.tier];
+          const pricePerM = option.pricePerM || tierPriceByTier[option.tier];
           const optionPrice = Math.max(0, largoLineal * pricePerM);
           return (
             <button
@@ -886,17 +1008,18 @@ export default function CotizadorPreliminarPage() {
   const [largo, setLargo] = useState("");
   const [alto, setAlto] = useState("");
   /** Sección D · showroom: materiales y escenario de inversión (derivado + ajuste manual opcional). */
-  const [selectedCubierta, setSelectedCubierta] = useState(materialCatalog.cubiertas[0].id);
-  const [selectedFrenteIds, setSelectedFrenteIds] = useState<string[]>(() => [materialCatalog.frentes[0].id]);
-  const [selectedHerraje, setSelectedHerraje] = useState(materialCatalog.herrajes[0].id);
+  const [materialCatalog, setMaterialCatalog] = useState<MaterialCatalogState>(emptyMaterialCatalog);
+  const [selectedCubierta, setSelectedCubierta] = useState("");
+  const [selectedFrenteIds, setSelectedFrenteIds] = useState<string[]>([]);
+  const [selectedHerraje, setSelectedHerraje] = useState("");
   const [levantamientoConfig, setLevantamientoConfig] = useState<LevantamientoConfig>(() =>
     createDefaultLevantamientoConfig(),
   );
   const [selectedScenario, setSelectedScenario] = useState<AutoScenarioId>(() =>
     autoScenarioFromShowroom(
-      materialCatalog.cubiertas[0].id,
-      [materialCatalog.frentes[0].id],
-      materialCatalog.herrajes[0].id,
+      "",
+      [],
+      "",
     ),
   );
   const [materialSearch, setMaterialSearch] = useState("");
@@ -929,6 +1052,39 @@ export default function CotizadorPreliminarPage() {
   const lightingSectionRef = useRef<HTMLDivElement | null>(null);
   const applianceRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const accessoryRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadMaterialCatalog = async () => {
+      const [materialesResponse, herrajesResponse] = await Promise.all([obtenerMateriales(), obtenerHerrajes()]);
+      if (cancelled) return;
+
+      const materiales = materialesResponse.success && materialesResponse.data ? extractCatalogList<Material>(materialesResponse.data) : [];
+      const herrajes = herrajesResponse.success && herrajesResponse.data ? extractCatalogList<Herraje>(herrajesResponse.data) : [];
+      setMaterialCatalog(buildMaterialCatalogFromBackend(materiales, herrajes));
+    };
+
+    void loadMaterialCatalog();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (materialCatalog.cubiertas.length > 0 && !materialCatalog.cubiertas.some((item) => item.id === selectedCubierta)) {
+      setSelectedCubierta(materialCatalog.cubiertas[0]?.id ?? "");
+    }
+    if (materialCatalog.frentes.length > 0) {
+      setSelectedFrenteIds((current) => {
+        const filtered = current.filter((id) => materialCatalog.frentes.some((item) => item.id === id));
+        return filtered.length > 0 ? filtered : [materialCatalog.frentes[0]?.id ?? ""].filter(Boolean);
+      });
+    }
+    if (materialCatalog.herrajes.length > 0 && !materialCatalog.herrajes.some((item) => item.id === selectedHerraje)) {
+      setSelectedHerraje(materialCatalog.herrajes[0]?.id ?? "");
+    }
+  }, [materialCatalog, selectedCubierta, selectedHerraje]);
 
   const applianceBackendIndex = useMemo(() => {
     const records = [...electrodomesticos, ...extras] as BackendCatalogRecord[];
@@ -1601,16 +1757,12 @@ export default function CotizadorPreliminarPage() {
     const largoValue = Math.max(0, Number.parseFloat(largo) || 0);
     const cubierta = materialCatalog.cubiertas.find((item) => item.id === selectedCubierta);
     const herraje = materialCatalog.herrajes.find((item) => item.id === selectedHerraje);
-    const tierC = (cubierta?.tier ?? "Estandar") as MaterialGama;
-    const tierH = (herraje?.tier ?? "Estandar") as MaterialGama;
-    const mats = levantamientoConfig.materiales;
     const sumPrecioFrentePorM = selectedFrenteIds.reduce((acc, fid) => {
       const f = materialCatalog.frentes.find((item) => item.id === fid);
-      const tierF = (f?.tier ?? "Estandar") as MaterialGama;
-      return acc + getAveragePriceByTier(mats, "frente", tierF);
+      return acc + (f?.pricePerM ?? 0);
     }, 0);
-    const avgCubierta = getAveragePriceByTier(mats, "cubierta", tierC);
-    const avgHerraje = getAveragePriceByTier(mats, "herraje", tierH);
+    const avgCubierta = cubierta?.pricePerM ?? 0;
+    const avgHerraje = herraje?.pricePerM ?? 0;
     const costoMateriales = largoValue * (avgCubierta + sumPrecioFrentePorM + avgHerraje);
     const costoElectrodomesticos = applianceCatalogTotal;
     const costoAccesorios = accessoryCatalogTotal;
@@ -1696,17 +1848,13 @@ export default function CotizadorPreliminarPage() {
     const largoValue = Math.max(0, Number.parseFloat(largo) || 0);
     const cubierta = materialCatalog.cubiertas.find((item) => item.id === selectedCubierta);
     const herraje = materialCatalog.herrajes.find((item) => item.id === selectedHerraje);
-    const tierC = (cubierta?.tier ?? "Estandar") as MaterialGama;
-    const tierH = (herraje?.tier ?? "Estandar") as MaterialGama;
-    const mats = levantamientoConfig.materiales;
     const sumPrecioFrentePorM = selectedFrenteIds.reduce((acc, fid) => {
       const f = materialCatalog.frentes.find((item) => item.id === fid);
-      const tierF = (f?.tier ?? "Estandar") as MaterialGama;
-      return acc + getAveragePriceByTier(mats, "frente", tierF);
+      return acc + (f?.pricePerM ?? 0);
     }, 0);
     const costoMateriales =
       largoValue *
-      (getAveragePriceByTier(mats, "cubierta", tierC) + sumPrecioFrentePorM + getAveragePriceByTier(mats, "herraje", tierH));
+      ((cubierta?.pricePerM ?? 0) + sumPrecioFrentePorM + (herraje?.pricePerM ?? 0));
     const costoElectrodomesticos = applianceCatalogTotal;
     const costoIluminacion = cotizacionIluminacionTotal(levantamiento);
     const ivaP = levantamientoConfig.ivaPercent;
@@ -1730,19 +1878,21 @@ export default function CotizadorPreliminarPage() {
   ]);
 
   const materialTierAverages = useMemo(() => {
-    const m = levantamientoConfig.materiales;
-    const row = (c: "cubierta" | "frente" | "herraje") =>
-      ({
-        Estandar: getAveragePriceByTier(m, c, "Estandar"),
-        Tendencia: getAveragePriceByTier(m, c, "Tendencia"),
-        Premium: getAveragePriceByTier(m, c, "Premium"),
-      }) satisfies Record<MaterialOption["tier"], number>;
-    return {
-      cubiertas: row("cubierta"),
-      frentes: row("frente"),
-      herrajes: row("herraje"),
+    const row = (items: MaterialOption[]) => {
+      const grouped: Record<MaterialOption["tier"], number[]> = { Estandar: [], Tendencia: [], Premium: [] };
+      for (const item of items) grouped[item.tier].push(item.pricePerM ?? 0);
+      return {
+        Estandar: grouped.Estandar.length ? grouped.Estandar.reduce((acc, value) => acc + value, 0) / grouped.Estandar.length : 0,
+        Tendencia: grouped.Tendencia.length ? grouped.Tendencia.reduce((acc, value) => acc + value, 0) / grouped.Tendencia.length : 0,
+        Premium: grouped.Premium.length ? grouped.Premium.reduce((acc, value) => acc + value, 0) / grouped.Premium.length : 0,
+      } satisfies Record<MaterialOption["tier"], number>;
     };
-  }, [levantamientoConfig.materiales]);
+    return {
+      cubiertas: row(materialCatalog.cubiertas),
+      frentes: row(materialCatalog.frentes),
+      herrajes: row(materialCatalog.herrajes),
+    };
+  }, [materialCatalog]);
 
   /** Auto-escenario según moda de gamas en showroom; el usuario puede corregir con las tarjetas (se respeta hasta el próximo cambio de material). */
   useEffect(() => {

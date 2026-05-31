@@ -18,6 +18,7 @@ import {
   type UnidadMedida,
 } from "@/lib/axios/catalogosApi";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { ConfirmDialog } from "@/components/alerts/ConfirmDialog";
 
 type CatalogItem = {
   _id: string;
@@ -36,6 +37,11 @@ type ImportedCatalogRow = {
   unit: UnidadMedida;
   unitPrice: number;
 };
+
+type PendingConfirmAction =
+  | { kind: "delete-selected" }
+  | { kind: "delete-item"; item: CatalogItem }
+  | { kind: "edit-item"; item: CatalogItem };
 
 const toNumberOrUndefined = (value: string) => {
   const parsed = Number.parseFloat(value);
@@ -142,6 +148,8 @@ const parsePriceValue = (value: unknown): number => {
   return Number.NaN;
 };
 
+const ITEMS_PER_PAGE = 25;
+
 export default function PreciosPage() {
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -150,9 +158,12 @@ export default function PreciosPage() {
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [hasPendingChanges, setHasPendingChanges] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
   const [selectedItemKeys, setSelectedItemKeys] = useState<string[]>([]);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [pendingConfirmAction, setPendingConfirmAction] = useState<PendingConfirmAction | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newIdCotizador, setNewIdCotizador] = useState("");
@@ -204,9 +215,12 @@ export default function PreciosPage() {
       setItems(loadedItems);
       initialItemsRef.current = new Map(loadedItems.map((item) => [buildItemKey(item), item]));
       setHasPendingChanges(false);
+      setSelectionMode(false);
       setSelectedItemKeys([]);
       setOpenMenuId(null);
       setEditingItemId(null);
+      setPendingConfirmAction(null);
+      setCurrentPage(1);
     } catch (currentError) {
       setError(currentError instanceof Error ? currentError.message : "No se pudo cargar el catálogo");
     } finally {
@@ -215,15 +229,21 @@ export default function PreciosPage() {
   };
 
   const toggleSelected = (item: CatalogItem) => {
+    if (!selectionMode) return;
     const key = buildItemKey(item);
     setSelectedItemKeys((current) =>
       current.includes(key) ? current.filter((currentKey) => currentKey !== key) : [...current, key],
     );
   };
 
-  const handleDeleteSelected = async () => {
+  const clearSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedItemKeys([]);
+    setOpenMenuId(null);
+  };
+
+  const performDeleteSelected = async () => {
     if (selectedItemKeys.length === 0) return;
-    if (!window.confirm(`Se eliminaran ${selectedItemKeys.length} materiales. Deseas continuar?`)) return;
 
     const selectedSet = new Set(selectedItemKeys);
     const selectedRows = items.filter((item) => selectedSet.has(buildItemKey(item)));
@@ -248,14 +268,18 @@ export default function PreciosPage() {
       if (needsReload) {
         await loadCatalogs();
       }
-      setSelectedItemKeys([]);
-      setOpenMenuId(null);
+      clearSelectionMode();
       setEditingItemId(null);
     } catch (currentError) {
       setError(currentError instanceof Error ? currentError.message : "No se pudieron eliminar los materiales seleccionados");
     } finally {
       setSavingId(null);
     }
+  };
+
+  const requestDeleteSelected = () => {
+    if (selectedItemKeys.length === 0) return;
+    setPendingConfirmAction({ kind: "delete-selected" });
   };
   useEffect(() => {
     void loadCatalogs();
@@ -278,6 +302,24 @@ export default function PreciosPage() {
       return matchesCategory && matchesQuery;
     });
   }, [items, searchQuery, selectedCategory]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / ITEMS_PER_PAGE));
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedCategory]);
+
+  const paginatedItems = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredItems.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [currentPage, filteredItems]);
+
+  const firstVisibleItem = filteredItems.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1;
+  const lastVisibleItem = Math.min(currentPage * ITEMS_PER_PAGE, filteredItems.length);
 
   const validatePrice = (precioUnitario?: number) => {
     if (typeof precioUnitario !== "number") {
@@ -532,8 +574,7 @@ export default function PreciosPage() {
     }
   };
 
-  const handleDeleteItem = async (item: CatalogItem) => {
-    if (!window.confirm(`Se eliminara \"${item.nombre}\". Deseas continuar?`)) return;
+  const performDeleteItem = async (item: CatalogItem) => {
     setSavingId(buildItemKey(item));
     try {
       if (item._id.startsWith("tmp-csv-")) {
@@ -552,6 +593,60 @@ export default function PreciosPage() {
       setSavingId(null);
     }
   };
+
+  const requestEditItem = (item: CatalogItem) => {
+    setPendingConfirmAction({ kind: "edit-item", item });
+  };
+
+  const requestDeleteItem = (item: CatalogItem) => {
+    setPendingConfirmAction({ kind: "delete-item", item });
+  };
+
+  const resolveConfirmAction = async () => {
+    if (!pendingConfirmAction) return;
+
+    const action = pendingConfirmAction;
+    setPendingConfirmAction(null);
+
+    if (action.kind === "delete-selected") {
+      await performDeleteSelected();
+      return;
+    }
+
+    if (action.kind === "delete-item") {
+      await performDeleteItem(action.item);
+      return;
+    }
+
+    setSelectionMode(false);
+    setSelectedItemKeys([]);
+    setEditingItemId(buildItemKey(action.item));
+    setOpenMenuId(null);
+  };
+
+  const confirmDialogOpen = pendingConfirmAction !== null;
+  const confirmDialogBusy =
+    pendingConfirmAction?.kind === "delete-selected" ? savingId === "bulk-delete" : Boolean(savingId);
+  const confirmDialogTitle =
+    pendingConfirmAction?.kind === "delete-selected"
+      ? "Confirmar eliminación masiva"
+      : pendingConfirmAction?.kind === "delete-item"
+        ? "Confirmar eliminación"
+        : "Confirmar edición";
+  const confirmDialogMessage =
+    pendingConfirmAction?.kind === "delete-selected"
+      ? `Vas a eliminar ${selectedItemKeys.length} materiales seleccionados. Esta acción no se puede deshacer.`
+      : pendingConfirmAction?.kind === "delete-item"
+        ? `Vas a eliminar "${pendingConfirmAction.item.nombre}". Esta acción no se puede deshacer.`
+        : pendingConfirmAction?.kind === "edit-item"
+          ? `Vas a abrir la edición de "${pendingConfirmAction.item.nombre}".`
+          : "";
+  const confirmDialogLabel =
+    pendingConfirmAction?.kind === "delete-selected"
+      ? "Eliminar seleccionados"
+      : pendingConfirmAction?.kind === "delete-item"
+        ? "Eliminar"
+        : "Abrir edición";
 
   const resetCreateForm = () => {
     setNewIdCotizador("");
@@ -649,6 +744,26 @@ export default function PreciosPage() {
           </button>
           <button
             type="button"
+            onClick={() => {
+              if (selectionMode) {
+                clearSelectionMode();
+                return;
+              }
+              setSelectionMode(true);
+              setSelectedItemKeys([]);
+              setOpenMenuId(null);
+              setEditingItemId(null);
+            }}
+            className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold shadow-sm transition ${
+              selectionMode
+                ? "border-[#8B1C1C] bg-[#8B1C1C] text-white"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            {selectionMode ? "Salir de selección" : "Seleccionar"}
+          </button>
+          <button
+            type="button"
             onClick={handleExportCsv}
             className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-100"
           >
@@ -713,26 +828,35 @@ export default function PreciosPage() {
 
       {error ? (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600">
+          {error}
+        </div>
+      ) : null}
 
-      {selectedItemKeys.length > 0 ? (
+      {selectionMode ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-primary/10 bg-primary/[0.04] px-4 py-3 shadow-sm">
-          <p className="text-sm font-semibold text-primary">{selectedItemKeys.length} materiales seleccionados</p>
+          <p className="text-sm font-semibold text-primary">
+            {selectedItemKeys.length > 0
+              ? `${selectedItemKeys.length} materiales seleccionados. Puedes seguir marcando más filas.`
+              : "Toca los círculos de las filas para ir acumulando seleccionados."}
+          </p>
           <div className="flex flex-wrap gap-2">
+            {selectedItemKeys.length > 0 ? (
+              <button
+                type="button"
+                onClick={requestDeleteSelected}
+                disabled={savingId === "bulk-delete"}
+                className="inline-flex items-center gap-2 rounded-2xl bg-accent px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+              >
+                <Trash2 className="h-4 w-4" />
+                Eliminar seleccionados ({selectedItemKeys.length})
+              </button>
+            ) : null}
             <button
               type="button"
-              onClick={() => void handleDeleteSelected()}
-              disabled={savingId === "bulk-delete"}
-              className="inline-flex items-center gap-2 rounded-2xl bg-accent px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
-            >
-              <Trash2 className="h-4 w-4" />
-              Eliminar seleccionados
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedItemKeys([])}
+              onClick={clearSelectionMode}
               className="rounded-2xl border border-primary/10 bg-white px-4 py-2 text-xs font-semibold text-secondary"
             >
-              Limpiar selección
+              Cancelar selección
             </button>
           </div>
         </div>
@@ -748,9 +872,6 @@ export default function PreciosPage() {
           >
             Cerrar edición
           </button>
-        </div>
-      ) : null}
-          {error}
         </div>
       ) : null}
 
@@ -775,23 +896,27 @@ export default function PreciosPage() {
           ) : filteredItems.length === 0 ? (
             <div className="px-6 py-10 text-center text-sm text-gray-500">No hay materiales que coincidan con los filtros.</div>
           ) : (
-            filteredItems.map((item) => (
+            paginatedItems.map((item) => (
               <div
                 key={buildItemKey(item)}
                 className={`grid grid-cols-[0.45fr_2.35fr_1fr_0.7fr_1fr_0.62fr] items-center gap-2 px-6 py-4 ${editingItemId === buildItemKey(item) ? "bg-primary/[0.03]" : ""}`}
               >
-                <button
-                  type="button"
-                  onClick={() => toggleSelected(item)}
-                  className={`mx-auto inline-flex h-6 w-6 items-center justify-center rounded-full border transition ${
-                    selectedItemKeys.includes(buildItemKey(item))
-                      ? "border-accent bg-accent text-white"
-                      : "border-primary/20 bg-white text-transparent hover:border-primary/40"
-                  }`}
-                  aria-label={selectedItemKeys.includes(buildItemKey(item)) ? "Quitar selección" : "Seleccionar material"}
-                >
-                  <Check className="h-3.5 w-3.5" />
-                </button>
+                <div className="flex justify-center">
+                  {selectionMode ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleSelected(item)}
+                      className={`inline-flex h-6 w-6 items-center justify-center rounded-full border transition ${
+                        selectedItemKeys.includes(buildItemKey(item))
+                          ? "border-accent bg-accent text-white"
+                          : "border-primary/20 bg-white text-transparent hover:border-primary/40"
+                      }`}
+                      aria-label={selectedItemKeys.includes(buildItemKey(item)) ? "Quitar selección" : "Seleccionar material"}
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null}
+                </div>
 
                 <div>
                   {editingItemId === buildItemKey(item) ? (
@@ -929,18 +1054,7 @@ export default function PreciosPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          toggleSelected(item);
-                          setOpenMenuId(null);
-                        }}
-                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-secondary hover:bg-primary/5 hover:text-primary"
-                      >
-                        <Check className="h-4 w-4" />
-                        {selectedItemKeys.includes(buildItemKey(item)) ? "Quitar selección" : "Seleccionar"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingItemId((current) => (current === buildItemKey(item) ? null : buildItemKey(item)));
+                          requestEditItem(item);
                           setOpenMenuId(null);
                         }}
                         className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-secondary hover:bg-primary/5 hover:text-primary"
@@ -951,7 +1065,7 @@ export default function PreciosPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          void handleDeleteItem(item);
+                          requestDeleteItem(item);
                           setOpenMenuId(null);
                         }}
                         disabled={savingId === buildItemKey(item)}
@@ -967,6 +1081,34 @@ export default function PreciosPage() {
             ))
           )}
         </div>
+        {filteredItems.length > 0 ? (
+          <div className="flex flex-col gap-3 border-t border-gray-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-gray-500">
+              Mostrando {firstVisibleItem}-{lastVisibleItem} de {filteredItems.length} materiales
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                disabled={currentPage === 1}
+                className="rounded-2xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Anterior
+              </button>
+              <span className="rounded-2xl bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700">
+                Página {currentPage} de {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                disabled={currentPage >= totalPages}
+                className="rounded-2xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Siguiente
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {isAddModalOpen ? (
@@ -1074,6 +1216,17 @@ export default function PreciosPage() {
           </div>
         </div>
       ) : null}
+
+      <ConfirmDialog
+        isOpen={confirmDialogOpen}
+        variant={pendingConfirmAction?.kind === "edit-item" ? "warning" : "danger"}
+        title={confirmDialogTitle}
+        message={confirmDialogMessage}
+        confirmLabel={confirmDialogLabel}
+        onConfirm={() => void resolveConfirmAction()}
+        onCancel={() => setPendingConfirmAction(null)}
+        busy={confirmDialogBusy}
+      />
     </div>
   );
 }
