@@ -1,3 +1,49 @@
+# Ecosistema Digital Küche
+
+El **Ecosistema Digital Küche** es una plataforma web híbrida diseñada y desarrollada para una empresa especializada en cocinas inteligentes. El proyecto resuelve la dependencia de procesos manuales y la falta de herramientas estandarizadas mediante la integración de una interfaz pública de alta conversión y un potente sistema administrativo interno.
+
+---
+
+## Características Clave del Sistema
+
+* **Landing Page de Alta Conversión:** Interfaz optimizada para la captación automatizada de clientes potenciales y presentación estética de productos de alta gama.
+* **Sistema Administrativo Interno:** Módulos diseñados para la digitalización operativa, incluyendo el registro digital de levantamientos técnicos, asignación de citas y tableros de control de producción.
+* **Motor de Cotización Automatizado:** Lógica de negocio y formularios dinámicos para la generación automática de presupuestos precisos.
+* **Módulo de Seguimiento en Tiempo Real:** Interfaz interactiva donde los clientes finales pueden monitorear el estado de fabricación de sus proyectos, consultar recibos de pago y revisar periodos de garantía.
+* **Estrategia Híbrida de Renderizado:** Uso de SSR/SSG en Next.js para optimizar de forma masiva el rendimiento de carga y el posicionamiento SEO.
+
+---
+
+## Stack Tecnológico
+
+* **Frontend:** Next.js (React), TypeScript, Tailwind CSS
+* **Backend:** Express.js, Node.js
+* **Base de Datos:** MongoDB
+* **Gestión de Proyecto:** Metodología Ágil (SCRUM)
+
+---
+
+## Equipo de Desarrollo y Créditos
+
+Este ecosistema fue planificado, diseñado y construido en colaboración por:
+
+* **Alejandro Monreal** — *Frontend Lead & Product Strategy*  
+  Desarrollo de la arquitectura de la interfaz con Next.js/TypeScript, diseño de la experiencia de usuario (UI/UX), integración del motor de cotizaciones dinámicas y lógica de consumo de APIs.
+  * [GitHub](https://github.com/Monreal-Alejandro) | [LinkedIn](https://www.linkedin.com/in/monreal-alejandro)
+
+* **Gael Valles** — *Full Stack Engineer / Backend Lead*  
+   Diseño y arquitectura del backend en Express, modelado de esquemas en MongoDB, lógica de autenticación y despliegue del servidor.
+  
+
+---
+
+##  Desarrollo Local
+
+1. **Clonar el repositorio:**
+```bash
+   git clone [https://github.com/Monreal-Alejandro/Kuche-plataforma.git](https://github.com/Monreal-Alejandro/Kuche-plataforma.git)
+
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
