@@ -5,15 +5,11 @@ import { Check, Download, MoreVertical, PencilLine, Plus, RefreshCw, Save, Searc
 
 import {
   UNIDADES_MEDIDA,
-  actualizarHerraje,
+  SECCIONES_MATERIALES,
   actualizarMaterial,
-  crearHerraje,
   crearMaterial,
-  eliminarHerraje,
   eliminarMaterial,
-  obtenerHerrajes,
   obtenerMateriales,
-  type Herraje,
   type Material,
   type UnidadMedida,
 } from "@/lib/axios/catalogosApi";
@@ -24,16 +20,16 @@ type CatalogItem = {
   _id: string;
   nombre: string;
   unidadMedida: UnidadMedida;
-  categoria: string;
+  seccion: string;
   idCotizador?: string;
   precioUnitario?: number;
-  kind: "material" | "herraje";
+  kind: "material";
 };
 
 type ImportedCatalogRow = {
   id: string;
   label: string;
-  category: string;
+  section: string;
   unit: UnidadMedida;
   unitPrice: number;
 };
@@ -93,44 +89,45 @@ const mapMaterial = (item: Material): CatalogItem => {
     _id: safeId(raw),
     nombre: (typeof raw.nombre === "string" ? raw.nombre : "") || "Sin nombre",
     unidadMedida: (raw.unidadMedida as UnidadMedida) ?? "m",
-    categoria: (typeof raw.categoria === "string" ? raw.categoria : undefined) ?? "Madera",
+    seccion: getCanonicalSection(typeof raw.seccion === "string" ? raw.seccion : "cubierta"),
     idCotizador: typeof raw.idCotizador === "string" ? raw.idCotizador : undefined,
     precioUnitario: safeNumber(raw.precioUnitario, raw.precio, raw.precioMetroLineal),
     kind: "material",
   };
 };
 
-const mapHerraje = (item: Herraje): CatalogItem => {
-  const raw = item as unknown as Record<string, unknown>;
-  return {
-    _id: safeId(raw),
-    nombre: (typeof raw.nombre === "string" ? raw.nombre : "") || "Sin nombre",
-    unidadMedida: (raw.unidadMedida as UnidadMedida) ?? "unidad",
-    categoria: (typeof raw.categoria === "string" ? raw.categoria : undefined) ?? "Herrajes",
-    idCotizador: typeof raw.idCotizador === "string" ? raw.idCotizador : undefined,
-    precioUnitario: safeNumber(raw.precioUnitario, raw.precio, raw.precioMetroLineal),
-    kind: "herraje",
-  };
-};
-
 const buildItemKey = (item: Pick<CatalogItem, "kind" | "_id">) => `${item.kind}:${item._id}`;
 
-const inferKindFromCategory = (categoria: string): "material" | "herraje" =>
-  categoria.trim().toLowerCase() === "herrajes" ? "herraje" : "material";
+const normalizeSectionText = (value: string) =>
+  value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "")
+    .trim();
 
-/** Todas las categorías disponibles en el cotizador y catálogo */
-const ALL_CATALOG_CATEGORIES = [
-  "CUBIERTA",
-  "ESTRUCTURA",
-  "VISTAS",
-  "ESPESOR",
-  "CAJONES Y PUERTAS",
-  "ACCESORIOS DE MÓDULO",
-  "EXTRAÍBLES Y PUERTAS ABATIBLES",
-  "INSUMOS DE PRODUCCIÓN",
-  "EXTRAS",
-  "Herrajes",
-];
+const SECTION_ALIAS_MAP: Record<string, string> = {
+  cubierta: "cubierta",
+  estructura: "estructura",
+  vistas: "vistas",
+  espesor: "espesor",
+  cajonespuertas: "cajones_puertas",
+  accesoriosmodulo: "accesorios_modulo",
+  extraiblespuertasabatibles: "extraibles_puertas_abatibles",
+  insumosproduccion: "insumos_produccion",
+  otros: "otros",
+  gastosfijos: "gastos_fijos",
+};
+
+const getCanonicalSection = (section: string) => {
+  const normalized = normalizeSectionText(section);
+  if (normalized in SECTION_ALIAS_MAP) return SECTION_ALIAS_MAP[normalized];
+
+  const directMatch = SECTION_OPTIONS.find((option) => option === section.trim().toLowerCase());
+  return directMatch ?? "otros";
+};
+
+const SECTION_OPTIONS = SECCIONES_MATERIALES;
 
 const currencyFormatter = new Intl.NumberFormat("es-MX", {
   style: "currency",
@@ -153,7 +150,7 @@ const ITEMS_PER_PAGE = 25;
 export default function PreciosPage() {
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("Todas");
+  
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -169,7 +166,7 @@ export default function PreciosPage() {
   const [newIdCotizador, setNewIdCotizador] = useState("");
   const [newNombre, setNewNombre] = useState("");
   const [newUnidad, setNewUnidad] = useState<UnidadMedida>("m");
-  const [newCategoria, setNewCategoria] = useState("");
+  const [newSeccion, setNewSeccion] = useState("");
   const [newPrecioUnitario, setNewPrecioUnitario] = useState("");
   const [addError, setAddError] = useState("");
 
@@ -191,18 +188,15 @@ export default function PreciosPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const [materialesResponse, herrajesResponse] = await Promise.all([obtenerMateriales(), obtenerHerrajes()]);
+      const materialesResponse = await obtenerMateriales();
       const nextItems: CatalogItem[] = [];
       if (materialesResponse.success && materialesResponse.data) {
         const materialesList = extractList<Material>(materialesResponse.data, ["materiales", "items", "data", "results"]);
+        console.log("[admin/precios] primer material bruto", materialesList[0] ?? null);
         nextItems.push(...materialesList.map(mapMaterial));
       }
-      if (herrajesResponse.success && herrajesResponse.data) {
-        const herrajesList = extractList<Herraje>(herrajesResponse.data, ["herrajes", "items", "data", "results"]);
-        nextItems.push(...herrajesList.map(mapHerraje));
-      }
-      if (!materialesResponse.success && !herrajesResponse.success) {
-        setError(materialesResponse.message || herrajesResponse.message || "No se pudo cargar el catálogo");
+      if (!materialesResponse.success) {
+        setError(materialesResponse.message || "No se pudo cargar el catálogo");
       }
 
       const dedupedItemsMap = new Map<string, CatalogItem>();
@@ -258,7 +252,7 @@ export default function PreciosPage() {
           continue;
         }
 
-        const response = item.kind === "material" ? await eliminarMaterial(item._id) : await eliminarHerraje(item._id);
+        const response = await eliminarMaterial(item._id);
         if (!response.success) {
           throw new Error(formatApiErrorMessage(response as any, `No se pudo eliminar ${item.nombre}`));
         }
@@ -285,23 +279,18 @@ export default function PreciosPage() {
     void loadCatalogs();
   }, []);
 
-  const categories = useMemo(() => {
-    const unique = new Set<string>(["Todas"]);
-    for (const item of items) unique.add(item.categoria);
-    return Array.from(unique);
-  }, [items]);
+  const categories = useMemo(() => ["Todas"], []);
 
   const filteredItems = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
     return items.filter((item) => {
-      const matchesCategory = selectedCategory === "Todas" || item.categoria === selectedCategory;
       const matchesQuery =
         !normalizedQuery ||
         item.nombre.toLowerCase().includes(normalizedQuery) ||
         (item.idCotizador || "").toLowerCase().includes(normalizedQuery);
-      return matchesCategory && matchesQuery;
+      return matchesQuery;
     });
-  }, [items, searchQuery, selectedCategory]);
+  }, [items, searchQuery]);
 
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / ITEMS_PER_PAGE));
 
@@ -311,7 +300,7 @@ export default function PreciosPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedCategory]);
+  }, [searchQuery]);
 
   const paginatedItems = useMemo(() => {
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -378,22 +367,21 @@ export default function PreciosPage() {
         return {
           ...existing,
           nombre: row.label,
-          categoria: row.category,
+          seccion: getCanonicalSection(row.section),
           unidadMedida: row.unit,
           precioUnitario: row.unitPrice,
           idCotizador: row.id,
         } satisfies CatalogItem;
       }
 
-      const kind = inferKindFromCategory(row.category);
       return {
         _id: `tmp-csv-${Math.random().toString(36).slice(2, 10)}`,
         nombre: row.label,
-        categoria: row.category,
+        seccion: getCanonicalSection(row.section),
         unidadMedida: row.unit,
         precioUnitario: row.unitPrice,
         idCotizador: row.id,
-        kind,
+        kind: "material",
       } satisfies CatalogItem;
     });
 
@@ -406,11 +394,11 @@ export default function PreciosPage() {
   };
 
   const handleExportCsv = () => {
-    const header = ["id", "label", "category", "unit", "unitPrice"];
+    const header = ["id", "label", "section", "unit", "unitPrice"];
     const rows = items.map((item) => [
       item.idCotizador || item._id,
       item.nombre,
-      item.categoria,
+      item.seccion,
       item.unidadMedida,
       (item.precioUnitario ?? 0).toString(),
     ]);
@@ -444,16 +432,33 @@ export default function PreciosPage() {
 
     const parsedRows = dataLines
       .map((line) => {
-        const [id, label, category, unit, unitPrice] = parseCsvLine(line);
-        const parsedPrice = parsePriceValue(unitPrice);
-        if (!id || !label || !category || !unit || Number.isNaN(parsedPrice)) return null;
-        return {
-          id: id.trim(),
-          label: label.trim(),
-          category: category.trim(),
-          unit: unit.trim() as UnidadMedida,
-          unitPrice: parsedPrice,
-        } satisfies ImportedCatalogRow;
+        const values = parseCsvLine(line);
+        // Accept both formats: [id,label,category,section,unit,unitPrice] or [id,label,section,unit,unitPrice]
+        if (values.length === 6) {
+          const [id, label, _category, section, unit, unitPrice] = values;
+          const parsedPrice = parsePriceValue(unitPrice);
+          if (!id || !label || !section || !unit || Number.isNaN(parsedPrice)) return null;
+          return {
+            id: id.trim(),
+            label: label.trim(),
+            section: section.trim(),
+            unit: unit.trim() as UnidadMedida,
+            unitPrice: parsedPrice,
+          } satisfies ImportedCatalogRow;
+        }
+        if (values.length === 5) {
+          const [id, label, section, unit, unitPrice] = values;
+          const parsedPrice = parsePriceValue(unitPrice);
+          if (!id || !label || !section || !unit || Number.isNaN(parsedPrice)) return null;
+          return {
+            id: id.trim(),
+            label: label.trim(),
+            section: section.trim(),
+            unit: unit.trim() as UnidadMedida,
+            unitPrice: parsedPrice,
+          } satisfies ImportedCatalogRow;
+        }
+        return null;
       })
       .filter((row): row is ImportedCatalogRow => row !== null);
 
@@ -480,16 +485,16 @@ export default function PreciosPage() {
       .map((row) => {
         const id = String(row.id ?? row.ID ?? row.Id ?? "").trim();
         const label = String(row.label ?? row.LABEL ?? row.Label ?? "").trim();
-        const category = String(row.category ?? row.CATEGORY ?? row.Category ?? "").trim();
+        const section = String(row.section ?? row.SECTION ?? row.Section ?? row.seccion ?? row.SECCION ?? row.Seccion ?? "").trim();
         const unit = String(row.unit ?? row.UNIT ?? row.Unit ?? "").trim();
         const parsedPrice = parsePriceValue(row.unitPrice ?? row.UNITPRICE ?? row.UnitPrice);
 
-        if (!id || !label || !category || !unit || Number.isNaN(parsedPrice)) return null;
+        if (!id || !label || !section || !unit || Number.isNaN(parsedPrice)) return null;
 
         return {
           id,
           label,
-          category,
+          section,
           unit: unit as UnidadMedida,
           unitPrice: parsedPrice,
         } satisfies ImportedCatalogRow;
@@ -512,7 +517,7 @@ export default function PreciosPage() {
   const didItemChange = (item: CatalogItem, initial: CatalogItem) =>
     item.nombre !== initial.nombre ||
     (item.idCotizador || "") !== (initial.idCotizador || "") ||
-    item.categoria !== initial.categoria ||
+    item.seccion !== initial.seccion ||
     item.unidadMedida !== initial.unidadMedida ||
     (item.precioUnitario ?? 0) !== (initial.precioUnitario ?? 0);
 
@@ -539,28 +544,29 @@ export default function PreciosPage() {
           throw new Error(`Error en ${item.nombre}: ${priceError}`);
         }
 
-        const payload = {
+        const payload: any = {
           nombre: item.nombre.trim(),
           idCotizador: item.idCotizador?.trim() || undefined,
           precioUnitario: item.precioUnitario,
           unidadMedida: item.unidadMedida,
-          categoria: item.categoria as any,
+          seccion: item.seccion,
           disponible: true,
         };
+        console.log("[admin/precios] payload guardado", {
+          id: item._id,
+          current: { seccion: item.seccion },
+          payload,
+        });
 
         if (item._id.startsWith("tmp-csv-")) {
-          const createResponse =
-            item.kind === "material" ? await crearMaterial(payload) : await crearHerraje(payload);
+          const createResponse = await crearMaterial(payload);
           if (!createResponse.success) {
             throw new Error(formatApiErrorMessage(createResponse as any, `No se pudo crear ${item.nombre}`));
           }
           continue;
         }
 
-        const updateResponse =
-          item.kind === "material"
-            ? await actualizarMaterial(item._id, payload)
-            : await actualizarHerraje(item._id, payload);
+        const updateResponse = await actualizarMaterial(item._id, payload);
         if (!updateResponse.success) {
           throw new Error(formatApiErrorMessage(updateResponse as any, `No se pudo actualizar ${item.nombre}`));
         }
@@ -582,7 +588,7 @@ export default function PreciosPage() {
         setHasPendingChanges(true);
         return;
       }
-      const response = item.kind === "material" ? await eliminarMaterial(item._id) : await eliminarHerraje(item._id);
+      const response = await eliminarMaterial(item._id);
       if (!response.success) {
         throw new Error(formatApiErrorMessage(response as any, "No se pudo eliminar el elemento"));
       }
@@ -652,7 +658,7 @@ export default function PreciosPage() {
     setNewIdCotizador("");
     setNewNombre("");
     setNewUnidad("m");
-    setNewCategoria("");
+    setNewSeccion("");
     setNewPrecioUnitario("");
     setAddError("");
   };
@@ -660,11 +666,10 @@ export default function PreciosPage() {
   const handleCreateItem = async () => {
     const idCotizador = newIdCotizador.trim();
     const nombre = newNombre.trim();
-    const categoria = newCategoria.trim();
+    const seccion = newSeccion.trim();
     const unidadMedida = newUnidad;
     const precioUnitario = toNumberOrUndefined(newPrecioUnitario);
-
-    if (!idCotizador || !nombre || !categoria || !unidadMedida) {
+    if (!idCotizador || !nombre || !seccion || !unidadMedida) {
       setAddError("Completa todos los campos del formulario.");
       return;
     }
@@ -677,18 +682,17 @@ export default function PreciosPage() {
 
     setSavingId("create");
     try {
-      const kind = inferKindFromCategory(categoria);
-      const payload = {
+      const payload: any = {
         nombre,
         idCotizador,
         precioUnitario,
         unidadMedida,
-        categoria: categoria as any,
+        seccion,
         disponible: true,
       };
+      console.log("[admin/precios] payload nuevo", { current: { seccion }, payload });
 
-      const response =
-        kind === "material" ? await crearMaterial(payload) : await crearHerraje(payload);
+      const response = await crearMaterial(payload);
 
       if (!response.success) {
         throw new Error(formatApiErrorMessage(response as any, "No se pudo crear el elemento"));
@@ -805,25 +809,7 @@ export default function PreciosPage() {
             />
           </div>
         </div>
-        <div className="mt-4 flex flex-wrap gap-2 overflow-x-auto pb-1">
-          {categories.map((category) => {
-            const isActive = selectedCategory === category;
-            return (
-              <button
-                key={category}
-                type="button"
-                onClick={() => setSelectedCategory(category)}
-                className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition ${
-                  isActive
-                    ? "bg-[#8B1C1C] text-white shadow-sm"
-                    : "border border-gray-200 bg-white text-gray-600 hover:border-[#8B1C1C]/20 hover:bg-[#8B1C1C]/5 hover:text-[#8B1C1C]"
-                }`}
-              >
-                {category}
-              </button>
-            );
-          })}
-        </div>
+        {/* category filters removed for materials */}
       </div>
 
       {error ? (
@@ -882,12 +868,12 @@ export default function PreciosPage() {
       ) : null}
 
       <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white p-1 shadow-sm">
-        <div className="grid grid-cols-[0.45fr_2.35fr_1fr_0.7fr_1fr_0.62fr] gap-2 px-6 py-4 text-xs font-semibold uppercase tracking-[0.2em] text-gray-400">
+        <div className="grid grid-cols-[0.45fr_1.6fr_1fr_0.9fr_1fr_0.62fr] gap-2 px-6 py-4 text-xs font-semibold uppercase tracking-[0.2em] text-gray-400">
           <span />
           <span>Material</span>
-          <span>Categoría</span>
-          <span>Unidad</span>
-          <span className="text-right">Precio unitario</span>
+          <span className="text-center">Sección</span>
+          <span className="text-center">Unidad</span>
+          <span className="text-center">Precio unitario</span>
           <span className="text-center">Acciones</span>
         </div>
         <div className="divide-y divide-gray-100">
@@ -899,7 +885,7 @@ export default function PreciosPage() {
             paginatedItems.map((item) => (
               <div
                 key={buildItemKey(item)}
-                className={`grid grid-cols-[0.45fr_2.35fr_1fr_0.7fr_1fr_0.62fr] items-center gap-2 px-6 py-4 ${editingItemId === buildItemKey(item) ? "bg-primary/[0.03]" : ""}`}
+                className={`grid grid-cols-[0.45fr_1.6fr_1fr_0.9fr_1fr_0.62fr] items-center gap-2 px-6 py-4 ${editingItemId === buildItemKey(item) ? "bg-primary/[0.03]" : ""}`}
               >
                 <div className="flex justify-center">
                   {selectionMode ? (
@@ -938,32 +924,36 @@ export default function PreciosPage() {
                   <p className="text-xs text-gray-400">{item.idCotizador || item._id}</p>
                 </div>
 
-                <div>
+                {/* categoría removed for materials */}
+
+                <div className="flex items-center justify-center">
                   {editingItemId === buildItemKey(item) ? (
                     <select
-                      value={item.categoria}
+                      value={item.seccion}
                       onChange={(event) => {
                         setItems((current) =>
                           current.map((row) =>
-                            buildItemKey(row) === buildItemKey(item) ? { ...row, categoria: event.target.value } : row,
+                            buildItemKey(row) === buildItemKey(item) ? { ...row, seccion: event.target.value } : row,
                           ),
                         );
                         setHasPendingChanges(true);
                       }}
                       className="w-full rounded-xl border border-primary/10 bg-white px-3 py-2 text-sm text-primary outline-none"
                     >
-                      {ALL_CATALOG_CATEGORIES.map((category) => (
-                        <option key={category} value={category}>
-                          {category}
+                      {SECTION_OPTIONS.map((section) => (
+                        <option key={section} value={section}>
+                          {section}
                         </option>
                       ))}
                     </select>
                   ) : (
-                    <span className="w-fit rounded-full bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">{item.categoria}</span>
+                    <span className="w-fit rounded-full bg-secondary/10 px-2 py-1 text-xs font-semibold text-secondary">
+                      {item.seccion}
+                    </span>
                   )}
                 </div>
 
-                <div>
+                <div className="flex items-center justify-center">
                   {editingItemId === buildItemKey(item) ? (
                     <select
                       value={item.unidadMedida}
@@ -990,7 +980,7 @@ export default function PreciosPage() {
                   )}
                 </div>
 
-                <div className="text-right">
+                <div className="text-center">
                   {editingItemId === buildItemKey(item) ? (
                     <input
                       type="number"
@@ -1010,7 +1000,7 @@ export default function PreciosPage() {
                       className="w-28 rounded-xl border border-primary/10 bg-white px-3 py-2 text-right text-sm font-semibold text-primary outline-none"
                     />
                   ) : null}
-                  <p className={`text-xs ${editingItemId === buildItemKey(item) ? "mt-1 text-secondary" : "font-semibold text-primary"}`}>
+                  <p className={`text-xs ${editingItemId === buildItemKey(item) ? "mt-1 text-secondary text-center" : "font-semibold text-primary text-center"}`}>
                     {currencyFormatter.format(item.precioUnitario ?? 0)}
                   </p>
                 </div>
@@ -1138,17 +1128,19 @@ export default function PreciosPage() {
                   className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none"
                 />
               </label>
+              {/* categoría removed from create modal */}
+
               <label className="text-xs font-semibold text-gray-500">
-                Categoría
+                Sección
                 <select
-                  value={newCategoria}
-                  onChange={(event) => setNewCategoria(event.target.value)}
+                  value={newSeccion}
+                  onChange={(event) => setNewSeccion(event.target.value)}
                   className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none"
                 >
-                  <option value="">Selecciona categoría</option>
-                  {ALL_CATALOG_CATEGORIES.map((category) => (
-                    <option key={category} value={category}>
-                      {category}
+                  <option value="">Selecciona sección</option>
+                  {SECTION_OPTIONS.map((section) => (
+                    <option key={section} value={section}>
+                      {section}
                     </option>
                   ))}
                 </select>
@@ -1212,6 +1204,18 @@ export default function PreciosPage() {
               >
                 Guardar material
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {savingId === "bulk-delete" ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4 rounded-3xl border border-white/70 bg-white/95 px-8 py-7 shadow-2xl">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full border-4 border-slate-200 border-t-[#8B1C1C] animate-spin" />
+            <div className="text-center">
+              <p className="text-sm font-semibold text-slate-900">Eliminando seleccionados</p>
+              <p className="mt-1 text-xs text-slate-500">Espera un momento mientras se completan los cambios.</p>
             </div>
           </div>
         </div>

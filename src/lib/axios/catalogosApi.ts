@@ -5,7 +5,7 @@
 
 import axiosInstance, { ApiResponse } from './axiosConfig';
 
-export const UNIDADES_MEDIDA = ['m²', 'm³', 'm', 'unidad', 'caja', 'paquete'] as const;
+export const UNIDADES_MEDIDA = ['m2', 'm3', 'm', 'unidad', 'caja', 'paquete', 'placa', 'hoja', 'pies'] as const;
 export type UnidadMedida = (typeof UNIDADES_MEDIDA)[number];
 
 export const CATEGORIAS_CATALOGO = [
@@ -27,11 +27,12 @@ export const SECCIONES_MATERIALES = [
   'cubierta',
   'estructura',
   'vistas',
+  'espesor',
   'cajones_puertas',
   'accesorios_modulo',
   'extraibles_puertas_abatibles',
   'insumos_produccion',
-  'extras',
+  'otros',
   'gastos_fijos',
 ] as const;
 export type SeccionMaterial = (typeof SECCIONES_MATERIALES)[number];
@@ -46,7 +47,6 @@ export interface Material {
   idCotizador?: string;
   descripcion?: string;
   unidadMedida?: UnidadMedida;
-  categoria?: CategoriaCatalogo;
   seccion?: SeccionMaterial;
   proveedor?: string;
   disponible?: boolean;
@@ -55,7 +55,6 @@ export interface Material {
 export interface MaterialPayload {
   nombre: string;
   unidadMedida: UnidadMedida;
-  categoria: CategoriaCatalogo;
   precioUnitario?: number;
   precioPorMetro?: number;
   precioMetroLineal?: number;
@@ -100,7 +99,6 @@ type CatalogQueryValue = string | number | boolean | null | undefined;
 export interface MaterialFilters {
   seccion?: SeccionMaterial;
   secciones?: SeccionMaterial[];
-  categoria?: CategoriaCatalogo | string;
   disponible?: boolean;
   proveedor?: string;
   q?: string;
@@ -182,7 +180,6 @@ const requestWithFallback = async <T>(
 const buildMaterialQuery = (filters: MaterialFilters = {}): Record<string, CatalogQueryValue> => ({
   seccion: filters.seccion,
   secciones: Array.isArray(filters.secciones) ? filters.secciones.join(',') : undefined,
-  categoria: filters.categoria,
   disponible: filters.disponible,
   proveedor: filters.proveedor,
   q: filters.q,

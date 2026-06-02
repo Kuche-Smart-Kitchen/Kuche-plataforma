@@ -1130,17 +1130,19 @@ export default function CotizadorPage() {
       const kind = inferItemKindFromDisplayCategory(newItemCategory);
       const section = DISPLAY_TO_SECTION[newItemCategory];
       const categoriaValue: "Herrajes" | "Otro" = kind === "herraje" ? "Herrajes" : "Otro";
-      const payload = {
+      const basePayload: any = {
         nombre: trimmedName,
         idCotizador: toCatalogId(trimmedName),
         precioUnitario: parsedPrice,
         unidadMedida: normalizeUnitToApi(newItemUnitType),
-        categoria: categoriaValue,
         seccion: section as any,
         disponible: true,
       };
 
-      const response = kind === "herraje" ? await crearHerraje(payload) : await crearMaterial(payload);
+      const response =
+        kind === "herraje"
+          ? await crearHerraje({ ...basePayload, categoria: categoriaValue })
+          : await crearMaterial(basePayload);
       if (!response.success) {
         setCatalogError(response.message || "No se pudo crear el material en backend.");
         return;
@@ -1224,20 +1226,19 @@ export default function CotizadorPage() {
       const kind = inferItemKindFromDisplayCategory(newItemCategory);
       const section = DISPLAY_TO_SECTION[newItemCategory];
       const categoriaValue: "Herrajes" | "Otro" = kind === "herraje" ? "Herrajes" : "Otro";
-      const payload = {
+      const basePayload: any = {
         nombre: trimmedName,
         idCotizador: toCatalogId(trimmedName),
         precioUnitario: parsedPrice,
         unidadMedida: normalizeUnitToApi(newItemUnitType),
-        categoria: categoriaValue,
         seccion: section as any,
         disponible: true,
       };
 
       const response =
         selected.sourceKind === "herraje"
-          ? await actualizarHerraje(selected.backendId, payload)
-          : await actualizarMaterial(selected.backendId, payload);
+          ? await actualizarHerraje(selected.backendId, { ...basePayload, categoria: categoriaValue })
+          : await actualizarMaterial(selected.backendId, basePayload);
       if (!response.success) {
         setCatalogError(response.message || "No se pudo actualizar el material en backend.");
         return;
