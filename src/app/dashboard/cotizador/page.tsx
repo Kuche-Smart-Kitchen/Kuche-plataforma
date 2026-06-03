@@ -11,6 +11,7 @@ import * as XLSX from "xlsx";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useAdminWorkflow } from "@/contexts/AdminWorkflowContext";
+import { useCatalogEquipamiento } from "@/contexts/CatalogEquipamientoContext";
 import { getReturnRouteForLoggedUser } from "@/lib/role-routes";
 import { agregarArchivos } from "@/lib/axios/tareasApi";
 import {
@@ -47,12 +48,33 @@ import {
 import { CatalogProjectTypeField } from "@/components/CatalogProjectTypeField";
 
 const projectTypes = ["Cocina", "Clóset", "TV Unit"];
+const ELECTRODOMESTICOS_CATEGORY = "ELECTRODOMESTICOS";
+const EXTRAS_EQUIPAMIENTO_CATEGORY = "EXTRAS EQUIPAMIENTO";
 
 const downloadDataUrlFile = (dataUrl: string, filename: string) => {
   const link = document.createElement("a");
   link.href = dataUrl;
   link.download = filename;
   link.click();
+};
+
+const toFileSlug = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+const buildPdfClientNameSlug = (clientName: string, fallbackProjectName?: string) => {
+  const fromClient = toFileSlug(clientName || "");
+  if (fromClient) return fromClient;
+
+  const fromProject = toFileSlug(fallbackProjectName || "");
+  if (fromProject) return fromProject;
+
+  return "cliente";
 };
 
 const alreadyRelatedToTask = (
@@ -340,8 +362,8 @@ const inferItemKindFromDisplayCategory = (displayCategory: string): "material" |
 
 const normalizeUnitToApi = (unitType: string): UnidadMedida => {
   const raw = unitType.trim().toLowerCase();
-  if (raw === "m2" || raw === "m²") return "m²";
-  if (raw === "m3" || raw === "m³") return "m³";
+  if (raw === "m2" || raw === "m2") return "m2";
+  if (raw === "m3" || raw === "m3") return "m3";
   if (
     raw === "m" ||
     raw === "metro" ||
@@ -418,6 +440,7 @@ function FormalCotizacionBanner({ projectName }: { projectName: string }) {
 export default function CotizadorPage() {
   const router = useRouter();
   const { tasks, refresh, updateTask } = useAdminWorkflow();
+  const { electrodomesticos, extras } = useCatalogEquipamiento();
   const [clients, setClients] = useState([
     { name: "Mariana Fuentes", phone: "", email: "" },
     { name: "Arquitectura F4 Studio", phone: "", email: "" },
@@ -505,6 +528,37 @@ export default function CotizadorPage() {
     [activeCotizacionFormalTaskId, tasks],
   );
 
+  const equipamientoCatalog = useMemo<CatalogoCategoria[]>(() => {
+    const electroItems: CatalogoItem[] = electrodomesticos.map((item) => ({
+      id: `equip-electro-${item._id}`,
+      label: item.nombre,
+      unitPrice: Math.max(0, Number(item.precio) || 0),
+      unitType: "pieza",
+    }));
+
+    const extraItems: CatalogoItem[] = extras.map((item) => ({
+      id: `equip-extra-${item._id}`,
+      label: item.nombre,
+      unitPrice: Math.max(0, Number(item.precio) || 0),
+      unitType: "pieza",
+    }));
+
+    return [
+      { category: ELECTRODOMESTICOS_CATEGORY, items: electroItems },
+      { category: EXTRAS_EQUIPAMIENTO_CATEGORY, items: extraItems },
+    ].filter((category) => category.items.length > 0);
+  }, [electrodomesticos, extras]);
+
+  const displayCatalog = useMemo(
+    () => [...catalogoKuche, ...equipamientoCatalog],
+    [catalogoKuche, equipamientoCatalog],
+  );
+
+  const baseCatalogCategories = useMemo(
+    () => new Set(catalogoKuche.map((category) => category.category)),
+    [catalogoKuche],
+  );
+
   useEffect(() => {
     void refresh();
     setActiveCitaTaskId(runtimeStore.getItem(activeCitaTaskStorageKey));
@@ -516,6 +570,22 @@ export default function CotizadorPage() {
       setClient(activeCotizacionFormalTask.project);
     }
   }, [activeCotizacionFormalTask?.project]);
+
+  useEffect(() => {
+    if (!activeCotizacionFormalTask) return;
+    if (activeCotizacionFormalTask.stage !== "cotizacion") return;
+
+    const hasSavedFormal =
+      getCotizacionesFormalesList(activeCotizacionFormalTask).length > 0 ||
+      Boolean(activeCotizacionFormalTask.cotizacionFormalData);
+
+    if (!hasSavedFormal && activeCotizacionFormalTask.citaFinished) {
+      void updateTask(activeCotizacionFormalTask, {
+        citaFinished: false,
+        status: "pendiente",
+      });
+    }
+  }, [activeCotizacionFormalTask, updateTask]);
 
   useEffect(() => {
     if (!activeCotizacionFormalTask) return;
@@ -600,6 +670,7 @@ export default function CotizadorPage() {
         .forEach(addByLabel);
     }
 
+    const allCatalogItems = displayCatalog.flatMap((category) => category.items);
     const preloadIdGroups = [
       rawLevantamiento?.applianceDocumentIds,
       rawLevantamiento?.lightingSelectedIds,
@@ -609,7 +680,7 @@ export default function CotizadorPage() {
       if (!Array.isArray(group)) continue;
       for (const id of group) {
         if (typeof id !== "string") continue;
-        const match = catalogoKuche.flatMap((category) => category.items).find((item) => item.id === id);
+        const match = allCatalogItems.find((item) => item.id === id);
         if (match) qtySeed[match.id] = Math.max(1, qtySeed[match.id] ?? 0);
       }
     }
@@ -619,7 +690,7 @@ export default function CotizadorPage() {
     }
 
     const seededSubtotal = Object.entries(qtySeed).reduce((acc, [id, qty]) => {
-      const item = catalogoKuche.flatMap((category) => category.items).find((candidate) => candidate.id === id);
+      const item = allCatalogItems.find((candidate) => candidate.id === id);
       if (!item) return acc;
       return acc + item.unitPrice * qty;
     }, 0);
@@ -631,6 +702,7 @@ export default function CotizadorPage() {
   }, [
     activeCotizacionFormalTask,
     catalogoKuche,
+    displayCatalog,
     client,
     location,
     projectType,
@@ -779,14 +851,14 @@ export default function CotizadorPage() {
   const materialSubtotal = metrosValue * pricePerMeter * thicknessFactor;
 
   const baseCost = useMemo(() => {
-    return catalogoKuche.reduce((acc, category) => {
+    return displayCatalog.reduce((acc, category) => {
       const categoryTotal = category.items.reduce((itemsAcc, item) => {
         const qty = Math.max(quantities[item.id] ?? 0, 0);
         return itemsAcc + item.unitPrice * qty;
       }, 0);
       return acc + categoryTotal;
     }, 0);
-  }, [catalogoKuche, quantities]);
+  }, [displayCatalog, quantities]);
 
   const totales = useMemo(() => {
     // Referencia técnica por metro (materialSubtotal) no se cobra en el total comercial.
@@ -814,7 +886,7 @@ export default function CotizadorPage() {
 
   const collectWorkshopPdfBuildInput = useCallback((): WorkshopPdfBuildInput => {
     const lines: WorkshopPdfBuildInput["lines"] = [];
-    for (const category of catalogoKuche) {
+    for (const category of displayCatalog) {
       for (const item of category.items) {
         const qty = quantities[item.id] ?? 0;
         if (!qty) continue;
@@ -839,7 +911,7 @@ export default function CotizadorPage() {
       lines,
     };
   }, [
-    catalogoKuche,
+    displayCatalog,
     quantities,
     client,
     projectType,
@@ -870,7 +942,7 @@ export default function CotizadorPage() {
 
   const selectedCatalogLines = useMemo(
     () =>
-      catalogoKuche.flatMap((category) =>
+      displayCatalog.flatMap((category) =>
         category.items
           .map((item) => {
             const qty = Math.max(quantities[item.id] ?? 0, 0);
@@ -888,7 +960,7 @@ export default function CotizadorPage() {
               line !== null,
           ),
       ),
-    [catalogoKuche, quantities],
+    [displayCatalog, quantities],
   );
 
   const selectedItemsByCategory = useMemo(() => {
@@ -907,7 +979,7 @@ export default function CotizadorPage() {
   }, [selectedCatalogLines]);
 
   const activeCategory =
-    catalogoKuche.find((category) => category.category === activeTab) ?? catalogoKuche[0];
+    displayCatalog.find((category) => category.category === activeTab) ?? displayCatalog[0];
 
   useEffect(() => {
     const estructura = catalogoKuche.find((c) => c.category === "ESTRUCTURA");
@@ -966,12 +1038,12 @@ export default function CotizadorPage() {
         category: activeCategory?.category ?? "",
       }));
     }
-    return catalogoKuche.flatMap((category) =>
+    return displayCatalog.flatMap((category) =>
       category.items
         .filter((item) => normalizeText(item.label).includes(normalizedSearch))
         .map((item) => ({ item, category: category.category })),
     );
-  }, [activeCategory, catalogoKuche, normalizedSearch]);
+  }, [activeCategory, displayCatalog, normalizedSearch]);
 
   const resetCatalogToDefault = () => {
     setCatalogoKuche(emptyCatalogoTemplate.map((category) => ({ ...category, items: [] })));
@@ -1489,8 +1561,9 @@ export default function CotizadorPage() {
       activeCotizacionFormalTask.sourceId?.trim() ||
       activeCotizacionFormalTask.id?.trim() ||
       activeCotizacionFormalTaskId;
-    const formalFilename = `cotizacion-formal-${relatedTaskId}.pdf`;
-    const workshopFilename = `hoja-taller-${relatedTaskId}.pdf`;
+    const clientNameSlug = buildPdfClientNameSlug(client, activeCotizacionFormalTask.project);
+    const formalFilename = `cotizacion-formal-${clientNameSlug}.pdf`;
+    const workshopFilename = `hoja-taller-${clientNameSlug}.pdf`;
     let clientId: string;
     try {
       clientId = getRequiredClientIdForFormalUpload(
@@ -1592,8 +1665,9 @@ export default function CotizadorPage() {
       activeCotizacionFormalTask.sourceId?.trim() ||
       activeCotizacionFormalTask.id?.trim() ||
       activeCotizacionFormalTaskId;
-    const formalFilename = `cotizacion-formal-${relatedTaskId}.pdf`;
-    const workshopFilename = `hoja-taller-${relatedTaskId}.pdf`;
+    const clientNameSlug = buildPdfClientNameSlug(client, activeCotizacionFormalTask.project);
+    const formalFilename = `cotizacion-formal-${clientNameSlug}.pdf`;
+    const workshopFilename = `hoja-taller-${clientNameSlug}.pdf`;
     let clientId: string;
     try {
       clientId = getRequiredClientIdForFormalUpload(
@@ -2271,7 +2345,7 @@ export default function CotizadorPage() {
         <div>
           <h2 className="text-2xl font-semibold">Sección B · Refinamiento y especificaciones</h2>
           <p className="mt-2 text-sm text-secondary">
-            Ajusta materiales, herrajes y extras. El precio final se actualiza en tiempo real.
+            Ajusta materiales, herrajes, electrodomesticos y extras. El precio final se actualiza en tiempo real.
           </p>
         </div>
 
@@ -2389,12 +2463,14 @@ export default function CotizadorPage() {
         {!isExcelViewActive && (
           <>
         <div className="flex flex-wrap gap-3">
-          {catalogoKuche.map((category) => (
+          {displayCatalog.map((category) => (
             <button
               key={category.category}
               onClick={() => {
                 setActiveTab(category.category);
-                setNewItemCategory(category.category);
+                if (baseCatalogCategories.has(category.category)) {
+                  setNewItemCategory(category.category);
+                }
               }}
               className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
                 activeTab === category.category
@@ -2438,6 +2514,7 @@ export default function CotizadorPage() {
             {visibleItems.map(({ item, category }) => {
               const qty = quantities[item.id] ?? 0;
               const isHighlighted = highlightedMaterialIds.includes(item.id);
+              const canManageAsMaterial = baseCatalogCategories.has(category);
               return (
                 <div
                   key={item.id}
@@ -2470,45 +2547,47 @@ export default function CotizadorPage() {
                       >
                         <Heart className={`h-3.5 w-3.5 ${isHighlighted ? "fill-current" : ""}`} />
                       </button>
-                      <div className="relative" ref={openMenuId === item.id ? openMenuRef : null}>
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setOpenMenuId((prev) => (prev === item.id ? null : item.id));
-                        }}
-                        className="flex h-7 w-7 items-center justify-center rounded-full border border-primary/10 text-sm font-semibold text-secondary transition hover:border-primary/30"
-                      >
-                        +
-                      </button>
-                      {openMenuId === item.id ? (
-                        <div
-                          className="absolute right-0 top-full z-10 mt-2 w-32 rounded-2xl border border-primary/10 bg-white p-2 shadow-lg"
-                          onClick={(event) => event.stopPropagation()}
-                        >
+                      {canManageAsMaterial ? (
+                        <div className="relative" ref={openMenuId === item.id ? openMenuRef : null}>
                           <button
                             type="button"
-                            onClick={() => {
-                              handleEditMaterial(item.id);
-                              setOpenMenuId(null);
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setOpenMenuId((prev) => (prev === item.id ? null : item.id));
                             }}
-                            className="w-full rounded-xl px-3 py-2 text-left text-[11px] font-semibold text-secondary transition hover:bg-primary/5"
+                            className="flex h-7 w-7 items-center justify-center rounded-full border border-primary/10 text-sm font-semibold text-secondary transition hover:border-primary/30"
                           >
-                            Editar
+                            +
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleDeleteMaterial(item.id);
-                              setOpenMenuId(null);
-                            }}
-                            className="mt-1 w-full rounded-xl px-3 py-2 text-left text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50"
-                          >
-                            Eliminar
-                          </button>
+                          {openMenuId === item.id ? (
+                            <div
+                              className="absolute right-0 top-full z-10 mt-2 w-32 rounded-2xl border border-primary/10 bg-white p-2 shadow-lg"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleEditMaterial(item.id);
+                                  setOpenMenuId(null);
+                                }}
+                                className="w-full rounded-xl px-3 py-2 text-left text-[11px] font-semibold text-secondary transition hover:bg-primary/5"
+                              >
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleDeleteMaterial(item.id);
+                                  setOpenMenuId(null);
+                                }}
+                                className="mt-1 w-full rounded-xl px-3 py-2 text-left text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50"
+                              >
+                                Eliminar
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
-                    </div>
                     </div>
                   </div>
                   <div className="flex items-center justify-center gap-1.5">
@@ -2547,20 +2626,22 @@ export default function CotizadorPage() {
                 No hay materiales que coincidan con la búsqueda.
               </div>
             ) : null}
-            <button
-              type="button"
-              onClick={() => {
-                setNewItemCategory(activeCategory?.category ?? catalogoKuche[0]?.category ?? "");
-                setNewItemName("");
-                setNewItemPrice("");
-                setNewItemUnitType("pieza");
-                setEditingItemId(null);
-                setIsAddModalOpen(true);
-              }}
-              className="flex w-full items-center justify-center rounded-2xl border-2 border-dashed border-primary/20 bg-primary/5 px-4 py-4 text-xs font-semibold uppercase tracking-[0.2em] text-secondary transition hover:border-primary/40 hover:bg-primary/10"
-            >
-              + Agregar material
-            </button>
+            {activeCategory && baseCatalogCategories.has(activeCategory.category) ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setNewItemCategory(activeCategory?.category ?? catalogoKuche[0]?.category ?? "");
+                  setNewItemName("");
+                  setNewItemPrice("");
+                  setNewItemUnitType("pieza");
+                  setEditingItemId(null);
+                  setIsAddModalOpen(true);
+                }}
+                className="flex w-full items-center justify-center rounded-2xl border-2 border-dashed border-primary/20 bg-primary/5 px-4 py-4 text-xs font-semibold uppercase tracking-[0.2em] text-secondary transition hover:border-primary/40 hover:bg-primary/10"
+              >
+                + Agregar material
+              </button>
+            ) : null}
           </div>
           {activeCategory?.category === "GASTOS FIJOS" ? (
             <div className="mt-6 space-y-4 border-t border-gray-200 pt-6">

@@ -12,10 +12,12 @@ import { subirArchivoConMetadata } from "@/lib/axios/uploadsApi";
 import { agregarArchivos } from "@/lib/axios/tareasApi";
 import {
   activeCitaTaskStorageKey,
+  activeCitaTaskSnapshotStorageKey,
   activeCotizacionFormalTaskStorageKey,
   citaReturnUrlStorageKey,
   finishedCitaTaskStorageKey,
   getCotizacionesFormalesList,
+  getPreliminarList,
   kanbanColumns,
   type TaskStage,
   type TaskPriority,
@@ -26,6 +28,7 @@ import { crearUsuario, listarEmpleados, listarUsuarios, type Usuario } from "@/l
 import { isTaskInProgress, type AdminWorkflowTask } from "@/lib/admin-workflow";
 import { VisitScheduleModal } from "@/components/admin/VisitScheduleModal";
 import { FinalDesignUploadModal } from "@/components/admin/FinalDesignUploadModal";
+import { ConfirmClientAmountModal } from "@/components/admin/ConfirmClientAmountModal";
 import TaskDetailModal from "@/components/admin/TaskDetailModal";
 
 const stageStyles: Record<TaskStage, { border: string; badge: string }> = {
@@ -147,23 +150,26 @@ const buildTrackingCodeFromTask = (task: AdminWorkflowTask) => {
   const citaRecord = rawTask.cita && typeof rawTask.cita === "object"
     ? (rawTask.cita as Record<string, unknown>)
     : null;
+  const clienteRecord = citaRecord?.cliente && typeof citaRecord.cliente === "object"
+    ? (citaRecord.cliente as Record<string, unknown>)
+    : null;
 
-  const clientIdFromCita = citaRecord?.cliente && typeof citaRecord.cliente === "object"
-    ? ((citaRecord.cliente as Record<string, unknown>)._id as string | undefined)
-    : undefined;
+  const isMongoObjectId = (value: string) => /^[a-f0-9]{24}$/i.test(value.trim());
+  const normalizeClientId = (value: unknown) => {
+    if (typeof value !== "string") return undefined;
+    const trimmed = value.trim();
+    if (!trimmed || isMongoObjectId(trimmed)) return undefined;
+    return trimmed;
+  };
 
   const candidates = [
-    task.clientId,
-    clientIdFromCita,
-    typeof citaRecord?.clienteId === "string" ? citaRecord.clienteId : undefined,
-    task.sourceCitaId,
-    task.sourceId,
-    task.id,
+    normalizeClientId(rawTask.clienteId),
+    normalizeClientId(citaRecord?.clienteId),
+    normalizeClientId(clienteRecord?.clienteId),
+    normalizeClientId(task.clientId),
   ];
 
-  const base = candidates.find((value): value is string => Boolean(value && value.trim().length > 0)) ?? task.id;
-  const cleaned = base.replace(/[^a-zA-Z0-9]/g, "");
-  return (cleaned || base).slice(0, 6).toUpperCase();
+  return candidates.find((value): value is string => Boolean(value)) ?? "Sin clienteId";
 };
 
 export default function OperacionesPage() {
@@ -178,6 +184,7 @@ export default function OperacionesPage() {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [visitModalTaskId, setVisitModalTaskId] = useState<string | null>(null);
   const [finalDesignUploadTaskId, setFinalDesignUploadTaskId] = useState<string | null>(null);
+  const [confirmClientModalTaskId, setConfirmClientModalTaskId] = useState<string | null>(null);
   const [cotizacionEntregadaTaskId, setCotizacionEntregadaTaskId] = useState<string | null>(null);
   const [pendingUploadTaskId, setPendingUploadTaskId] = useState<string | null>(null);
   const [uploadingTaskId, setUploadingTaskId] = useState<string | null>(null);
@@ -222,6 +229,7 @@ export default function OperacionesPage() {
   useEscapeClose(Boolean(isAssignModalOpen), () => setIsAssignModalOpen(false));
   useEscapeClose(Boolean(isTeamModalOpen), () => setIsTeamModalOpen(false));
   useEscapeClose(Boolean(visitModalTaskId), () => setVisitModalTaskId(null));
+  useEscapeClose(Boolean(confirmClientModalTaskId), () => setConfirmClientModalTaskId(null));
   useEscapeClose(Boolean(cotizacionEntregadaTaskId), () => setCotizacionEntregadaTaskId(null));
 
   useFocusTrap(Boolean(isAssignModalOpen), assignModalRef);
@@ -238,8 +246,15 @@ export default function OperacionesPage() {
   useEffect(() => {
     const interval = setInterval(() => {
       setClockNow(Date.now());
-      void refresh();
     }, 60_000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      void refresh();
+    }, 20 * 60_000);
 
     return () => clearInterval(interval);
   }, [refresh]);
@@ -252,7 +267,17 @@ export default function OperacionesPage() {
 
   // Columns derived from kanbanColumns and current tasks
   const columns = useMemo(() => {
-    return kanbanColumns.map((col) => ({ id: col.id, label: col.label, tasks: tasks.filter((t) => t.stage === col.id) }));
+    return kanbanColumns.map((col) => {
+      const stageTasks = tasks.filter((t) => t.stage === col.id);
+      if (col.id === "contrato") {
+        return {
+          id: col.id,
+          label: col.label,
+          tasks: stageTasks.filter((t) => (t.followUpStatus ?? "pendiente") === "pendiente"),
+        };
+      }
+      return { id: col.id, label: col.label, tasks: stageTasks };
+    });
   }, [tasks]);
 
   const openTeamModal = () => setIsTeamModalOpen(true);
@@ -290,6 +315,7 @@ export default function OperacionesPage() {
 
   const visitModalTask = tasks.find((t) => t.id === visitModalTaskId) ?? null;
   const finalDesignUploadTask = tasks.find((t) => t.id === finalDesignUploadTaskId) ?? null;
+  const confirmClientModalTask = tasks.find((t) => t.id === confirmClientModalTaskId) ?? null;
   const cotizacionEntregadaTask = tasks.find((t) => t.id === cotizacionEntregadaTaskId) ?? null;
   const activeTask = tasks.find((t) => t.id === activeTaskId) ?? null;
 
@@ -301,10 +327,90 @@ export default function OperacionesPage() {
 
   const handleSaveVisitForTask = async (task: AdminWorkflowTask, isoDateTime?: string) => {
     if (!task) return;
-    await updateTask(task, { visitScheduledAt: isoDateTime ?? undefined });
+    const nowIso = new Date().toISOString();
+    await updateTask(task, {
+      visitScheduledAt: isoDateTime ?? undefined,
+      designApprovedByAdmin: true,
+      status: "pendiente",
+      visita: {
+        ...(task.visita ?? {}),
+        fechaProgramada: isoDateTime,
+        aprobadaPorAdmin: true,
+        actualizadaEn: nowIso,
+      },
+    });
     await refresh();
     setVisitModalTaskId(null);
-    showActionFeedback("Visita guardada.", "success");
+    showActionFeedback("Visita guardada. Flujo listo para aprobación de cliente.", "success");
+  };
+
+  const resolveInitialProjectTotal = (task: AdminWorkflowTask) => {
+    const rawTask = task as unknown as Record<string, unknown>;
+    const direct = Number(rawTask.inversionTotal ?? rawTask.inversion ?? 0);
+    if (Number.isFinite(direct) && direct > 0) return Math.round(direct);
+
+    const fromPagos = task.pagos
+      ? (task.pagos.anticipo.amount || 0) + (task.pagos.segundoPago.amount || 0) + (task.pagos.liquidacion.amount || 0)
+      : 0;
+    if (fromPagos > 0) return Math.round(fromPagos);
+
+    const formalList = getCotizacionesFormalesList(task);
+    const formal = formalList[0] as Record<string, unknown> | undefined;
+    const formalTotal = Number(formal?.total ?? formal?.inversion ?? formal?.subtotal ?? 0);
+    if (Number.isFinite(formalTotal) && formalTotal > 0) return Math.round(formalTotal);
+
+    const preliminarList = getPreliminarList(task);
+    const preliminar = preliminarList[0] as Record<string, unknown> | undefined;
+    const preliminarTotal = Number(preliminar?.total ?? preliminar?.inversion ?? preliminar?.subtotal ?? 0);
+    if (Number.isFinite(preliminarTotal) && preliminarTotal > 0) return Math.round(preliminarTotal);
+
+    return undefined;
+  };
+
+  const handleConfirmClientWithTotal = async (task: AdminWorkflowTask, projectTotal: number) => {
+    const normalizedTotal = Math.max(0, Math.round(Number(projectTotal) || 0));
+    if (!normalizedTotal) {
+      showActionFeedback("Ingresa un monto total valido para confirmar al cliente.", "warning");
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      setActionFeedback(null);
+
+      const pagos = {
+        anticipo: { amount: 0, date: "", receiptLabel: "Ver recibo", receiptImage: "" },
+        segundoPago: { amount: 0, date: "", receiptLabel: "Ver recibo", receiptImage: "" },
+        liquidacion: { amount: 0, date: "", receiptLabel: "Ver recibo", receiptImage: "" },
+      };
+
+      await updateTask(task, {
+        followUpStatus: "confirmado",
+        status: "completada",
+        inversion: normalizedTotal,
+        pagos,
+      } as Partial<AdminWorkflowTask>);
+
+      const reloaded = await refresh();
+      const updated = reloaded.find((item) => item.id === task.id);
+      const updatedRecord = updated as unknown as Record<string, unknown> | undefined;
+      const persistedTotal = Number(updatedRecord?.inversion ?? updatedRecord?.inversionTotal ?? 0);
+
+      if (updated?.followUpStatus !== "confirmado") {
+        showActionFeedback("El backend no guardó 'confirmado'. Revisa el contrato del endpoint PATCH /api/tareas/:id.", "warning");
+      } else if (!Number.isFinite(persistedTotal) || persistedTotal <= 0) {
+        showActionFeedback("Cliente confirmado, pero el backend no devolvió el total del proyecto. Revisa el contrato de seguimiento.", "warning");
+      } else {
+        showActionFeedback("Cliente confirmado y total del proyecto guardado correctamente.", "success");
+      }
+
+      setConfirmClientModalTaskId(null);
+    } catch (error) {
+      console.error("Error al confirmar cliente con total:", error);
+      showActionFeedback(error instanceof Error ? error.message : "No se pudo confirmar al cliente.", "error");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleAddMember = async () => {
@@ -466,6 +572,7 @@ export default function OperacionesPage() {
         showActionFeedback("Cita iniciada. Abriendo cotizador preliminar...", "success");
         window.setTimeout(() => {
           runtimeStore.setItem(activeCitaTaskStorageKey, task.id);
+          runtimeStore.setItem(activeCitaTaskSnapshotStorageKey, JSON.stringify(task));
           runtimeStore.setItem(citaReturnUrlStorageKey, window.location.pathname);
           router.push("/dashboard/cotizador-preliminar");
         }, 220);
@@ -473,13 +580,28 @@ export default function OperacionesPage() {
       }
 
       if (action === "finish-cita") {
-        await updateTask(task, { citaFinished: true, status: "completada", priority: "alta" });
-        showActionFeedback("Cita completada correctamente.", "success");
+        await updateTask(task, {
+          citaFinished: true,
+          citaStarted: false,
+          stage: "disenos",
+          status: "pendiente",
+          priority: "alta",
+        });
+        showActionFeedback("Cita completada. Tarjeta movida a Diseños.", "success");
         return;
       }
 
       if (action === "approve-design-admin") {
-        await updateTask(task, { designApprovedByAdmin: true });
+        const nowIso = new Date().toISOString();
+        await updateTask(task, {
+          designApprovedByAdmin: true,
+          status: "pendiente",
+          visita: {
+            ...(task.visita ?? {}),
+            aprobadaPorAdmin: true,
+            actualizadaEn: nowIso,
+          },
+        });
         setVisitModalTaskId(task.id);
         showActionFeedback("Diseño aprobado por admin. Ahora puedes agendar la visita.", "success");
         return;
@@ -508,9 +630,23 @@ export default function OperacionesPage() {
         return;
       }
 
+      if (action === "resume-cotizacion") {
+        showActionFeedback("Reanudando cotización formal...", "success");
+        window.setTimeout(() => {
+          runtimeStore.setItem(activeCotizacionFormalTaskStorageKey, task.id);
+          runtimeStore.setItem(citaReturnUrlStorageKey, window.location.pathname);
+          router.push("/dashboard/cotizador");
+        }, 180);
+        return;
+      }
+
       if (action === "finish-cotizacion") {
-        await updateTask(task, { citaFinished: true, status: "completada", priority: "alta" });
-        showActionFeedback("Cotización terminada correctamente.", "success");
+        showActionFeedback("La cotización se termina dentro del cotizador con el botón Terminar.", "info");
+        window.setTimeout(() => {
+          runtimeStore.setItem(activeCotizacionFormalTaskStorageKey, task.id);
+          runtimeStore.setItem(citaReturnUrlStorageKey, window.location.pathname);
+          router.push("/dashboard/cotizador");
+        }, 180);
         return;
       }
 
@@ -528,14 +664,7 @@ export default function OperacionesPage() {
       }
 
       if (action === "confirm-client") {
-        await updateTask(task, { followUpStatus: "confirmado", status: "completada" });
-        const reloaded = await refresh();
-        const updated = reloaded.find((item) => item.id === task.id);
-        if (updated?.followUpStatus !== "confirmado") {
-          showActionFeedback("El backend no guardó 'confirmado'. Revisa el contrato del endpoint PATCH /api/tareas/:id.", "warning");
-        } else {
-          showActionFeedback("Cliente confirmado correctamente.", "success");
-        }
+        setConfirmClientModalTaskId(task.id);
         return;
       }
 
@@ -597,7 +726,7 @@ export default function OperacionesPage() {
 
       const backendTaskId = task.sourceId?.trim() || task.id;
       const uploadInfo = await subirArchivoConMetadata(file, {
-        tipo: "diseno",
+        tipo: "diseno_final",
         relacionadoA: "tarea",
         relacionadoId: backendTaskId,
         clienteId: task.clientId,
@@ -608,7 +737,7 @@ export default function OperacionesPage() {
         const response = await agregarArchivos(backendTaskId, [
           {
             nombre: file.name,
-            tipo: "diseno",
+            tipo: "diseno_final",
             url: uploadInfo.url,
           },
         ]);
@@ -627,6 +756,11 @@ export default function OperacionesPage() {
         status: "pendiente",
         citaStarted: false,
         citaFinished: false,
+        visita: {
+          ...(task.visita ?? {}),
+          aprobadaPorCliente: true,
+          actualizadaEn: new Date().toISOString(),
+        },
       });
 
       await refresh();
@@ -856,7 +990,7 @@ export default function OperacionesPage() {
                       })()}
 
                       <div className="mt-3 flex flex-1 flex-col">
-                        <div className="min-h-[3.75rem] max-h-[3.75rem]">
+                        <div className="space-y-1.5">
                           <p className="line-clamp-2 break-words text-base font-semibold leading-6 text-gray-900" title={task.project}>
                             {task.project}
                           </p>
@@ -879,6 +1013,11 @@ export default function OperacionesPage() {
                           {task.title && task.title !== task.project ? (
                             <p className="mt-1 line-clamp-1 break-words text-xs leading-4 text-secondary" title={task.title}>
                               {task.title}
+                            </p>
+                          ) : null}
+                          {task.assignedTo.length > 0 ? (
+                            <p className="line-clamp-1 break-words text-xs leading-4 text-secondary" title={task.assignedTo.join(", ")}>
+                              Responsable: {task.assignedTo.join(", ")}
                             </p>
                           ) : null}
                         </div>
@@ -984,12 +1123,12 @@ export default function OperacionesPage() {
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  void handleTaskAction(task, "finish-cotizacion");
+                                  void handleTaskAction(task, "resume-cotizacion");
                                 }}
-                                className="inline-flex items-center rounded-full bg-emerald-600 px-3 py-1 text-[11px] font-semibold text-white"
+                                className="inline-flex items-center rounded-full bg-amber-600 px-3 py-1 text-[11px] font-semibold text-white"
                                 disabled={isSaving}
                               >
-                                Terminar cotizacion
+                                Continuar cotizacion
                               </button>
                             ) : null}
                             {task.stage === "cotizacion" && task.citaStarted && task.citaFinished ? (
@@ -1207,6 +1346,18 @@ export default function OperacionesPage() {
         onConfirm={async (file) => {
           if (!finalDesignUploadTask) return;
           await handleFinalDesignUpload(finalDesignUploadTask, file);
+        }}
+      />
+
+      <ConfirmClientAmountModal
+        isOpen={Boolean(confirmClientModalTask)}
+        taskLabel={confirmClientModalTask?.project ?? "Proyecto"}
+        initialAmount={confirmClientModalTask ? resolveInitialProjectTotal(confirmClientModalTask) : undefined}
+        isSaving={isSaving}
+        onClose={() => setConfirmClientModalTaskId(null)}
+        onConfirm={async (amount) => {
+          if (!confirmClientModalTask) return;
+          await handleConfirmClientWithTotal(confirmClientModalTask, amount);
         }}
       />
 
@@ -1577,7 +1728,11 @@ export default function OperacionesPage() {
                       ) : (
                         <div className="flex flex-wrap gap-2">
                           {taskDraft.assignedToIds.map((employeeId) => {
-                            const employeeName = employees.find((emp) => emp._id === employeeId)?.nombre ?? employeeId;
+                            const employeeName =
+                              employees.find((emp) => emp._id === employeeId)?.nombre ||
+                              activeTask?.assignedTo?.[taskDraft.assignedToIds.indexOf(employeeId)] ||
+                              activeTask?.assignedTo?.find((name) => !/^[a-f0-9]{24}$/i.test(name)) ||
+                              "Responsable";
                             return (
                               <span key={employeeId} className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/5 px-2.5 py-1.5 text-sm text-gray-800">
                                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-[10px] font-semibold text-primary shadow-sm">
@@ -1696,7 +1851,7 @@ export default function OperacionesPage() {
                         </div>
                         <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm ${activeTask.citaFinished ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
                           {activeTask.citaFinished ? <CheckCircle2 className="h-4 w-4" /> : <span className="h-4 w-4 rounded-full border-2 border-gray-300" />}
-                          <span>2. Terminar cotizacion</span>
+                          <span>2. Terminar dentro del cotizador</span>
                         </div>
                         <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm ${getCotizacionesFormalesList(activeTask).length > 0 ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
                           {getCotizacionesFormalesList(activeTask).length > 0 ? <CheckCircle2 className="h-4 w-4" /> : <span className="h-4 w-4 rounded-full border-2 border-gray-300" />}
@@ -1716,11 +1871,11 @@ export default function OperacionesPage() {
                         ) : activeTask.citaStarted && !activeTask.citaFinished ? (
                           <button
                             type="button"
-                            onClick={() => void handleTaskAction(activeTask, "finish-cotizacion")}
-                            className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white"
+                            onClick={() => void handleTaskAction(activeTask, "resume-cotizacion")}
+                            className="rounded-full bg-amber-600 px-4 py-2 text-xs font-semibold text-white"
                             disabled={isSaving}
                           >
-                            Terminar cotizacion
+                            Continuar cotizacion
                           </button>
                         ) : getCotizacionesFormalesList(activeTask).length > 0 ? (
                           <button

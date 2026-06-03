@@ -23,6 +23,7 @@ import { obtenerArchivosTarea, type ClienteArchivo } from "@/lib/axios/archivosC
 import { subirArchivoConMetadata, type UploadTipo } from "@/lib/axios/uploadsApi";
 import {
   activeCitaTaskStorageKey,
+  activeCitaTaskSnapshotStorageKey,
   activeCotizacionFormalTaskStorageKey,
   citaReturnUrlStorageKey,
   kanbanColumns,
@@ -521,8 +522,12 @@ export default function EmpleadoDashboard() {
       ...(task as unknown as KanbanTask),
       assignedTo: task.assignedTo ? [task.assignedTo] : [],
     }));
+    const selectedTask = runtimeTasks.find((task) => task.id === taskId);
     runtimeStore.setItem(kanbanStorageKey, JSON.stringify(runtimeTasks));
     runtimeStore.setItem(activeCitaTaskStorageKey, taskId);
+    if (selectedTask) {
+      runtimeStore.setItem(activeCitaTaskSnapshotStorageKey, JSON.stringify(selectedTask));
+    }
     runtimeStore.setItem(citaReturnUrlStorageKey, window.location.pathname);
     setActiveTaskId(null);
     window.setTimeout(() => setStartingTaskId((prev) => (prev === taskId ? null : prev)), 2500);

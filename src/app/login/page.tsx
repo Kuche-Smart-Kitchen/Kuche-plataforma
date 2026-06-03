@@ -87,7 +87,7 @@ export default function LoginPage() {
           className="relative overflow-hidden rounded-3xl"
         >
           <Image
-            src="/images/cocina1.jpg"
+            src="/images/pagina-login/hero-lateral/fondo-cocina.jpg"
             alt="Cocina Küche"
             fill
             className="object-cover"

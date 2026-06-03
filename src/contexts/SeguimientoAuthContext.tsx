@@ -80,7 +80,8 @@ export function SeguimientoAuthProvider({ children }: { children: React.ReactNod
         throw new Error("No se pudo cargar el proyecto.");
       }
 
-      setProyecto(projectData as unknown as SeguimientoProject);
+      const normalizedProject = mergeSeguimientoFromStorage(projectData);
+      setProyecto(normalizedProject as unknown as SeguimientoProject);
       setFailedAttempts(0);
       setLockUntil(null);
       setCodigo("");

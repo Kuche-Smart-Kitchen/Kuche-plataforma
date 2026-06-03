@@ -10,6 +10,7 @@ import { getAssignedLabel, isTaskConfirmed, type AdminWorkflowTask } from "@/lib
 import { subirArchivoConMetadata } from "@/lib/axios/uploadsApi";
 import { getCotizacionesFormalesList, getPreliminarList } from "@/lib/kanban";
 import { downloadFormalPdf, downloadPreliminarPdf } from "@/lib/pdf-preliminar";
+import { normalizeEtapaForStorage, TIMELINE_STEPS, type TimelineStep } from "@/lib/seguimiento-project";
 import { useClienteArchivos } from "@/hooks/useClienteArchivos";
 
 const stageLabel: Record<string, string> = {
@@ -31,6 +32,7 @@ type PublicStatusDraft = {
   segundoPago: PublicStatusPaymentDraft;
   liquidacion: PublicStatusPaymentDraft;
   nota: string;
+  etapaActual: TimelineStep;
 };
 
 type PublicStatusPaymentDraft = {
@@ -47,6 +49,7 @@ const defaultPublicStatusDraft: PublicStatusDraft = {
   segundoPago: { amount: 0, receiptLabel: "Ver recibo", receiptImage: "", date: "" },
   liquidacion: { amount: 0, receiptLabel: "Ver recibo", receiptImage: "", date: "" },
   nota: "",
+  etapaActual: TIMELINE_STEPS[0],
 };
 
 const paymentFields = [
@@ -86,6 +89,7 @@ const normalizeDraft = (raw: unknown): PublicStatusDraft => {
     segundoPago: { ...segundoPago, amount: segundoPago.amount || legacySegundo },
     liquidacion: { ...liquidacion, amount: liquidacion.amount || legacyLiquidacion },
     nota: typeof record.nota === "string" ? record.nota : "",
+    etapaActual: normalizeEtapaForStorage(record.etapaActual),
   };
 };
 
@@ -107,6 +111,9 @@ const normalizeDraftNumber = (value: string): number => {
   return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
 };
 
+const isPaymentRegistered = (payment: PublicStatusPaymentDraft) =>
+  Boolean(payment.receiptImage?.trim() || payment.date?.trim());
+
 const splitIntoColumns = <T,>(items: T[], columnCount: number): T[][] => {
   if (items.length === 0) return [];
   const count = Math.max(1, Math.min(columnCount, items.length));
@@ -120,40 +127,30 @@ const splitIntoColumns = <T,>(items: T[], columnCount: number): T[][] => {
 };
 
 const buildTrackingCodeFromTask = (task: AdminWorkflowTask) => {
-  console.log("=== DATOS COMPLETOS DEL TASK ===");
-  console.log("Task completo:", task);
-  console.log("task.clientId:", task.clientId);
-  console.log("task.sourceId:", task.sourceId);
-  console.log("task.id:", task.id);
-  console.log("task.project:", task.project);
-  console.log("task.title:", task.title);
-  console.log("task.cita:", task.cita);
-  console.log("task.sourceCitaId:", task.sourceCitaId);
-  console.log("task.codigoProyecto:", (task as any).codigoProyecto);
-  console.log("Todos los keys del task:", Object.keys(task));
-  console.log("====================================");
-
   const rawTask = task as unknown as Record<string, unknown>;
   const citaRecord = rawTask.cita && typeof rawTask.cita === "object"
     ? (rawTask.cita as Record<string, unknown>)
     : null;
+  const clienteRecord = citaRecord?.cliente && typeof citaRecord.cliente === "object"
+    ? (citaRecord.cliente as Record<string, unknown>)
+    : null;
 
-  const clientIdFromCita = citaRecord?.cliente && typeof citaRecord.cliente === "object"
-    ? ((citaRecord.cliente as Record<string, unknown>)._id as string | undefined)
-    : undefined;
+  const isMongoObjectId = (value: string) => /^[a-f0-9]{24}$/i.test(value.trim());
+  const normalizeClientId = (value: unknown) => {
+    if (typeof value !== "string") return undefined;
+    const trimmed = value.trim();
+    if (!trimmed || isMongoObjectId(trimmed)) return undefined;
+    return trimmed;
+  };
 
   const candidates = [
-    task.clientId,
-    clientIdFromCita,
-    typeof citaRecord?.clienteId === "string" ? citaRecord.clienteId : undefined,
-    task.sourceCitaId,
-    task.sourceId,
-    task.id,
+    normalizeClientId(rawTask.clienteId),
+    normalizeClientId(citaRecord?.clienteId),
+    normalizeClientId(clienteRecord?.clienteId),
+    normalizeClientId(task.clientId),
   ];
 
-  const base = candidates.find((value): value is string => Boolean(value && value.trim().length > 0)) ?? task.id;
-  const cleaned = base.replace(/[^a-zA-Z0-9]/g, "");
-  return (cleaned || base).slice(0, 6).toUpperCase();
+  return candidates.find((value): value is string => Boolean(value)) ?? "Sin clienteId";
 };
 
 export default function ClientesConfirmadosPage() {
@@ -196,6 +193,11 @@ export default function ClientesConfirmadosPage() {
     const load = async () => {
       try {
         const loadedTasks = await refresh();
+        if (loadedTasks.length > 0) {
+          console.log("[DEBUG][clientes-confirmados] Primer task recibida (raw):", loadedTasks[0]);
+        } else {
+          console.log("[DEBUG][clientes-confirmados] No se recibieron tareas.");
+        }
         setTasks(loadedTasks.filter(isTaskConfirmed));
       } catch (currentError) {
         setError(currentError instanceof Error ? currentError.message : "No se pudieron cargar clientes confirmados");
@@ -208,7 +210,6 @@ export default function ClientesConfirmadosPage() {
   }, [refresh]);
 
   const taskColumns = useMemo(() => splitIntoColumns(tasks, 3), [tasks]);
-  console.log("Clientes confirmados:", tasks);
   const publicStatusTask = useMemo(
     () => tasks.find((task) => task.id === publicStatusTaskId) ?? null,
     [publicStatusTaskId, tasks],
@@ -219,7 +220,35 @@ export default function ClientesConfirmadosPage() {
     : defaultPublicStatusDraft;
 
   const totalPagado =
-    publicStatusDraft.anticipo.amount + publicStatusDraft.segundoPago.amount + publicStatusDraft.liquidacion.amount;
+    (isPaymentRegistered(publicStatusDraft.anticipo) ? publicStatusDraft.anticipo.amount : 0)
+    + (isPaymentRegistered(publicStatusDraft.segundoPago) ? publicStatusDraft.segundoPago.amount : 0)
+    + (isPaymentRegistered(publicStatusDraft.liquidacion) ? publicStatusDraft.liquidacion.amount : 0);
+
+  const totalProyecto = useMemo(() => {
+    if (!publicStatusTask) return 0;
+    const taskRecord = publicStatusTask as unknown as Record<string, unknown>;
+    const direct = Number(
+      taskRecord.inversion
+      ?? taskRecord.inversionTotal
+      ?? taskRecord.totalProyecto
+      ?? taskRecord.montoTotalProyecto
+      ?? 0,
+    );
+    return Number.isFinite(direct) ? Math.max(0, Math.round(direct)) : 0;
+  }, [publicStatusTask]);
+
+  const restante = Math.max(0, totalProyecto - totalPagado);
+
+  const timelineCurrentIndex = useMemo(
+    () => Math.max(0, TIMELINE_STEPS.indexOf(publicStatusDraft.etapaActual)),
+    [publicStatusDraft.etapaActual],
+  );
+
+  const timelineProgressPct = useMemo(() => {
+    const max = TIMELINE_STEPS.length - 1;
+    if (max <= 0) return 0;
+    return (timelineCurrentIndex / max) * 100;
+  }, [timelineCurrentIndex]);
 
   useEffect(() => {
     if (!publicStatusTaskId || !publicStatusTask) return;
@@ -238,6 +267,7 @@ export default function ClientesConfirmadosPage() {
       segundoPago: normalizePaymentDraft(taskPagos?.segundoPago),
       liquidacion: normalizePaymentDraft(taskPagos?.liquidacion),
       nota: typeof (publicStatusTask as any).seguimientoNota === "string" ? (publicStatusTask as any).seguimientoNota : "",
+      etapaActual: normalizeEtapaForStorage((publicStatusTask as unknown as Record<string, unknown>).etapaActual),
     };
 
     setPublicStatusMap((prev) => ({ ...prev, [publicStatusTaskId]: seeded }));
@@ -333,6 +363,7 @@ export default function ClientesConfirmadosPage() {
       await updateTask(publicStatusTask, {
         ...(publicStatusTask as any),
         pagos,
+        etapaActual: publicStatusDraft.etapaActual,
         seguimientoNota: publicStatusDraft.nota,
         notes: publicStatusDraft.nota,
       } as any);
@@ -625,7 +656,7 @@ export default function ClientesConfirmadosPage() {
               initial={{ y: 24, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 24, opacity: 0 }}
-              className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-white/70 bg-white p-4 shadow-2xl sm:p-6"
+              className="max-h-[94vh] w-full max-w-6xl overflow-y-auto rounded-3xl border border-white/70 bg-white p-4 shadow-2xl sm:p-6"
               onClick={(event) => event.stopPropagation()}
             >
               <div className="flex items-start justify-between gap-4">
@@ -644,7 +675,47 @@ export default function ClientesConfirmadosPage() {
                 </button>
               </div>
 
-              <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)]">
+              <div className="mt-6 rounded-2xl border border-primary/10 bg-white p-4 sm:p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-secondary">Linea de tiempo del cliente</p>
+                    <p className="mt-1 text-sm text-secondary">Selecciona el avance actual para reflejarlo en seguimiento.</p>
+                  </div>
+                  <span className="rounded-full bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
+                    {publicStatusDraft.etapaActual}
+                  </span>
+                </div>
+
+                <div className="mt-4 rounded-full bg-primary/10 p-1">
+                  <div className="h-2 rounded-full bg-accent transition-all" style={{ width: `${timelineProgressPct}%` }} />
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-5">
+                  {TIMELINE_STEPS.map((step, index) => {
+                    const isCurrent = publicStatusDraft.etapaActual === step;
+                    const isCompleted = index <= timelineCurrentIndex;
+                    return (
+                      <button
+                        key={step}
+                        type="button"
+                        onClick={() => updateDraft({ etapaActual: step })}
+                        className={`rounded-2xl border px-3 py-3 text-left transition ${
+                          isCurrent
+                            ? "border-accent bg-accent/10 shadow-sm"
+                            : isCompleted
+                              ? "border-primary/20 bg-primary/[0.03]"
+                              : "border-primary/10 bg-white hover:border-primary/25"
+                        }`}
+                      >
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-secondary">Paso {index + 1}</p>
+                        <p className={`mt-1 text-sm font-semibold ${isCurrent ? "text-accent" : "text-primary"}`}>{step}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.45fr)]">
                 <div className="space-y-4">
                   <div className="rounded-2xl border border-primary/10 bg-primary/[0.03] p-4 text-sm">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-secondary">Información del cliente</p>
@@ -670,10 +741,16 @@ export default function ClientesConfirmadosPage() {
                     </label>
                   </div>
 
-                  <div className="rounded-2xl border border-primary/10 bg-primary/[0.03] px-4 py-3 text-xs">
-                    <span className="text-secondary">
-                      Pagado acumulado: <span className="font-semibold text-primary">{formatCurrency(totalPagado)}</span>
-                    </span>
+                  <div className="rounded-2xl border border-primary/10 bg-primary/[0.03] px-4 py-3 text-xs text-secondary">
+                    <p>
+                      Total del proyecto: <span className="font-semibold text-primary">{totalProyecto > 0 ? formatCurrency(totalProyecto) : "Por definir"}</span>
+                    </p>
+                    <p className="mt-1">
+                      Pagado registrado: <span className="font-semibold text-primary">{formatCurrency(totalPagado)}</span>
+                    </p>
+                    <p className="mt-1">
+                      Restante: <span className="font-semibold text-accent">{totalProyecto > 0 ? formatCurrency(restante) : "Por definir"}</span>
+                    </p>
                   </div>
                 </div>
 

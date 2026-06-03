@@ -99,6 +99,10 @@ export type KanbanTask = {
   preliminarCotizaciones?: PreliminarData[];
   /** Varias cotizaciones formales en la misma tarjeta. Si existe, tiene prioridad sobre cotizacionFormalData. */
   cotizacionesFormales?: CotizacionFormalData[];
+  /** Monto total del proyecto para el seguimiento de pagos del cliente. */
+  inversion?: number;
+  /** Paso actual de la linea de tiempo visible para el cliente en seguimiento. */
+  etapaActual?: string;
   /** Código para que el cliente acceda a /seguimiento (ej. K-8821). Se genera al crear la tarea. */
   codigoProyecto?: string;
 };
@@ -131,6 +135,7 @@ export const initialKanbanTasks: KanbanTask[] = [];
 
 export const kanbanStorageKey = "kuche-kanban-tasks";
 export const activeCitaTaskStorageKey = "kuche-active-cita-task";
+export const activeCitaTaskSnapshotStorageKey = "kuche-active-cita-task-snapshot";
 export const citaReturnUrlStorageKey = "kuche-cita-return-url";
 export const finishedCitaTaskStorageKey = "kuche-finished-cita-task";
 export const activeCotizacionFormalTaskStorageKey = "kuche-active-cotizacion-formal-task";

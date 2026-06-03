@@ -107,6 +107,9 @@ const normalizeDraftNumber = (value: string): number => {
   return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
 };
 
+const isPaymentRegistered = (payment: PublicStatusPaymentDraft) =>
+  Boolean(payment.receiptImage?.trim() || payment.date?.trim());
+
 const splitIntoColumns = <T,>(items: T[], columnCount: number): T[][] => {
   if (items.length === 0) return [];
   const count = Math.max(1, Math.min(columnCount, items.length));
@@ -117,6 +120,33 @@ const splitIntoColumns = <T,>(items: T[], columnCount: number): T[][] => {
   });
 
   return columns;
+};
+
+const buildTrackingCodeFromTask = (task: AdminWorkflowTask) => {
+  const rawTask = task as unknown as Record<string, unknown>;
+  const citaRecord = rawTask.cita && typeof rawTask.cita === "object"
+    ? (rawTask.cita as Record<string, unknown>)
+    : null;
+  const clienteRecord = citaRecord?.cliente && typeof citaRecord.cliente === "object"
+    ? (citaRecord.cliente as Record<string, unknown>)
+    : null;
+
+  const isMongoObjectId = (value: string) => /^[a-f0-9]{24}$/i.test(value.trim());
+  const normalizeClientId = (value: unknown) => {
+    if (typeof value !== "string") return undefined;
+    const trimmed = value.trim();
+    if (!trimmed || isMongoObjectId(trimmed)) return undefined;
+    return trimmed;
+  };
+
+  const candidates = [
+    normalizeClientId(rawTask.clienteId),
+    normalizeClientId(citaRecord?.clienteId),
+    normalizeClientId(clienteRecord?.clienteId),
+    normalizeClientId(task.clientId),
+  ];
+
+  return candidates.find((value): value is string => Boolean(value)) ?? "Sin clienteId";
 };
 
 export default function AdminClientesEnProcesoPage() {
@@ -163,6 +193,11 @@ export default function AdminClientesEnProcesoPage() {
     const load = async () => {
       try {
         const loadedTasks = await refresh();
+        if (loadedTasks.length > 0) {
+          console.log("[DEBUG][clientes-en-proceso] Primer task recibida (raw):", loadedTasks[0]);
+        } else {
+          console.log("[DEBUG][clientes-en-proceso] No se recibieron tareas.");
+        }
         const inProgress = loadedTasks.filter(isTaskInProgress);
         setTasks(inProgress);
       } catch (currentError) {
@@ -187,7 +222,24 @@ export default function AdminClientesEnProcesoPage() {
     : defaultPublicStatusDraft;
 
   const totalPagado =
-    publicStatusDraft.anticipo.amount + publicStatusDraft.segundoPago.amount + publicStatusDraft.liquidacion.amount;
+    (isPaymentRegistered(publicStatusDraft.anticipo) ? publicStatusDraft.anticipo.amount : 0)
+    + (isPaymentRegistered(publicStatusDraft.segundoPago) ? publicStatusDraft.segundoPago.amount : 0)
+    + (isPaymentRegistered(publicStatusDraft.liquidacion) ? publicStatusDraft.liquidacion.amount : 0);
+
+  const totalProyecto = useMemo(() => {
+    if (!publicStatusTask) return 0;
+    const taskRecord = publicStatusTask as unknown as Record<string, unknown>;
+    const direct = Number(
+      taskRecord.inversion
+      ?? taskRecord.inversionTotal
+      ?? taskRecord.totalProyecto
+      ?? taskRecord.montoTotalProyecto
+      ?? 0,
+    );
+    return Number.isFinite(direct) ? Math.max(0, Math.round(direct)) : 0;
+  }, [publicStatusTask]);
+
+  const restante = Math.max(0, totalProyecto - totalPagado);
 
   useEffect(() => {
     if (!publicStatusTaskId || !publicStatusTask) return;
@@ -407,11 +459,9 @@ export default function AdminClientesEnProcesoPage() {
                               <p className="text-[10px] font-semibold uppercase tracking-wide text-secondary">Proyecto</p>
                               <h3 className="break-words text-base font-semibold text-primary">{task.project}</h3>
                               <p className="mt-0.5 text-sm text-secondary">{task.title}</p>
-                              {task.codigoProyecto ? (
-                                <p className="mt-2 break-all text-[11px] text-secondary">
-                                  Código: <span className="font-semibold text-primary">{task.codigoProyecto}</span>
-                                </p>
-                              ) : null}
+                              <p className="mt-2 break-all text-[11px] text-secondary">
+                                Código: <span className="font-semibold text-primary">{buildTrackingCodeFromTask(task)}</span>
+                              </p>
                             </div>
                           </div>
                           <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${tone}`}>
@@ -489,11 +539,9 @@ export default function AdminClientesEnProcesoPage() {
                   </p>
                   <p className="mt-1 break-words text-sm font-medium text-primary">{selectedTask.project}</p>
                   <p className="text-xs text-secondary">{selectedTask.title}</p>
-                  {selectedTask.codigoProyecto ? (
-                    <p className="mt-2 break-all text-[11px] text-secondary">
-                      Código: <span className="font-semibold text-primary">{selectedTask.codigoProyecto}</span>
-                    </p>
-                  ) : null}
+                  <p className="mt-2 break-all text-[11px] text-secondary">
+                    Código: <span className="font-semibold text-primary">{buildTrackingCodeFromTask(selectedTask)}</span>
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -645,7 +693,7 @@ export default function AdminClientesEnProcesoPage() {
                   <div className="rounded-2xl border border-primary/10 bg-primary/[0.03] p-4 text-sm">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-secondary">Información del cliente</p>
                     <p className="mt-3"><strong>Proyecto:</strong> {publicStatusTask.project}</p>
-                    <p className="mt-1"><strong>Código:</strong> {publicStatusTask.codigoProyecto || "Por definir"}</p>
+                    <p className="mt-1"><strong>Código:</strong> {buildTrackingCodeFromTask(publicStatusTask)}</p>
                     <p className="mt-1"><strong>Etapa:</strong> {stageLabel[publicStatusTask.stage] ?? publicStatusTask.stage}</p>
                     <p className="mt-1"><strong>Asignado:</strong> {getAssignedLabel(publicStatusTask)}</p>
                   </div>
@@ -662,10 +710,16 @@ export default function AdminClientesEnProcesoPage() {
                     </label>
                   </div>
 
-                  <div className="rounded-2xl border border-primary/10 bg-primary/[0.03] px-4 py-3 text-xs">
-                    <span className="text-secondary">
-                      Pagado acumulado: <span className="font-semibold text-primary">{formatCurrency(totalPagado)}</span>
-                    </span>
+                  <div className="rounded-2xl border border-primary/10 bg-primary/[0.03] px-4 py-3 text-xs text-secondary">
+                    <p>
+                      Total del proyecto: <span className="font-semibold text-primary">{totalProyecto > 0 ? formatCurrency(totalProyecto) : "Por definir"}</span>
+                    </p>
+                    <p className="mt-1">
+                      Pagado registrado: <span className="font-semibold text-primary">{formatCurrency(totalPagado)}</span>
+                    </p>
+                    <p className="mt-1">
+                      Restante: <span className="font-semibold text-accent">{totalProyecto > 0 ? formatCurrency(restante) : "Por definir"}</span>
+                    </p>
                   </div>
                 </div>
 

@@ -28,21 +28,14 @@ export type SeguimientoPagos = {
   liquidacion: SeguimientoPago;
 };
 
-export function defaultPagosForInversion(inversion: number): SeguimientoPagos {
-  const t = Math.max(0, Math.round(Number(inversion) || 0));
+export function defaultPagosForInversion(_inversion: number): SeguimientoPagos {
   const mk = (amount: number): SeguimientoPago => ({
     amount,
     date: "",
     receiptLabel: "Ver recibo",
     receiptImage: "",
   });
-  if (t === 0) {
-    return { anticipo: mk(0), segundoPago: mk(0), liquidacion: mk(0) };
-  }
-  const a = Math.floor(t / 3);
-  const b = Math.floor(t / 3);
-  const c = t - a - b;
-  return { anticipo: mk(a), segundoPago: mk(b), liquidacion: mk(c) };
+  return { anticipo: mk(0), segundoPago: mk(0), liquidacion: mk(0) };
 }
 
 function coercePago(raw: unknown, fallback: SeguimientoPago): SeguimientoPago {
@@ -101,6 +94,7 @@ export type SeguimientoClienteProject = {
   codigo: string;
   clienteId?: string;
   clienteRef?: string;
+  followUpStatus?: "pendiente" | "confirmado" | "inactivo";
   clienteMeta?: {
     nombre?: string;
     correo?: string;
@@ -147,6 +141,41 @@ export type SeguimientoClienteProject = {
  * Completa y sanea lo guardado en localStorage (sin datos de ejemplo: lo que no venga queda vacío o “Por definir”).
  */
 export function mergeSeguimientoFromStorage(parsed: Record<string, unknown>): SeguimientoClienteProject {
+  const normalizeBooleanLike = (value: unknown): boolean | undefined => {
+    if (typeof value === "boolean") return value;
+    if (typeof value !== "string") return undefined;
+
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "si", "sí", "yes"].includes(normalized)) return true;
+    if (["false", "0", "no"].includes(normalized)) return false;
+    return undefined;
+  };
+
+  const normalizeFollowUpStatus = (value: unknown): SeguimientoClienteProject["followUpStatus"] | undefined => {
+    if (typeof value !== "string") return undefined;
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "confirmado") return "confirmado";
+    if (normalized === "inactivo" || normalized === "descartado") return "inactivo";
+    if (normalized === "pendiente") return "pendiente";
+    return undefined;
+  };
+
+  const deriveIsProspect = (): boolean => {
+    const explicit = normalizeBooleanLike(parsed.isProspect);
+    const followUpStatus = normalizeFollowUpStatus(
+      parsed.followUpStatus ?? parsed.estadoSeguimiento ?? parsed.seguimiento,
+    );
+
+    if (followUpStatus === "confirmado") return false;
+    if (followUpStatus === "pendiente") return true;
+    if (explicit !== undefined) return explicit;
+
+    const stage = typeof parsed.stage === "string" ? parsed.stage.trim().toLowerCase() : "";
+    if (stage === "contrato") return false;
+
+    return false;
+  };
+
   const pagosRaw = parsed.pagos;
   const zeroPagos = defaultPagosForInversion(0);
   let pagos: SeguimientoPagos;
@@ -165,14 +194,14 @@ export function mergeSeguimientoFromStorage(parsed: Record<string, unknown>): Se
   const sumPagos =
     pagos.anticipo.amount + pagos.segundoPago.amount + pagos.liquidacion.amount;
   if (inversion === 0 && sumPagos > 0) inversion = sumPagos;
-  if (inversion > 0 && sumPagos === 0) {
-    pagos = defaultPagosForInversion(inversion);
-  }
 
   const codigo = String(parsed.codigo ?? "").trim() || "—";
   const cliente = String(parsed.cliente ?? "Cliente").trim() || "Cliente";
   const clienteId = typeof parsed.clienteId === "string" ? parsed.clienteId.trim() : "";
   const clienteRef = typeof parsed.clienteRef === "string" ? parsed.clienteRef.trim() : "";
+  const followUpStatus = normalizeFollowUpStatus(
+    parsed.followUpStatus ?? parsed.estadoSeguimiento ?? parsed.seguimiento,
+  );
   const clienteMetaRaw = parsed.clienteMeta && typeof parsed.clienteMeta === "object"
     ? (parsed.clienteMeta as Record<string, unknown>)
     : null;
@@ -182,6 +211,7 @@ export function mergeSeguimientoFromStorage(parsed: Record<string, unknown>): Se
     codigo,
     clienteId: clienteId || undefined,
     clienteRef: clienteRef || undefined,
+    followUpStatus,
     clienteMeta: clienteMetaRaw
       ? {
           nombre: typeof clienteMetaRaw.nombre === "string" ? clienteMetaRaw.nombre : undefined,
@@ -192,7 +222,7 @@ export function mergeSeguimientoFromStorage(parsed: Record<string, unknown>): Se
     cliente,
     projectType: typeof parsed.projectType === "string" ? parsed.projectType : undefined,
     location: typeof parsed.location === "string" ? parsed.location : undefined,
-    isProspect: Boolean(parsed.isProspect),
+    isProspect: deriveIsProspect(),
     inversion,
     fechaInicio:
       typeof parsed.fechaInicio === "string" && parsed.fechaInicio.trim()

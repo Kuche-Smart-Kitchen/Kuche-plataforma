@@ -21,6 +21,7 @@ import {
 import { useCatalogEquipamiento } from "@/contexts/CatalogEquipamientoContext";
 import {
   activeCitaTaskStorageKey,
+  activeCitaTaskSnapshotStorageKey,
   kanbanStorageKey,
   citaReturnUrlStorageKey,
   getPreliminarList,
@@ -33,7 +34,6 @@ import { CatalogProjectTypeField } from "@/components/CatalogProjectTypeField";
 import {
   CATALOG_PROJECT_TYPES,
   isCocinasProjectTypeForConIsla,
-  normalizeLegacyProjectTypeToCatalog,
 } from "@/lib/catalog-project-types";
 import Link from "next/link";
 import { generatePublicProjectCode } from "@/lib/project-code";
@@ -44,14 +44,27 @@ import {
 } from "@/lib/seguimiento-project";
 import {
   createDefaultLevantamientoConfig,
-  getAveragePriceByTier,
   getLevantamientoConfig,
   type LevantamientoConfig,
   type MaterialGama,
 } from "@/lib/config-levantamiento";
 import { formatDeliveryWeeksLabel } from "@/lib/delivery-weeks";
 import { buildPreliminarPdfDataUrl, downloadPreliminarPdf } from "@/lib/pdf-preliminar";
-import { createPreliminarSeguimientoPdfKey, saveFormalPdf } from "@/lib/formal-pdf-storage";
+import {
+  createPreliminarSeguimientoPdfKey,
+  createPreliminarSeguimientoWorkshopPdfKey,
+  saveFormalPdf,
+} from "@/lib/formal-pdf-storage";
+import {
+  buildLevantamientoWorkshopPdfDataUrl,
+  downloadPdfDataUrl,
+} from "@/lib/levantamiento-workshop-pdf";
+import {
+  actualizarTarjetaTarea,
+  moverTarjetaTarea,
+  promoverCitaATarea,
+} from "@/lib/axios/adminWorkflowApi";
+import type { AdminWorkflowTask } from "@/lib/admin-workflow";
 import ApplianceTypeImage from "@/components/levantamiento/ApplianceTypeImage";
 import LightingTypeImage from "@/components/levantamiento/LightingTypeImage";
 import { WallTypeIcon } from "@/components/levantamiento/WallTypeIcons";
@@ -81,13 +94,36 @@ import {
   type LevantamientoDetalle,
 } from "@/lib/levantamiento-catalog";
 import { obtenerHerrajes, obtenerMateriales, type Herraje, type Material } from "@/lib/axios/catalogosApi";
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("es-MX", {
-    style: "currency",
-    currency: "MXN",
-    maximumFractionDigits: 0,
-  }).format(value);
+import { getSectionAInitialValues } from "./logica_Levantamiento_y_cotizacion/sectionA";
+import {
+  buildLevantamientoMetrics,
+  buildMaterialTierAverages,
+  buildScenarioCardRanges,
+} from "./logica_Levantamiento_y_cotizacion/calculos";
+import {
+  LevantamientoResumen,
+  type ScenarioOption,
+} from "@/components/levantamiento/LevantamientoResumen";
+import {
+  LevantamientoSectionA,
+  LevantamientoSectionB,
+  LevantamientoSectionC,
+  LevantamientoSectionD,
+  LevantamientoSectionE,
+} from "@/components/levantamiento/sections/LevantamientoSections";
+import {
+  buildMaterialCatalogFromBackend,
+  emptyMaterialCatalog,
+  type MaterialOption,
+  type MaterialCategory,
+  type MaterialTierFilter,
+  type MaterialCatalogState,
+  autoScenarioFromShowroom,
+  resolveMaterialImage,
+  resolveBackendCatalogMatch,
+  resolveBackendImage,
+  type BackendCatalogRecord,
+} from "./logica_Levantamiento_y_cotizacion/showroomCatalog";
 
 const parseMeasure = (raw: string | undefined): number | null => {
   if (!raw) return null;
@@ -95,56 +131,24 @@ const parseMeasure = (raw: string | undefined): number | null => {
   return Number.isFinite(value) ? value : null;
 };
 
-const normalizeCatalogText = (value: string) =>
-  value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-
-const buildSearchText = (...parts: Array<string | undefined>) => normalizeCatalogText(parts.filter(Boolean).join(" "));
-
-type MaterialOption = {
-  id: string;
-  name: string;
-  tier: "Estandar" | "Tendencia" | "Premium";
-  image: string;
-  pricePerM?: number;
+const emptyWhenZeroNumericString = (value: string) => {
+  if (!value.trim()) return "";
+  const n = Number.parseFloat(value);
+  return Number.isFinite(n) && n === 0 ? "" : value;
 };
 
-type MaterialCategory = "cubiertas" | "frentes" | "herrajes";
-type MaterialTierFilter = "Todos" | MaterialOption["tier"];
-type MaterialCatalogState = Record<MaterialCategory, MaterialOption[]>;
-
-const materialImageMap: Record<MaterialCategory, { match: RegExp; src: string }[]> = {
-  cubiertas: [
-    { match: /calacatta|m?rmol|marble/i, src: "/images/materiales/calaccata_marble.jpg" },
-    { match: /granito negro/i, src: "/images/materiales/black_granite.jpg" },
-    { match: /cuarzo/i, src: "/images/materiales/quartz_texture.jpg" },
-    { match: /sinterizada/i, src: "/images/materiales/smooth_stone.jpg" },
-    { match: /porcelanato|terrazzo|terrazo/i, src: "/images/materiales/terazzo_texture.jpg" },
-    { match: /laminado|blanco|nieve/i, src: "/images/materiales/white_seamless_texture.jpg" },
-    { match: /granito/i, src: "/images/materiales/stone_texture.jpg" },
-  ],
-  frentes: [
-    { match: /nogal|parota|cedro|encino|madera|chapa/i, src: "/images/materiales/walnut_wood_texture.jpg" },
-    { match: /melamina blanca|blanca/i, src: "/images/materiales/white_seamless_texture.jpg" },
-    { match: /melamina|mdf/i, src: "/images/materiales/plywood_texture.jpg" },
-    { match: /laca met?lica|metalica/i, src: "/images/materiales/metalic_textures.jpg" },
-    { match: /laca/i, src: "/images/materiales/white_marble_texture.jpg" },
-  ],
-  herrajes: [
-    { match: /inox|stainless/i, src: "/images/materiales/stainless_steel_hinge.jpg" },
-    { match: /cierre|drawer|slide|push/i, src: "/images/materiales/drawer_slide.jpg" },
-    { match: /soft|hinge|amortiguado|hidr?ulico|smart|lux/i, src: "/images/materiales/cabinet_hinge.jpg" },
-  ],
+const emptyWhenZeroIntString = (value: string) => {
+  if (!value.trim()) return "";
+  const n = Number.parseInt(value, 10);
+  return Number.isFinite(n) && n === 0 ? "" : value;
 };
 
-const emptyMaterialCatalog: MaterialCatalogState = {
-  cubiertas: [],
-  frentes: [],
-  herrajes: [],
+const sectionCommentLabels: Record<"a" | "b" | "c" | "d" | "e", string> = {
+  a: "A",
+  b: "B",
+  c: "C",
+  d: "D",
+  e: "E",
 };
 
 const extractCatalogList = <T,>(input: unknown): T[] => {
@@ -159,25 +163,10 @@ const extractCatalogList = <T,>(input: unknown): T[] => {
   return [];
 };
 
-const readCatalogNumber = (...values: unknown[]) => {
-  for (const value of values) {
-    if (typeof value === "number" && Number.isFinite(value)) return value;
-    if (typeof value === "string") {
-      const parsed = Number.parseFloat(value);
-      if (Number.isFinite(parsed)) return parsed;
-    }
-  }
-  return 0;
-};
-
-type BackendCatalogRecord = {
-  _id?: string;
-  nombre?: string;
-  categoria?: string;
-  descripcion?: string;
-  imagenUrl?: string;
-  thumbnailUrl?: string;
-  precio?: number;
+const MATERIAL_EXAMPLE_IMAGE_BY_CATEGORY: Record<MaterialCategory, string> = {
+  cubiertas: "/images/materiales/white_marble_texture.jpg",
+  frentes: "/images/materiales/walnut_wood_texture.jpg",
+  herrajes: "/images/materiales/stainless_steel_hinge.jpg",
 };
 
 const applianceKeywordMap: Record<string, string[]> = {
@@ -214,76 +203,6 @@ const applianceKeywordMap: Record<string, string[]> = {
   "otro-dispensador-agua": ["dispensador de agua", "agua"],
   "otro-enfriador-vinos": ["enfriador de vinos", "vino"],
   "otro-tarja-extra": ["tarja extra", "segunda tarja"],
-};
-
-const resolveBackendCatalogMatch = (item: ItemCatalogo, records: BackendCatalogRecord[]) => {
-  if (records.length === 0) return null;
-  const itemText = buildSearchText(item.id, item.label, item.categoria, item.hint);
-  const keywords = applianceKeywordMap[item.id] ?? [];
-
-  const exact = records.find((record) => normalizeCatalogText(record.nombre ?? "") === itemText);
-  if (exact) return exact;
-
-  const keywordMatch = records.find((record) => {
-    const recordText = buildSearchText(record.nombre, record.categoria, record.descripcion);
-    return keywords.some((keyword) => recordText.includes(normalizeCatalogText(keyword)));
-  });
-  if (keywordMatch) return keywordMatch;
-
-  const categoryMatch = records.find(
-    (record) => normalizeCatalogText(record.categoria ?? "") === normalizeCatalogText(item.categoria ?? ""),
-  );
-  if (categoryMatch) return categoryMatch;
-
-  return records.find((record) => buildSearchText(record.nombre, record.descripcion).includes(itemText)) ?? null;
-};
-
-const resolveBackendImage = (record: { thumbnailUrl?: unknown; imagenUrl?: unknown } | null | undefined) =>
-  (typeof record?.thumbnailUrl === "string" && record.thumbnailUrl) ||
-  (typeof record?.imagenUrl === "string" && record.imagenUrl) ||
-  undefined;
-
-const inferCatalogTier = (price: number, minPrice: number, maxPrice: number): MaterialOption["tier"] => {
-  if (maxPrice <= minPrice) return "Tendencia";
-  const ratio = (price - minPrice) / (maxPrice - minPrice);
-  if (ratio < 0.34) return "Estandar";
-  if (ratio < 0.67) return "Tendencia";
-  return "Premium";
-};
-
-const inferCatalogCategory = (item: Record<string, unknown>, kind: "material" | "herraje"): MaterialCategory | null => {
-  if (kind === "herraje") return "herrajes";
-
-  const seccion = typeof item.seccion === "string" ? item.seccion.trim().toLowerCase() : "";
-  const categoria = typeof item.categoria === "string" ? item.categoria.trim().toLowerCase() : "";
-  const nombre = typeof item.nombre === "string" ? item.nombre.trim().toLowerCase() : "";
-
-  if (seccion === "cubierta" || categoria.includes("cubierta") || nombre.includes("cubierta")) return "cubiertas";
-  if (seccion === "vistas" || seccion === "cajones_puertas" || categoria.includes("frente") || nombre.includes("frente")) {
-    return "frentes";
-  }
-  if (
-    seccion === "accesorios_modulo" ||
-    seccion === "extraibles_puertas_abatibles" ||
-    seccion === "herrajes" ||
-    categoria.includes("herraje") ||
-    nombre.includes("herraje")
-  ) {
-    return "herrajes";
-  }
-
-  return null;
-};
-
-const resolveMaterialImage = (name: string, category: MaterialCategory, fallback?: string) => {
-  const match = materialImageMap[category].find((entry) => entry.match.test(name));
-  if (match) return match.src;
-  if (fallback?.startsWith("/")) return fallback;
-  return {
-    cubiertas: "/images/materiales/stone_texture.jpg",
-    frentes: "/images/materiales/dark_wood_background.jpg",
-    herrajes: "/images/materiales/cabinet_hinge.jpg",
-  }[category];
 };
 
 const WALL_COUNT_OPTIONS = [1, 2, 3, 4] as const;
@@ -326,70 +245,6 @@ function WallCountIcon({ count, className }: { count: number; className?: string
       return svg(<line x1="4" y1="12" x2="20" y2="12" />);
   }
 }
-
-const mapCatalogItem = (
-  item: Material | Herraje,
-  kind: "material" | "herraje",
-  minPrice: number,
-  maxPrice: number,
-): MaterialOption | null => {
-  const raw = item as unknown as Record<string, unknown>;
-  const category = inferCatalogCategory(raw, kind);
-  if (!category) return null;
-
-  const pricePerM = readCatalogNumber(raw.precioUnitario, raw.precioPorMetro, raw.precioMetroLineal);
-  const name = typeof raw.nombre === "string" && raw.nombre.trim() ? raw.nombre.trim() : "Material";
-
-  return {
-    id:
-      (typeof raw.idCotizador === "string" && raw.idCotizador.trim()) ||
-      (typeof raw._id === "string" && raw._id.trim()) ||
-      name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-    name,
-    tier: inferCatalogTier(pricePerM, minPrice, maxPrice),
-    image: resolveMaterialImage(name, category),
-    pricePerM,
-  };
-};
-
-const buildMaterialCatalogFromBackend = (materiales: Material[], herrajes: Herraje[]): MaterialCatalogState => {
-  const materialRecords = materiales.map((item) => ({ item, kind: "material" as const }));
-  const herrajeRecords = herrajes.map((item) => ({ item, kind: "herraje" as const }));
-  const allPrices = [...materialRecords, ...herrajeRecords].map(({ item }) => {
-    const raw = item as unknown as Record<string, unknown>;
-    return readCatalogNumber(raw.precioUnitario, raw.precioPorMetro, raw.precioMetroLineal);
-  });
-  const minPrice = allPrices.length > 0 ? Math.min(...allPrices) : 0;
-  const maxPrice = allPrices.length > 0 ? Math.max(...allPrices) : 0;
-
-  const nextCatalog: MaterialCatalogState = { cubiertas: [], frentes: [], herrajes: [] };
-
-  for (const { item, kind } of [...materialRecords, ...herrajeRecords]) {
-    const mapped = mapCatalogItem(item, kind, minPrice, maxPrice);
-    if (!mapped) continue;
-    const category = inferCatalogCategory(item as unknown as Record<string, unknown>, kind);
-    if (!category) continue;
-    nextCatalog[category].push(mapped);
-  }
-
-  for (const key of Object.keys(nextCatalog) as MaterialCategory[]) {
-    nextCatalog[key].sort((a, b) => a.name.localeCompare(b.name, "es"));
-  }
-
-  return nextCatalog;
-};
-
-const defaultCategoryImage: Record<MaterialCategory, string> = {
-  cubiertas: "/images/materiales/stone_texture.jpg",
-  frentes: "/images/materiales/dark_wood_background.jpg",
-  herrajes: "/images/materiales/cabinet_hinge.jpg",
-};
-
-const SectionCard = ({ children }: { children: React.ReactNode }) => (
-  <div className="rounded-3xl border border-white/60 bg-white/80 p-6 shadow-lg backdrop-blur-md">
-    {children}
-  </div>
-);
 
 /** Carrusel: póster grande 2:3; título en overlay sobre la imagen. Encabezados de fila = estilo Küche (como el resto del formulario). */
 const streamRowShell = "rounded-2xl bg-zinc-950 px-2 py-4 shadow-inner ring-1 ring-white/10 sm:px-4 sm:py-5";
@@ -507,9 +362,8 @@ const MaterialGrid = ({
       >
         {filtered.map((option, idx) => {
           const isActive = isMulti ? rest.selectedIds.includes(option.id) : option.id === rest.selectedId;
-          const imageSrc = resolveMaterialImage(option.name, category, option.image);
-          const pricePerM = option.pricePerM || tierPriceByTier[option.tier];
-          const optionPrice = Math.max(0, largoLineal * pricePerM);
+          const imageSrc = resolveMaterialImage(option.name, category, option.image) || MATERIAL_EXAMPLE_IMAGE_BY_CATEGORY[category];
+          const fallbackSrc = MATERIAL_EXAMPLE_IMAGE_BY_CATEGORY[category];
           return (
             <button
               key={`${category}-${option.id ?? option.name}-${idx}`}
@@ -520,16 +374,21 @@ const MaterialGrid = ({
               }`}
             >
               <div className="relative aspect-[4/5] w-full overflow-hidden bg-primary/[0.04]">
-                <img
-                  src={imageSrc}
-                  alt={option.name}
-                  className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                  loading="lazy"
-                  referrerPolicy="no-referrer"
-                  onError={(event) => {
-                    event.currentTarget.src = "/images/hero-placeholder.svg";
-                  }}
-                />
+                {imageSrc ? (
+                  <img
+                    src={imageSrc}
+                    alt={option.name}
+                    className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                    onError={(event) => {
+                      if (event.currentTarget.src.endsWith(fallbackSrc)) {
+                        return;
+                      }
+                      event.currentTarget.src = fallbackSrc;
+                    }}
+                  />
+                ) : null}
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/88 via-black/30 to-transparent px-2 pb-2.5 pt-14">
                   <p className="line-clamp-2 text-xs font-medium leading-snug text-white/95 sm:text-sm">{option.name}</p>
                 </div>
@@ -543,8 +402,7 @@ const MaterialGrid = ({
                 <span className="inline-flex w-fit rounded-full bg-primary/5 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-secondary">
                   {option.tier}
                 </span>
-                <p className="text-xs font-medium text-secondary">Estimado con tus medidas</p>
-                <p className="text-xs font-semibold text-[#8B1C1C]">{formatCurrency(optionPrice)}</p>
+                <p className="text-xs font-medium text-secondary">Selección para estimación automática</p>
               </div>
             </button>
           );
@@ -559,11 +417,10 @@ const MaterialGrid = ({
   );
 };
 
-type ShowroomMaterialTier = MaterialOption["tier"];
 type AutoScenarioId = "esencial" | "tendencia" | "premium";
 
 /** Material → escenario de inversión ($/m). */
-function tierToScenario(tier: ShowroomMaterialTier): AutoScenarioId {
+function tierToScenario(tier: MaterialOption["tier"]): AutoScenarioId {
   switch (tier) {
     case "Estandar":
       return "esencial";
@@ -575,7 +432,7 @@ function tierToScenario(tier: ShowroomMaterialTier): AutoScenarioId {
 }
 
 /** Moda de gamas; empates o tres distintos → Tendencia (regla de negocio). */
-function predominantShowroomTier(votes: ShowroomMaterialTier[]): ShowroomMaterialTier {
+function predominantShowroomTier(votes: MaterialOption["tier"][]): MaterialOption["tier"] {
   if (votes.length === 0) return "Tendencia";
   const c = { Estandar: 0, Tendencia: 0, Premium: 0 };
   for (const v of votes) c[v]++;
@@ -583,27 +440,6 @@ function predominantShowroomTier(votes: ShowroomMaterialTier[]): ShowroomMateria
   const winners = (["Estandar", "Tendencia", "Premium"] as const).filter((k) => c[k] === max);
   if (winners.length !== 1) return "Tendencia";
   return winners[0]!;
-}
-
-/**
- * Escenario automático a partir de Sección D (cubierta, frentes, herraje).
- * Frentes: moda entre los seleccionados; luego moda entre las tres familias.
- */
-function autoScenarioFromShowroom(
-  cubiertaId: string,
-  frenteIds: string[],
-  herrajeId: string,
-  catalog: MaterialCatalogState = emptyMaterialCatalog,
-): AutoScenarioId {
-  const tierC = catalog.cubiertas.find((item: MaterialOption) => item.id === cubiertaId)?.tier ?? "Estandar";
-  const tiersF =
-    frenteIds.length === 0
-      ? ([] as ShowroomMaterialTier[])
-      : frenteIds.map((id) => catalog.frentes.find((item: MaterialOption) => item.id === id)?.tier ?? "Estandar");
-  const tierF = tiersF.length === 0 ? "Estandar" : predominantShowroomTier(tiersF);
-  const tierH = catalog.herrajes.find((item: MaterialOption) => item.id === herrajeId)?.tier ?? "Estandar";
-  const winner = predominantShowroomTier([tierC, tierF, tierH]);
-  return tierToScenario(winner);
 }
 
 export default function CotizadorPreliminarPage() {
@@ -1100,6 +936,25 @@ export default function CotizadorPreliminarPage() {
     const taskId = runtimeStore.getItem(activeCitaTaskStorageKey);
     if (taskId) {
       setActiveCitaTaskId(taskId);
+      const snapshotRaw = runtimeStore.getItem(activeCitaTaskSnapshotStorageKey);
+      if (snapshotRaw) {
+        try {
+          const snapshotTask = JSON.parse(snapshotRaw) as KanbanTask;
+          if (!snapshotTask.id || snapshotTask.id === taskId) {
+            setActiveCitaTask(snapshotTask);
+            const sectionAValues = getSectionAInitialValues(snapshotTask);
+            if (sectionAValues.clientName) setClientName(sectionAValues.clientName);
+            if (sectionAValues.projectType) setProjectType(sectionAValues.projectType);
+            if (sectionAValues.location) setLocation(sectionAValues.location);
+            if (sectionAValues.largo) setLargo(sectionAValues.largo);
+            if (sectionAValues.alto) setAlto(sectionAValues.alto);
+            if (sectionAValues.deliveryWeeksMin) setDeliveryWeeksMin(sectionAValues.deliveryWeeksMin);
+            if (sectionAValues.deliveryWeeksMax) setDeliveryWeeksMax(sectionAValues.deliveryWeeksMax);
+          }
+        } catch {
+          // ignore
+        }
+      }
       const stored = runtimeStore.getItem(kanbanStorageKey);
       if (stored) {
         try {
@@ -1107,16 +962,26 @@ export default function CotizadorPreliminarPage() {
           const task = tasks.find((t) => t.id === taskId);
           if (task) {
             setActiveCitaTask(task);
-            if (task.project) setClientName(task.project);
-            const lastPre = getPreliminarList(task).at(-1);
-            if (lastPre?.projectType?.trim()) {
-              setProjectType(normalizeLegacyProjectTypeToCatalog(lastPre.projectType));
-            }
+            const sectionAValues = getSectionAInitialValues(task);
+            console.log("[Levantamiento] Datos cliente (cita activa)", {
+              cliente: sectionAValues.clientName ?? "",
+              tipoProyecto: sectionAValues.projectType ?? "",
+              ubicacion: sectionAValues.location ?? "",
+              taskId: task.id,
+            });
+            if (sectionAValues.clientName) setClientName(sectionAValues.clientName);
+            if (sectionAValues.projectType) setProjectType(sectionAValues.projectType);
+            if (sectionAValues.location) setLocation(sectionAValues.location);
+            if (sectionAValues.largo) setLargo(sectionAValues.largo);
+            if (sectionAValues.alto) setAlto(sectionAValues.alto);
+            if (sectionAValues.deliveryWeeksMin) setDeliveryWeeksMin(sectionAValues.deliveryWeeksMin);
+            if (sectionAValues.deliveryWeeksMax) setDeliveryWeeksMax(sectionAValues.deliveryWeeksMax);
           }
         } catch {
           // ignore
         }
       }
+
     }
   }, []);
 
@@ -1167,7 +1032,7 @@ export default function CotizadorPreliminarPage() {
   };
 
   const savePreliminarAndGetNextTasks = (options?: {
-    seguimientoPdf?: { key: string; fileLabel: string };
+    seguimientoPdfs?: Array<{ key: string; fileLabel: string; fileIdPrefix: string }>;
   }): { codigoProyecto: string | undefined; updatedTasks: KanbanTask[] } | null => {
     if (!activeCitaTaskId || !activeCitaTask) return null;
     const err = validatePreliminarSections();
@@ -1247,18 +1112,18 @@ export default function CotizadorPreliminarPage() {
         cotizacionPreliminarImage: "",
         cotizacionFormalImage: "",
       };
-      if (options?.seguimientoPdf) {
+      if (options?.seguimientoPdfs && options.seguimientoPdfs.length > 0) {
         const prevArchivos = Array.isArray(existingParsed.archivos)
           ? [...(existingParsed.archivos as object[])]
           : [];
         seguimientoProject.archivos = [
           ...prevArchivos,
-          {
-            id: `seg-preliminar-${options.seguimientoPdf.key}`,
-            name: options.seguimientoPdf.fileLabel,
+          ...options.seguimientoPdfs.map((pdf) => ({
+            id: `${pdf.fileIdPrefix}-${pdf.key}`,
+            name: pdf.fileLabel,
             type: "pdf",
-            indexedPdfKey: options.seguimientoPdf.key,
-          },
+            indexedPdfKey: pdf.key,
+          })),
         ];
       }
       try {
@@ -1269,6 +1134,190 @@ export default function CotizadorPreliminarPage() {
     }
 
     return { codigoProyecto, updatedTasks };
+  };
+
+  const buildWorkshopPdfForCurrentState = async (newPreliminar: PreliminarData): Promise<string> => {
+    const wallRows = Array.from({ length: levantamiento.wallSlotCount }, (_, index) => {
+      const key = wallSlotKey(index);
+      if (!isWallSlotKey(key)) return null;
+      const wallData = levantamiento.wallMeasures[key] ?? {};
+      const typeId = String(wallData[WALL_SLOT_META_TYPE] ?? "").trim();
+      const alias = String(wallData[WALL_SLOT_META_ALIAS] ?? wallMeasureLetter(index)).trim();
+      const typeLabel = WALL_ITEMS.find((item) => item.id === typeId)?.label ?? "Sin tipo";
+      const measureParts = getWallMeasureFieldDefs(typeId)
+        .map((def) => {
+          const raw = wallData[def.key];
+          if (typeof raw !== "string" || !raw.trim()) return null;
+          return `${def.label}: ${raw.trim()}${def.isMetric === false ? "" : " m"}`;
+        })
+        .filter((value): value is string => Boolean(value));
+      if (!typeId && measureParts.length === 0) return null;
+      return {
+        wall: `Muro ${index + 1}`,
+        alias: alias || wallMeasureLetter(index),
+        type: typeLabel,
+        measures: measureParts.join(" | ") || "Sin medidas capturadas",
+      };
+    }).filter((row): row is { wall: string; alias: string; type: string; measures: string } => Boolean(row));
+
+    if (levantamiento.wallMedidasModoLibre && medidasCamposTieneValor(levantamiento.wallOtro)) {
+      const libre = [
+        levantamiento.wallOtro.ancho.trim() ? `Ancho: ${levantamiento.wallOtro.ancho.trim()} m` : "",
+        levantamiento.wallOtro.alto.trim() ? `Alto: ${levantamiento.wallOtro.alto.trim()} m` : "",
+        levantamiento.wallOtro.fondo.trim() ? `Fondo: ${levantamiento.wallOtro.fondo.trim()} m` : "",
+      ]
+        .filter(Boolean)
+        .join(" | ");
+      wallRows.push({
+        wall: "Modo libre",
+        alias: "N/A",
+        type: "Otro tipo de muro",
+        measures: libre || "Sin medidas capturadas",
+      });
+    }
+
+    const selectedItems: Array<{ category: string; item: string; measures: string; notes?: string }> = [];
+    const formatMeasureParts = (m?: MedidasCampos) =>
+      [
+        m?.ancho?.trim() ? `Ancho: ${m.ancho.trim()} m` : "",
+        m?.alto?.trim() ? `Alto: ${m.alto.trim()} m` : "",
+        m?.fondo?.trim() ? `Fondo: ${m.fondo.trim()} m` : "",
+      ]
+        .filter(Boolean)
+        .join(" | ") || "Sin medidas capturadas";
+
+    for (const id of levantamiento.applianceDocumentIds ?? []) {
+      const appliance = APPLIANCE_ITEMS.find((item) => item.id === id);
+      selectedItems.push({
+        category: "Electrodomesticos",
+        item: appliance?.label ?? id,
+        measures: formatMeasureParts(levantamiento.applianceMeasures[id]),
+        notes: applianceBackendIndex[id]?.name,
+      });
+    }
+    if (levantamiento.applianceOtroInDocument) {
+      selectedItems.push({
+        category: "Electrodomesticos",
+        item: "Otro",
+        measures: formatMeasureParts(levantamiento.applianceOtro),
+        notes: levantamiento.applianceOtro.descripcion || undefined,
+      });
+    }
+
+    for (const id of levantamiento.accessoryDocumentIds ?? []) {
+      const accessory = extras.find((item) => item._id === id);
+      selectedItems.push({
+        category: "Accesorios",
+        item: accessory?.nombre ?? id,
+        measures: formatMeasureParts(levantamiento.accessoryMeasures[id]),
+        notes: accessory?.categoria,
+      });
+    }
+    if (levantamiento.accessoryOtroInDocument) {
+      selectedItems.push({
+        category: "Accesorios",
+        item: "Otro",
+        measures: formatMeasureParts(levantamiento.accessoryOtro),
+        notes: levantamiento.accessoryOtro.descripcion || undefined,
+      });
+    }
+
+    for (const id of levantamiento.lightingSelectedIds ?? []) {
+      const lighting = LIGHTING_ITEMS.find((item) => item.id === id);
+      selectedItems.push({
+        category: "Iluminacion",
+        item: lighting?.label ?? id,
+        measures: formatMeasureParts(levantamiento.lightingMeasures[id]),
+      });
+    }
+    if (levantamiento.lightingOtroInDocument) {
+      selectedItems.push({
+        category: "Iluminacion",
+        item: "Otro",
+        measures: formatMeasureParts(levantamiento.lightingOtro),
+        notes: levantamiento.lightingOtro.descripcion || undefined,
+      });
+    }
+
+    const notes = (Object.entries(levantamiento.sectionComments) as Array<["a" | "b" | "c" | "d" | "e", string]>)
+      .filter(([, note]) => Boolean(note?.trim()))
+      .map(([section, note]) => ({
+        section: `Seccion ${sectionCommentLabels[section]}`,
+        note: note.trim(),
+      }));
+
+    return buildLevantamientoWorkshopPdfDataUrl({
+      client: newPreliminar.client,
+      projectType: newPreliminar.projectType,
+      location: newPreliminar.location,
+      generatedAtLabel: new Date().toLocaleString("es-MX"),
+      deliveryWeeksLabel: newPreliminar.date,
+      largo: largo.trim() || undefined,
+      alto: alto.trim() || undefined,
+      conIsla:
+        levantamiento.conIsla === "si" ? "Si" : levantamiento.conIsla === "no" ? "No" : "Sin definir",
+      hastaTecho:
+        levantamiento.medidasGenerales?.hastaTecho === true
+          ? "Si"
+          : levantamiento.medidasGenerales?.hastaTecho === false
+            ? "No"
+            : "Sin definir",
+      walls: wallRows,
+      items: selectedItems,
+      notes,
+    });
+  };
+
+  const syncBackendTransitionToDisenos = async (task: KanbanTask, newPreliminar: PreliminarData) => {
+    const rawTask = task as KanbanTask & {
+      sourceId?: string;
+      sourceType?: "cita" | "diseno" | null;
+      sourceCitaId?: string;
+      backendSource?: "tarea" | "cita";
+      assignedToIds?: string[];
+    };
+    const sourceId = rawTask.sourceId?.trim() || task.id;
+    const preliminarCotizaciones = [...getPreliminarList(task), newPreliminar];
+
+    if (rawTask.backendSource === "cita" || rawTask.sourceType === "cita") {
+      const citaTask: AdminWorkflowTask = {
+        ...(task as unknown as AdminWorkflowTask),
+        sourceId,
+        backendSource: "cita",
+        sourceType: "cita",
+        sourceCitaId: rawTask.sourceCitaId ?? sourceId,
+        assignedToIds: Array.isArray(rawTask.assignedToIds) ? rawTask.assignedToIds : [],
+        stage: "citas",
+        status: "pendiente",
+        preliminarData: newPreliminar,
+        preliminarCotizaciones,
+        citaStarted: true,
+        citaFinished: true,
+      };
+      const promoted = await promoverCitaATarea(citaTask, "disenos");
+      if (!promoted.success) {
+        throw new Error(promoted.message || "No se pudo mover la cita a Diseños en backend.");
+      }
+      return;
+    }
+
+    const updateResponse = await actualizarTarjetaTarea(sourceId, {
+      etapa: "disenos",
+      estado: "pendiente",
+      citaFinished: true,
+      citaStarted: false,
+      preliminarData: newPreliminar,
+      preliminarCotizaciones,
+    });
+
+    if (updateResponse.success) return;
+
+    const moveResponse = await moverTarjetaTarea(sourceId, "disenos");
+    if (!moveResponse.success) {
+      throw new Error(
+        updateResponse.message || moveResponse.message || "No se pudo mover la tarea a Diseños en backend.",
+      );
+    }
   };
 
   const handleFinishCita = async () => {
@@ -1282,7 +1331,9 @@ export default function CotizadorPreliminarPage() {
     const newPreliminar = buildPreliminarDataFromForm();
     const existingCount = getPreliminarList(activeCitaTask).length;
     const preliminarPdfKey = createPreliminarSeguimientoPdfKey(activeCitaTaskId, existingCount);
+    const workshopPdfKey = createPreliminarSeguimientoWorkshopPdfKey(activeCitaTaskId, existingCount);
     let dataUrl: string;
+    let workshopDataUrl: string;
     try {
       dataUrl = await buildPreliminarPdfDataUrl(newPreliminar);
     } catch {
@@ -1290,16 +1341,41 @@ export default function CotizadorPreliminarPage() {
       return;
     }
     try {
+      workshopDataUrl = await buildWorkshopPdfForCurrentState(newPreliminar);
+    } catch {
+      setFinishError("No se pudo generar la hoja de taller en PDF. Intenta de nuevo.");
+      return;
+    }
+    try {
       await saveFormalPdf(preliminarPdfKey, dataUrl);
+      await saveFormalPdf(workshopPdfKey, workshopDataUrl);
     } catch {
       setFinishError("No se pudo guardar el PDF. Intenta de nuevo.");
       return;
     }
     const fileLabel = `Levantamiento detallado — ${newPreliminar.projectType}.pdf`;
+    const workshopFileLabel = `Hoja de taller — ${newPreliminar.projectType}.pdf`;
+    downloadPdfDataUrl(
+      workshopDataUrl,
+      `hoja-taller-${newPreliminar.client.replace(/\s+/g, "-").toLowerCase()}.pdf`,
+    );
     const result = savePreliminarAndGetNextTasks({
-      seguimientoPdf: { key: preliminarPdfKey, fileLabel },
+      seguimientoPdfs: [
+        { key: preliminarPdfKey, fileLabel, fileIdPrefix: "seg-preliminar" },
+        { key: workshopPdfKey, fileLabel: workshopFileLabel, fileIdPrefix: "seg-workshop" },
+      ],
     });
     if (!result) return;
+    try {
+      await syncBackendTransitionToDisenos(activeCitaTask, newPreliminar);
+    } catch (error) {
+      setFinishError(
+        error instanceof Error
+          ? error.message
+          : "No se pudo actualizar el estado en backend. Intenta de nuevo.",
+      );
+      return;
+    }
     const updatedTasksWithStage = result.updatedTasks.map((task) =>
       task.id === activeCitaTaskId
         ? { ...task, stage: "disenos" as const, status: "pendiente" as const }
@@ -1308,6 +1384,7 @@ export default function CotizadorPreliminarPage() {
     const kanbanStr = JSON.stringify(updatedTasksWithStage);
     runtimeStore.setItem(kanbanStorageKey, kanbanStr);
     runtimeStore.removeItem(activeCitaTaskStorageKey);
+    runtimeStore.removeItem(activeCitaTaskSnapshotStorageKey);
     const returnUrl = runtimeStore.getItem(citaReturnUrlStorageKey);
     runtimeStore.removeItem(citaReturnUrlStorageKey);
     router.push(returnUrl || "/dashboard/empleado");
@@ -1324,7 +1401,9 @@ export default function CotizadorPreliminarPage() {
     const newPreliminar = buildPreliminarDataFromForm();
     const existingCount = getPreliminarList(activeCitaTask).length;
     const preliminarPdfKey = createPreliminarSeguimientoPdfKey(activeCitaTaskId, existingCount);
+    const workshopPdfKey = createPreliminarSeguimientoWorkshopPdfKey(activeCitaTaskId, existingCount);
     let dataUrl: string;
+    let workshopDataUrl: string;
     try {
       dataUrl = await buildPreliminarPdfDataUrl(newPreliminar);
     } catch {
@@ -1332,14 +1411,29 @@ export default function CotizadorPreliminarPage() {
       return;
     }
     try {
+      workshopDataUrl = await buildWorkshopPdfForCurrentState(newPreliminar);
+    } catch {
+      setFinishError("No se pudo generar la hoja de taller en PDF. Intenta de nuevo.");
+      return;
+    }
+    try {
       await saveFormalPdf(preliminarPdfKey, dataUrl);
+      await saveFormalPdf(workshopPdfKey, workshopDataUrl);
     } catch {
       setFinishError("No se pudo guardar el PDF. Intenta de nuevo.");
       return;
     }
     const fileLabel = `Levantamiento detallado — ${newPreliminar.projectType}.pdf`;
+    const workshopFileLabel = `Hoja de taller — ${newPreliminar.projectType}.pdf`;
+    downloadPdfDataUrl(
+      workshopDataUrl,
+      `hoja-taller-${newPreliminar.client.replace(/\s+/g, "-").toLowerCase()}.pdf`,
+    );
     const result = savePreliminarAndGetNextTasks({
-      seguimientoPdf: { key: preliminarPdfKey, fileLabel },
+      seguimientoPdfs: [
+        { key: preliminarPdfKey, fileLabel, fileIdPrefix: "seg-preliminar" },
+        { key: workshopPdfKey, fileLabel: workshopFileLabel, fileIdPrefix: "seg-workshop" },
+      ],
     });
     if (!result) return;
     setProjectType(CATALOG_PROJECT_TYPES[0]);
@@ -1364,56 +1458,18 @@ export default function CotizadorPreliminarPage() {
     setLightingSearch("");
   };
 
-  const metrics = useMemo(() => {
-    const largoValue = Math.max(0, Number.parseFloat(largo) || 0);
-    const cubierta = materialCatalog.cubiertas.find((item) => item.id === selectedCubierta);
-    const herraje = materialCatalog.herrajes.find((item) => item.id === selectedHerraje);
-    const sumPrecioFrentePorM = selectedFrenteIds.reduce((acc, fid) => {
-      const f = materialCatalog.frentes.find((item) => item.id === fid);
-      return acc + (f?.pricePerM ?? 0);
-    }, 0);
-    const avgCubierta = cubierta?.pricePerM ?? 0;
-    const avgHerraje = herraje?.pricePerM ?? 0;
-    const costoMateriales = largoValue * (avgCubierta + sumPrecioFrentePorM + avgHerraje);
-    const costoElectrodomesticos = applianceCatalogTotal;
-    const costoAccesorios = accessoryCatalogTotal;
-    const costoIluminacion = cotizacionIluminacionTotal(levantamiento);
-    const precioEscenario =
-      levantamientoConfig.scenarioPrices[selectedScenario] ?? 5000;
-    const costoBase = largoValue * precioEscenario;
-    const subtotal = costoBase + costoMateriales + costoElectrodomesticos + costoAccesorios + costoIluminacion;
-    const iva = subtotal * levantamientoConfig.ivaPercent;
-    const total = subtotal + iva;
-    const m = levantamientoConfig.marginPercent;
-    const rangeMin = total * (1 - m);
-    const rangeMax = total * (1 + m);
-
-    return {
-      largoValue,
-      costoBase,
-      costoMateriales,
-      costoElectrodomesticos,
-      costoAccesorios,
-      costoIluminacion,
-      subtotal,
-      iva,
-      total,
-      rangeMin,
-      rangeMax,
-      rangeLabel: `${formatCurrency(rangeMin)} - ${formatCurrency(rangeMax)}`,
-      marginPercent: m,
-    };
-  }, [
+  const metrics = buildLevantamientoMetrics({
     largo,
     selectedCubierta,
     selectedFrenteIds,
     selectedHerraje,
+    materialCatalog,
     levantamiento,
     selectedScenario,
     levantamientoConfig,
     applianceCatalogTotal,
     accessoryCatalogTotal,
-  ]);
+  });
 
   const selectedSummary = useMemo(() => {
     const cubierta = materialCatalog.cubiertas.find((item) => item.id === selectedCubierta);
@@ -1428,7 +1484,7 @@ export default function CotizadorPreliminarPage() {
     };
   }, [largo, selectedCubierta, selectedFrenteIds, selectedHerraje]);
 
-  const scenarioOptions = useMemo(
+  const scenarioOptions = useMemo<ScenarioOption[]>(
     () => [
       {
         id: "esencial",
@@ -1455,55 +1511,21 @@ export default function CotizadorPreliminarPage() {
   const scenarioRangeLabel = metrics.rangeLabel;
 
   /** Rango por tarjeta de escenario (mismo largo, materiales e iluminación; cambia solo $/m del escenario). */
-  const scenarioCardRanges = useMemo(() => {
-    const largoValue = Math.max(0, Number.parseFloat(largo) || 0);
-    const cubierta = materialCatalog.cubiertas.find((item) => item.id === selectedCubierta);
-    const herraje = materialCatalog.herrajes.find((item) => item.id === selectedHerraje);
-    const sumPrecioFrentePorM = selectedFrenteIds.reduce((acc, fid) => {
-      const f = materialCatalog.frentes.find((item) => item.id === fid);
-      return acc + (f?.pricePerM ?? 0);
-    }, 0);
-    const costoMateriales =
-      largoValue *
-      ((cubierta?.pricePerM ?? 0) + sumPrecioFrentePorM + (herraje?.pricePerM ?? 0));
-    const costoElectrodomesticos = applianceCatalogTotal;
-    const costoIluminacion = cotizacionIluminacionTotal(levantamiento);
-    const ivaP = levantamientoConfig.ivaPercent;
-    const m = levantamientoConfig.marginPercent;
-    const def = createDefaultLevantamientoConfig().scenarioPrices;
-    return scenarioOptions.map((s) => {
-      const costoBaseS = largoValue * (levantamientoConfig.scenarioPrices[s.id as keyof typeof def] ?? def.esencial);
-      const sub = costoBaseS + costoMateriales + costoElectrodomesticos + costoIluminacion;
-      const tot = sub + sub * ivaP;
-      return { id: s.id, min: tot * (1 - m), max: tot * (1 + m) };
-    });
-  }, [
+  const scenarioCardRanges = buildScenarioCardRanges({
     largo,
     selectedCubierta,
     selectedFrenteIds,
     selectedHerraje,
+    materialCatalog,
     levantamiento,
-    scenarioOptions,
+    selectedScenario,
     levantamientoConfig,
     applianceCatalogTotal,
-  ]);
+    accessoryCatalogTotal,
+    scenarioOptions,
+  });
 
-  const materialTierAverages = useMemo(() => {
-    const row = (items: MaterialOption[]) => {
-      const grouped: Record<MaterialOption["tier"], number[]> = { Estandar: [], Tendencia: [], Premium: [] };
-      for (const item of items) grouped[item.tier].push(item.pricePerM ?? 0);
-      return {
-        Estandar: grouped.Estandar.length ? grouped.Estandar.reduce((acc, value) => acc + value, 0) / grouped.Estandar.length : 0,
-        Tendencia: grouped.Tendencia.length ? grouped.Tendencia.reduce((acc, value) => acc + value, 0) / grouped.Tendencia.length : 0,
-        Premium: grouped.Premium.length ? grouped.Premium.reduce((acc, value) => acc + value, 0) / grouped.Premium.length : 0,
-      } satisfies Record<MaterialOption["tier"], number>;
-    };
-    return {
-      cubiertas: row(materialCatalog.cubiertas),
-      frentes: row(materialCatalog.frentes),
-      herrajes: row(materialCatalog.herrajes),
-    };
-  }, [materialCatalog]);
+  const materialTierAverages = buildMaterialTierAverages(materialCatalog);
 
   /** Auto-escenario según moda de gamas en showroom; el usuario puede corregir con las tarjetas (se respeta hasta el próximo cambio de material). */
   useEffect(() => {
@@ -1642,20 +1664,6 @@ export default function CotizadorPreliminarPage() {
           </p>
         </header>
 
-        <div className="rounded-2xl border-2 border-accent bg-white p-4 shadow-md ring-1 ring-accent/20">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm font-semibold text-primary">
-              ¿Precios del rango, escenarios o materiales por gama? Configúralos aquí (admin).
-            </p>
-            <Link
-              href="/dashboard/configuracion-levantamiento"
-              className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-2xl bg-accent px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 sm:w-auto"
-            >
-              Abrir configuración de levantamiento
-            </Link>
-          </div>
-        </div>
-
         {activeCitaTask ? (
           <div className="rounded-2xl border-2 border-emerald-300 bg-emerald-50 p-4">
             <div className="flex items-center gap-3">
@@ -1677,7 +1685,7 @@ export default function CotizadorPreliminarPage() {
           </div>
         ) : null}
 
-        <SectionCard>
+        <LevantamientoSectionA>
           <div className="space-y-4">
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-secondary">
               Sección A · Datos del proyecto
@@ -1686,7 +1694,7 @@ export default function CotizadorPreliminarPage() {
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-secondary">
                 Datos del proyecto
               </p>
-              <div className="mt-4 grid grid-cols-1 items-end gap-x-4 gap-y-5 md:grid-cols-12">
+              <div className="mt-4 grid grid-cols-1 items-start gap-x-4 gap-y-5 md:grid-cols-12 md:items-center">
                 {/* Fila md: Cliente | Tipo | Ubicación (4+4+4) */}
                 <div className="col-span-12 md:col-span-4">
                   <label
@@ -1721,7 +1729,11 @@ export default function CotizadorPreliminarPage() {
                         onChange={(next) => {
                           setProjectType(next);
                           if (!isCocinasProjectTypeForConIsla(next)) {
-                            setLevantamiento((prev) => ({ ...prev, conIsla: "" }));
+                            setLevantamiento((prev) => ({
+                              ...prev,
+                              conIsla: "",
+                              medidasGenerales: { ...prev.medidasGenerales, hastaTecho: false },
+                            }));
                           }
                         }}
                         placeholder="Categoría…"
@@ -1755,46 +1767,89 @@ export default function CotizadorPreliminarPage() {
                   />
                 </div>
 
-                {/* Fila md: ¿Con isla? | Medidas | Tiempo (3+5+4) */}
+                {/* Fila md: Cocina (isla + techo) | Medidas | Tiempo (3+5+4) */}
                 {isCocinasProjectTypeForConIsla(projectType) ? (
-                  <div className="col-span-12 md:col-span-3">
-                    <p className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.15em] text-secondary">
-                      ¿Con isla?
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setLevantamiento((prev) => ({ ...prev, conIsla: "si" }))}
-                        className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                          levantamiento.conIsla === "si"
-                            ? "bg-[#8B1C1C] text-white shadow-sm"
-                            : "border border-primary/15 bg-white text-secondary hover:border-primary/35"
-                        }`}
-                      >
-                        Sí
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setLevantamiento((prev) => ({ ...prev, conIsla: "no" }))}
-                        className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                          levantamiento.conIsla === "no"
-                            ? "bg-[#8B1C1C] text-white shadow-sm"
-                            : "border border-primary/15 bg-white text-secondary hover:border-primary/35"
-                        }`}
-                      >
-                        No
-                      </button>
+                  <div className="col-span-12 flex flex-col gap-4 md:col-span-3">
+                    <div>
+                      <p className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.15em] text-secondary">
+                        ¿Con isla?
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setLevantamiento((prev) => ({ ...prev, conIsla: "si" }))}
+                          className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                            levantamiento.conIsla === "si"
+                              ? "bg-[#8B1C1C] text-white shadow-sm"
+                              : "border border-primary/15 bg-white text-secondary hover:border-primary/35"
+                          }`}
+                        >
+                          Sí
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLevantamiento((prev) => ({ ...prev, conIsla: "no" }))}
+                          className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                            levantamiento.conIsla === "no"
+                              ? "bg-[#8B1C1C] text-white shadow-sm"
+                              : "border border-primary/15 bg-white text-secondary hover:border-primary/35"
+                          }`}
+                        >
+                          No
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.15em] text-secondary">
+                        ¿Hasta el techo?
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setLevantamiento((prev) => ({
+                              ...prev,
+                              medidasGenerales: { ...prev.medidasGenerales, hastaTecho: true },
+                            }))
+                          }
+                          className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                            levantamiento.medidasGenerales?.hastaTecho === true
+                              ? "bg-[#8B1C1C] text-white shadow-sm"
+                              : "border border-primary/15 bg-white text-secondary hover:border-primary/35"
+                          }`}
+                        >
+                          Sí
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setLevantamiento((prev) => ({
+                              ...prev,
+                              medidasGenerales: { ...prev.medidasGenerales, hastaTecho: false },
+                            }))
+                          }
+                          className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                            levantamiento.medidasGenerales?.hastaTecho === false
+                              ? "bg-[#8B1C1C] text-white shadow-sm"
+                              : "border border-primary/15 bg-white text-secondary hover:border-primary/35"
+                          }`}
+                        >
+                          No
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ) : null}
 
                 <div
-                  className="col-span-12 md:col-span-5"
+                  className={`col-span-12 md:col-span-5 ${
+                    isCocinasProjectTypeForConIsla(projectType) ? "md:-translate-y-4" : ""
+                  }`}
                   role="group"
-                  aria-label="Medidas generales en metros"
+                  aria-label="Metros lineales totales en metros"
                 >
                   <p className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.15em] text-secondary">
-                    Medidas generales (m)
+                    Metros lineales totales (m)
                   </p>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -1807,14 +1862,25 @@ export default function CotizadorPreliminarPage() {
                       <input
                         id="levantamiento-largo"
                         ref={largoInputRef}
-                        value={largo}
+                        value={emptyWhenZeroNumericString(largo)}
                         onChange={(event) => {
-                          const nextValue = event.target.value;
+                          const val = event.target.value;
                           lastEditedFieldRef.current = "largo";
                           caretPositionsRef.current.largo = event.target.selectionStart ?? null;
-                          setLargo(nextValue);
+                          if (val === "") {
+                            setLargo("");
+                            return;
+                          }
+                          const parsed = Number.parseFloat(val);
+                          if (!Number.isNaN(parsed)) {
+                            setLargo(val);
+                          }
                         }}
                         inputMode="decimal"
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        placeholder="0"
                         className="w-full rounded-xl border border-primary/10 bg-white/90 px-3 py-2 text-sm outline-none"
                       />
                     </div>
@@ -1828,21 +1894,38 @@ export default function CotizadorPreliminarPage() {
                       <input
                         id="levantamiento-alto"
                         ref={altoInputRef}
-                        value={alto}
+                        value={emptyWhenZeroNumericString(alto)}
                         onChange={(event) => {
-                          const nextValue = event.target.value;
+                          const val = event.target.value;
                           lastEditedFieldRef.current = "alto";
                           caretPositionsRef.current.alto = event.target.selectionStart ?? null;
-                          setAlto(nextValue);
+                          if (val === "") {
+                            setAlto("");
+                            return;
+                          }
+                          const parsed = Number.parseFloat(val);
+                          if (!Number.isNaN(parsed)) {
+                            setAlto(val);
+                          }
                         }}
                         inputMode="decimal"
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        placeholder="0"
                         className="w-full rounded-xl border border-primary/10 bg-white/90 px-3 py-2 text-sm outline-none"
                       />
                     </div>
                   </div>
                 </div>
 
-                <div className="col-span-12 md:col-span-4" role="group" aria-label="Tiempo de entrega en semanas">
+                <div
+                  className={`col-span-12 md:col-span-4 ${
+                    isCocinasProjectTypeForConIsla(projectType) ? "md:-translate-y-4" : ""
+                  }`}
+                  role="group"
+                  aria-label="Tiempo de entrega en semanas"
+                >
                   <p className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.15em] text-secondary">
                     Tiempo de entrega (sem)
                   </p>
@@ -1857,17 +1940,24 @@ export default function CotizadorPreliminarPage() {
                       <input
                         id="levantamiento-semanas-min"
                         ref={deliveryWeeksMinInputRef}
-                        value={deliveryWeeksMin}
+                        value={emptyWhenZeroIntString(deliveryWeeksMin)}
                         onChange={(event) => {
-                          const nextValue = event.target.value;
+                          const val = event.target.value;
                           lastEditedFieldRef.current = "deliveryWeeksMin";
                           caretPositionsRef.current.deliveryWeeksMin = event.target.selectionStart ?? null;
-                          setDeliveryWeeksMin(nextValue);
+                          if (val === "") {
+                            setDeliveryWeeksMin("");
+                            return;
+                          }
+                          const parsed = Number.parseInt(val, 10);
+                          if (!Number.isNaN(parsed)) {
+                            setDeliveryWeeksMin(String(parsed));
+                          }
                         }}
                         type="number"
                         min={1}
                         step={1}
-                        placeholder="ej. 8"
+                        placeholder="0"
                         className="w-full rounded-xl border border-primary/10 bg-white/90 px-3 py-2 text-sm outline-none"
                       />
                     </div>
@@ -1881,17 +1971,24 @@ export default function CotizadorPreliminarPage() {
                       <input
                         id="levantamiento-semanas-max"
                         ref={deliveryWeeksMaxInputRef}
-                        value={deliveryWeeksMax}
+                        value={emptyWhenZeroIntString(deliveryWeeksMax)}
                         onChange={(event) => {
-                          const nextValue = event.target.value;
+                          const val = event.target.value;
                           lastEditedFieldRef.current = "deliveryWeeksMax";
                           caretPositionsRef.current.deliveryWeeksMax = event.target.selectionStart ?? null;
-                          setDeliveryWeeksMax(nextValue);
+                          if (val === "") {
+                            setDeliveryWeeksMax("");
+                            return;
+                          }
+                          const parsed = Number.parseInt(val, 10);
+                          if (!Number.isNaN(parsed)) {
+                            setDeliveryWeeksMax(String(parsed));
+                          }
                         }}
                         type="number"
                         min={1}
                         step={1}
-                        placeholder="ej. 9"
+                        placeholder="0"
                         className="w-full rounded-xl border border-primary/10 bg-white/90 px-3 py-2 text-sm outline-none"
                       />
                     </div>
@@ -1917,9 +2014,9 @@ export default function CotizadorPreliminarPage() {
               </div>
             </div>
           </div>
-        </SectionCard>
+        </LevantamientoSectionA>
 
-        <SectionCard>
+        <LevantamientoSectionB>
           <div className="space-y-6">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.3em] text-secondary">
@@ -2318,9 +2415,9 @@ export default function CotizadorPreliminarPage() {
               />
             </label>
           </div>
-        </SectionCard>
+        </LevantamientoSectionB>
 
-        <SectionCard>
+        <LevantamientoSectionC>
           <div
             id="seccion-electrodomesticos"
             ref={applianceSectionRef}
@@ -2377,11 +2474,6 @@ export default function CotizadorPreliminarPage() {
                           {currentApplianceItem.categoria}
                         </p>
                         <p className="text-base font-semibold text-primary">{currentApplianceItem.label}</p>
-                        {applianceBackendIndex[currentApplianceItem.id]?.price != null ? (
-                          <p className="mt-1 text-xs font-semibold text-[#8B1C1C]">
-                            Precio catálogo {formatCurrency(applianceBackendIndex[currentApplianceItem.id]!.price!)}
-                          </p>
-                        ) : null}
                         {currentApplianceItem.hint ? (
                           <p className="mt-2 text-sm text-secondary">{currentApplianceItem.hint}</p>
                         ) : null}
@@ -2477,27 +2569,6 @@ export default function CotizadorPreliminarPage() {
                         onChange={(e) => patchOtro("applianceOtro", "descripcion", e.target.value)}
                         rows={3}
                         className="mt-2 w-full resize-y rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-                      />
-                    </label>
-                    <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
-                      Precio estimado (MXN)
-                      <input
-                        value={
-                          levantamiento.applianceOtro.precioEstimado == null || levantamiento.applianceOtro.precioEstimado === 0
-                            ? ""
-                            : String(levantamiento.applianceOtro.precioEstimado)
-                        }
-                        onChange={(e) => {
-                          const raw = e.target.value.trim();
-                          const nextValue = raw === "" ? undefined : Math.max(0, Number.parseFloat(raw.replace(",", ".")) || 0);
-                          setLevantamiento((prev) => ({
-                            ...prev,
-                            applianceOtro: { ...prev.applianceOtro, precioEstimado: nextValue },
-                          }));
-                        }}
-                        inputMode="decimal"
-                        placeholder="0"
-                        className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
                       />
                     </label>
                     <div className="grid gap-3 sm:grid-cols-3">
@@ -2610,11 +2681,6 @@ export default function CotizadorPreliminarPage() {
                                   </div>
                                 </div>
                               </button>
-                              {applianceBackendIndex[item.id]?.price != null ? (
-                                <p className="max-w-[11rem] text-[10px] font-semibold text-[#8B1C1C]">
-                                  {formatCurrency(applianceBackendIndex[item.id]!.price!)}
-                                </p>
-                              ) : null}
                             </div>
                           ))}
                         </div>
@@ -2729,9 +2795,6 @@ export default function CotizadorPreliminarPage() {
                                   ) : null}
                                 </div>
                               </button>
-                              <p className="max-w-[11rem] text-[10px] font-semibold text-[#8B1C1C]">
-                                {pricing?.price != null ? formatCurrency(pricing.price) : "Precio por definir"}
-                              </p>
                             </div>
                           );
                         })}
@@ -2756,9 +2819,9 @@ export default function CotizadorPreliminarPage() {
               />
             </label>
           </div>
-        </SectionCard>
+        </LevantamientoSectionC>
 
-        <SectionCard>
+        <LevantamientoSectionD>
           <div className="space-y-8">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.3em] text-secondary">
@@ -2844,9 +2907,9 @@ export default function CotizadorPreliminarPage() {
               />
             </label>
           </div>
-        </SectionCard>
+        </LevantamientoSectionD>
 
-        <SectionCard>
+        <LevantamientoSectionE>
           <div ref={lightingSectionRef} className="scroll-mt-6 space-y-6">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.3em] text-secondary">
@@ -3258,148 +3321,20 @@ export default function CotizadorPreliminarPage() {
               />
             </label>
           </div>
-        </SectionCard>
+        </LevantamientoSectionE>
 
-        <SectionCard>
-          <div className="space-y-6">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-secondary">
-                Estimación visual
-              </p>
-              <h2 className="mt-2 text-2xl font-semibold">Selecciona el nivel de acabados</h2>
-              <p className="mt-2 text-sm text-secondary">
-                Presentación rápida para ayudar al cliente a imaginar el resultado.
-              </p>
-              <p className="mt-2 text-xs text-secondary/90">
-                El escenario se alinea al cambiar cubierta, frentes u herrajes; puedes elegir otro nivel aquí si lo
-                necesitas.
-              </p>
-            </div>
-            <div className="grid gap-6 lg:grid-cols-3">
-              {scenarioOptions.map((scenario) => {
-                const cardRange = scenarioCardRanges.find((r) => r.id === scenario.id);
-                const min = cardRange?.min ?? 0;
-                const max = cardRange?.max ?? 0;
-                const isActive = selectedScenario === scenario.id;
-                return (
-                  <button
-                    key={scenario.id}
-                    type="button"
-                    onClick={() => setSelectedScenario(scenario.id as AutoScenarioId)}
-                    className={`group overflow-hidden rounded-3xl border text-left shadow-lg transition hover:-translate-y-1 ${
-                      isActive
-                        ? "border-[#8B1C1C] bg-white ring-4 ring-[#8B1C1C]"
-                        : "border-primary/10 bg-white/80 hover:border-primary/30"
-                    }`}
-                  >
-                    <div className="h-44 w-full overflow-hidden">
-                      <img
-                        src={scenario.image}
-                        alt={scenario.title}
-                        className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
-                      />
-                    </div>
-                    <div className="space-y-3 p-6">
-                      <p className="text-xs uppercase tracking-[0.3em] text-secondary">
-                        {scenario.title}
-                      </p>
-                      <h3 className="text-lg font-semibold">{scenario.subtitle}</h3>
-                      <div className="rounded-2xl bg-primary/5 px-4 py-3 text-center text-lg font-semibold text-[#8B1C1C]">
-                        {formatCurrency(min)} - {formatCurrency(max)}
-                      </div>
-                      <p className="text-xs text-secondary">
-                        Basado en medidas generales y selección del showroom.
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </SectionCard>
-
-        <SectionCard>
-          <div className="grid gap-6 md:grid-cols-[1.2fr_1fr]">
-            <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-secondary">
-                Cierre y estimación
-              </p>
-              <p className="text-sm text-secondary">
-                Presenta el rango estimado y genera un PDF preliminar para el cliente.
-              </p>
-              <button
-                onClick={handleGeneratePdf}
-                className="mt-4 inline-flex items-center justify-center rounded-2xl bg-[#8B1C1C] px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:brightness-110"
-              >
-                Generar Estimación en PDF
-              </button>
-              <p className="mt-3 text-xs text-secondary">
-                El PDF incluye portada (datos, materiales, rango) y anexo con comentarios y medidas del
-                levantamiento cuando hay información capturada.
-              </p>
-              <div className="mt-4 max-w-md rounded-lg border border-primary/10 bg-white/80 px-3 py-2.5 text-xs text-secondary/90">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-secondary/70">
-                  Desglose técnico
-                </p>
-                <div className="mt-2 space-y-1.5 tabular-nums">
-                  <div className="flex justify-between gap-3">
-                    <span>Costo base (escenario)</span>
-                    <span className="shrink-0 text-primary/90">{formatCurrency(metrics.costoBase)}</span>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <span>Materiales</span>
-                    <span className="shrink-0 text-primary/90">{formatCurrency(metrics.costoMateriales)}</span>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <span>Electrodomésticos</span>
-                    <span className="shrink-0 text-primary/90">{formatCurrency(metrics.costoElectrodomesticos)}</span>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <span>Accesorios de organización y tecnología</span>
-                    <span className="shrink-0 text-primary/90">{formatCurrency(metrics.costoAccesorios)}</span>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <span>Iluminación</span>
-                    <span className="shrink-0 text-primary/90">{formatCurrency(metrics.costoIluminacion)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="min-w-0 rounded-2xl border border-primary/10 bg-primary/5 p-6">
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-secondary">
-                Estimación preliminar
-              </p>
-              <div className="mt-4 space-y-5">
-                <div className="space-y-3 text-right">
-                  <div className="flex justify-end gap-4 text-sm text-secondary sm:gap-6">
-                    <span className="min-w-0 shrink">Subtotal</span>
-                    <span className="min-w-0 shrink-0 font-semibold tabular-nums text-primary">
-                      {formatCurrency(metrics.subtotal)}
-                    </span>
-                  </div>
-                  <div className="flex justify-end gap-4 text-sm text-secondary sm:gap-6">
-                    <span className="min-w-0 shrink">
-                      IVA ({Math.round(levantamientoConfig.ivaPercent * 100)}%)
-                    </span>
-                    <span className="min-w-0 shrink-0 font-semibold tabular-nums text-primary">
-                      {formatCurrency(metrics.iva)}
-                    </span>
-                  </div>
-                  <div className="flex justify-end gap-4 border-t border-primary/15 pt-2 text-sm text-secondary sm:gap-6">
-                    <span className="min-w-0 shrink self-center font-medium">Total</span>
-                    <span className="min-w-0 shrink-0 text-2xl font-bold tabular-nums text-[#8B1C1C] sm:text-3xl">
-                      {formatCurrency(metrics.total)}
-                    </span>
-                  </div>
-                </div>
-                <div className="border-t border-primary/10 pt-3 text-xs text-secondary sm:text-right">
-                  Rango estimado (±{Math.round(metrics.marginPercent * 100)}% sobre total):{" "}
-                  <span className="font-semibold text-[#8B1C1C]">{scenarioRangeLabel}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </SectionCard>
+        <LevantamientoResumen
+          scenarioOptions={scenarioOptions}
+          scenarioCardRanges={scenarioCardRanges}
+          selectedScenario={selectedScenario}
+          scenarioRangeLabel={scenarioRangeLabel}
+          metrics={metrics}
+          selectedSummary={selectedSummary}
+          levantamientoConfig={levantamientoConfig}
+          dockToBottom={Boolean(activeCitaTask)}
+          onSelectScenario={(scenarioId) => setSelectedScenario(scenarioId as AutoScenarioId)}
+          onGeneratePdf={handleGeneratePdf}
+        />
       </div>
       {activeCitaTask ? (
         <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-emerald-200/90 bg-white/95 px-4 py-3 shadow-[0_-6px_24px_rgba(0,0,0,0.07)] backdrop-blur-md">

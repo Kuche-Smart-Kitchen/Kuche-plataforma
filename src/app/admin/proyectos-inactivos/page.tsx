@@ -43,6 +43,33 @@ const splitIntoColumns = <T,>(items: T[], columnCount: number): T[][] => {
 	return columns;
 };
 
+const buildTrackingCodeFromTask = (task: AdminWorkflowTask) => {
+	const rawTask = task as unknown as Record<string, unknown>;
+	const citaRecord = rawTask.cita && typeof rawTask.cita === "object"
+		? (rawTask.cita as Record<string, unknown>)
+		: null;
+	const clienteRecord = citaRecord?.cliente && typeof citaRecord.cliente === "object"
+		? (citaRecord.cliente as Record<string, unknown>)
+		: null;
+
+	const isMongoObjectId = (value: string) => /^[a-f0-9]{24}$/i.test(value.trim());
+	const normalizeClientId = (value: unknown) => {
+		if (typeof value !== "string") return undefined;
+		const trimmed = value.trim();
+		if (!trimmed || isMongoObjectId(trimmed)) return undefined;
+		return trimmed;
+	};
+
+	const candidates = [
+		normalizeClientId(rawTask.clienteId),
+		normalizeClientId(citaRecord?.clienteId),
+		normalizeClientId(clienteRecord?.clienteId),
+		normalizeClientId(task.clientId),
+	];
+
+	return candidates.find((value): value is string => Boolean(value)) ?? "Sin clienteId";
+};
+
 export default function ProyectosInactivosPage() {
 	const { refresh, reactivateTask } = useAdminWorkflow();
 	const [tasks, setTasks] = useState<AdminWorkflowTask[]>([]);
@@ -156,11 +183,9 @@ export default function ProyectosInactivosPage() {
 															<p className="text-[10px] font-semibold uppercase tracking-wide text-secondary">Proyecto</p>
 															<h3 className="break-words text-base font-semibold text-primary">{task.project}</h3>
 															<p className="mt-0.5 text-sm text-secondary">{task.title}</p>
-															{task.codigoProyecto ? (
-																<p className="mt-2 break-all text-[11px] text-secondary">
-																	Código: <span className="font-semibold text-primary">{task.codigoProyecto}</span>
-																</p>
-															) : null}
+															<p className="mt-2 break-all text-[11px] text-secondary">
+																Código: <span className="font-semibold text-primary">{buildTrackingCodeFromTask(task)}</span>
+															</p>
 														</div>
 													</div>
 													<span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${tone}`}>
@@ -249,11 +274,9 @@ export default function ProyectosInactivosPage() {
 									</p>
 									<p className="mt-1 break-words text-sm font-medium text-primary">{selectedTask.project}</p>
 									<p className="text-xs text-secondary">{selectedTask.title}</p>
-									{selectedTask.codigoProyecto ? (
-										<p className="mt-2 break-all text-[11px] text-secondary">
-											Código: <span className="font-semibold text-primary">{selectedTask.codigoProyecto}</span>
-										</p>
-									) : null}
+									<p className="mt-2 break-all text-[11px] text-secondary">
+										Código: <span className="font-semibold text-primary">{buildTrackingCodeFromTask(selectedTask)}</span>
+									</p>
 								</div>
 								<button
 									type="button"

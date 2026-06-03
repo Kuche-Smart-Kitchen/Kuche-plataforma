@@ -33,6 +33,7 @@ export type AdminWorkflowTask = KanbanTask & {
     fechaProgramada?: string;
     aprobadaPorAdmin?: boolean;
     aprobadaPorCliente?: boolean;
+    actualizadaEn?: string;
   };
   sourceType?: "cita" | "diseno" | null;
   cita?: {
@@ -101,6 +102,72 @@ const ensureStringArray = (value: unknown): string[] => {
     return [value.trim()];
   }
   return [];
+};
+
+const extractAssigneeIds = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        if (typeof entry === "string") {
+          const trimmed = entry.trim();
+          return trimmed.length > 0 ? trimmed : null;
+        }
+        if (typeof entry === "object" && entry !== null) {
+          const row = entry as Record<string, unknown>;
+          return toString(row._id) ?? toString(row.id) ?? toString(row.usuarioId) ?? null;
+        }
+        return null;
+      })
+      .filter((id): id is string => Boolean(id));
+  }
+  if (typeof value === "object" && value !== null) {
+    const row = value as Record<string, unknown>;
+    const single = toString(row._id) ?? toString(row.id) ?? toString(row.usuarioId);
+    return single ? [single] : [];
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? [trimmed] : [];
+  }
+  return [];
+};
+
+const extractAssigneeNames = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        if (typeof entry === "string") {
+          const trimmed = entry.trim();
+          return trimmed.length > 0 ? trimmed : null;
+        }
+        if (typeof entry === "object" && entry !== null) {
+          const row = entry as Record<string, unknown>;
+          return toString(row.nombre) ?? toString(row.name) ?? toString(row.correo) ?? null;
+        }
+        return null;
+      })
+      .filter((name): name is string => Boolean(name));
+  }
+  if (typeof value === "object" && value !== null) {
+    const row = value as Record<string, unknown>;
+    const single = toString(row.nombre) ?? toString(row.name) ?? toString(row.correo);
+    return single ? [single] : [];
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? [trimmed] : [];
+  }
+  return [];
+};
+
+const hasSavedFormalCotizacion = (raw: Record<string, unknown>): boolean => {
+  if (Array.isArray(raw.cotizacionesFormales) && raw.cotizacionesFormales.length > 0) {
+    return true;
+  }
+  if (raw.cotizacionFormalData && typeof raw.cotizacionFormalData === "object") {
+    return true;
+  }
+  return false;
 };
 
 const normalizeStage = (value: unknown): TaskStage => {
@@ -175,6 +242,21 @@ const extractPagosPayload = (raw: Record<string, unknown>) => {
   };
 };
 
+const extractInversionPayload = (raw: Record<string, unknown>, pagosPayload?: AdminWorkflowTask["pagos"]) => {
+  const directRaw = Number(raw.inversion ?? raw.inversionTotal ?? raw.totalProyecto ?? raw.montoTotalProyecto ?? 0);
+  if (Number.isFinite(directRaw) && directRaw > 0) {
+    return Math.round(directRaw);
+  }
+
+  if (!pagosPayload) return undefined;
+  const totalFromPagos =
+    (pagosPayload.anticipo.amount || 0)
+    + (pagosPayload.segundoPago.amount || 0)
+    + (pagosPayload.liquidacion.amount || 0);
+
+  return totalFromPagos > 0 ? Math.round(totalFromPagos) : undefined;
+};
+
 const extractVisitaPayload = (raw: Record<string, unknown>) => {
   const visita = asRecord(raw.visita);
   if (!visita) return null;
@@ -182,6 +264,7 @@ const extractVisitaPayload = (raw: Record<string, unknown>) => {
     fechaProgramada: toIsoString(visita.fechaProgramada),
     aprobadaPorAdmin: toBoolean(visita.aprobadaPorAdmin),
     aprobadaPorCliente: toBoolean(visita.aprobadaPorCliente),
+    actualizadaEn: toIsoString(visita.actualizadaEn),
   };
 };
 
@@ -203,22 +286,27 @@ const extractClientId = (raw: Record<string, unknown>, citaPayload: Record<strin
   const clienteFromCita = asRecord(citaPayload?.cliente);
   const clienteFromRaw = asRecord(raw.cliente);
   return (
+    toString(citaPayload?.clienteId) ??
+    toString(citaPayload?.clientId) ??
+    toString(citaPayload?.codigoCliente) ??
+    toString(citaPayload?.codigo) ??
+    toString(clienteFromCita?.clienteId) ??
+    toString(clienteFromCita?.clientId) ??
+    toString(clienteFromCita?.codigoCliente) ??
+    toString(clienteFromCita?.codigo) ??
+    toString(raw.clienteId) ??
+    toString(raw.clientId) ??
+    toString(raw.codigoCliente) ??
+    toString(raw.codigo) ??
+    toString(clienteFromRaw?.clienteId) ??
+    toString(clienteFromRaw?.clientId) ??
+    toString(clienteFromRaw?.codigoCliente) ??
+    toString(clienteFromRaw?.codigo) ??
     toString(citaPayload?.clienteRef) ??
     toString(citaPayload?.codigoCliente) ??
     toString(citaPayload?.codigo) ??
-    toString(clienteFromCita?._id) ??
-    toString(clienteFromCita?.id) ??
-    toString(clienteFromCita?.clienteId) ??
-    toString(clienteFromCita?.codigo) ??
-    toString(citaPayload?.clienteId) ??
     toString(raw.clienteRef) ??
-    toString(raw.codigoCliente) ??
-    toString(raw.codigo) ??
-    toString(clienteFromRaw?._id) ??
-    toString(clienteFromRaw?.id) ??
-    toString(clienteFromRaw?.clienteId) ??
-    toString(clienteFromRaw?.codigo) ??
-    toString(raw.clienteId)
+    undefined
   );
 };
 
@@ -269,8 +357,10 @@ const getTaskProjectName = (
 };
 
 const getAssignedFromTask = (item: KanbanItem, raw: Record<string, unknown>) => {
-  const assignedToIds = ensureStringArray(raw.asignadoA ?? item.asignadoA);
-  const assignedToNames = ensureStringArray(raw.asignadoANombre ?? item.asignadoANombre);
+  const assignedToIds = extractAssigneeIds(raw.asignadoA ?? item.asignadoA);
+  const assignedToNames = extractAssigneeNames(
+    raw.asignadoANombre ?? item.asignadoANombre ?? raw.asignadoA ?? item.asignadoA,
+  );
 
   if (assignedToIds.length > 0 || assignedToNames.length > 0) {
     return {
@@ -333,6 +423,7 @@ export const mapKanbanItemToAdminTask = (item: KanbanItem): AdminWorkflowTask =>
   const fallbackTitle = toString((item as unknown as Record<string, unknown>).title) ?? "Cita";
   const clientName = getCitaClientName(raw, citaPayload) ?? fallbackTitle;
   const pagosPayload = extractPagosPayload(raw);
+  const inversionPayload = extractInversionPayload(raw, pagosPayload);
   const seguimientoNota = toString(raw.seguimientoNota ?? raw.notaSeguimiento ?? raw.notaPublica);
 
   if (isCitaCard(item, raw, citaPayload)) {
@@ -388,11 +479,14 @@ export const mapKanbanItemToAdminTask = (item: KanbanItem): AdminWorkflowTask =>
         fechaProgramada: visitScheduledAt,
         aprobadaPorAdmin: designApprovedByAdmin,
         aprobadaPorCliente: designApprovedByClient,
+        actualizadaEn: visitaPayload?.actualizadaEn,
       },
       preliminarData: undefined,
       cotizacionFormalData: undefined,
       preliminarCotizaciones: undefined,
       cotizacionesFormales: undefined,
+      inversion: inversionPayload,
+      etapaActual: toString(raw.etapaActual),
       codigoProyecto: toString(raw.codigoProyecto),
       backendSource: isCitasStage ? "cita" : "tarea",
       sourceType: "cita",
@@ -414,15 +508,20 @@ export const mapKanbanItemToAdminTask = (item: KanbanItem): AdminWorkflowTask =>
     };
   }
 
-  const assignedTo = ensureStringArray(item.asignadoANombre);
-  const assignedToIds = ensureStringArray(item.asignadoA);
+  const { assignedTo, assignedToIds } = getAssignedFromTask(item, raw);
+  const normalizedStage = normalizeStage(item.etapa);
+  const rawCitaFinished = toBoolean(raw.citaFinished) ?? false;
+  const citaFinishedForUi =
+    normalizedStage === "cotizacion"
+      ? rawCitaFinished && hasSavedFormalCotizacion(raw)
+      : rawCitaFinished;
 
   return {
     id: item._id,
     sourceId: item._id,
     clientId: extractClientId(raw, asRecord(raw.cita)),
     title: item.titulo || item.notas || "Tarea",
-    stage: normalizeStage(item.etapa),
+    stage: normalizedStage,
     status: normalizeStatus(item.estado),
     assignedTo: assignedTo.length > 0 ? assignedTo : ["Sin asignar"],
     assignedToIds,
@@ -445,7 +544,7 @@ export const mapKanbanItemToAdminTask = (item: KanbanItem): AdminWorkflowTask =>
       raw.followUpStatus ?? raw.seguimiento ?? raw.estadoSeguimiento ?? item.followUpStatus,
     ) as SeguimientoTarea,
     citaStarted: toBoolean(raw.citaStarted) ?? false,
-    citaFinished: toBoolean(raw.citaFinished) ?? false,
+    citaFinished: citaFinishedForUi,
     designApprovedByAdmin:
       visitaPayload?.aprobadaPorAdmin ?? toBoolean(raw.designApprovedByAdmin) ?? false,
     designApprovedByClient:
@@ -455,6 +554,7 @@ export const mapKanbanItemToAdminTask = (item: KanbanItem): AdminWorkflowTask =>
       fechaProgramada: visitaPayload?.fechaProgramada ?? toIsoString(raw.visitScheduledAt),
       aprobadaPorAdmin: visitaPayload?.aprobadaPorAdmin ?? toBoolean(raw.designApprovedByAdmin) ?? false,
       aprobadaPorCliente: visitaPayload?.aprobadaPorCliente ?? toBoolean(raw.designApprovedByClient) ?? false,
+      actualizadaEn: visitaPayload?.actualizadaEn,
     },
     preliminarData:
       raw.preliminarData && typeof raw.preliminarData === "object"
@@ -470,6 +570,8 @@ export const mapKanbanItemToAdminTask = (item: KanbanItem): AdminWorkflowTask =>
     cotizacionesFormales: Array.isArray(raw.cotizacionesFormales)
       ? (raw.cotizacionesFormales as KanbanTask["cotizacionesFormales"])
       : undefined,
+    inversion: inversionPayload,
+    etapaActual: toString(raw.etapaActual),
     codigoProyecto: toString(raw.codigoProyecto),
     backendSource: "tarea",
     sourceType: (toString(raw.sourceType) as AdminWorkflowTask["sourceType"]) ?? null,
@@ -552,11 +654,15 @@ export const buildTaskUpdatePayload = (task: AdminWorkflowTask): Partial<KanbanI
       fechaProgramada: visitScheduledAt,
       aprobadaPorAdmin: approvedByAdmin,
       aprobadaPorCliente: approvedByClient,
+      actualizadaEn: task.visita?.actualizadaEn,
     },
     preliminarData: task.preliminarData,
     cotizacionFormalData: task.cotizacionFormalData,
     preliminarCotizaciones: getPreliminarList(task),
     cotizacionesFormales: getCotizacionesFormalesList(task),
+    inversion: task.inversion,
+    inversionTotal: task.inversion,
+    etapaActual: task.etapaActual,
     codigoProyecto: task.codigoProyecto,
     sourceType: task.sourceType ?? undefined,
     sourceId: task.sourceType ? task.sourceId : undefined,

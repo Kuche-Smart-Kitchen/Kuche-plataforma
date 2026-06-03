@@ -12,6 +12,7 @@ import {
   kanbanStorageKey,
   initialKanbanTasks,
   activeCitaTaskStorageKey,
+  activeCitaTaskSnapshotStorageKey,
   citaReturnUrlStorageKey,
   activeCotizacionFormalTaskStorageKey,
   type KanbanTask,
@@ -540,7 +541,11 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
   const startCita = (taskId: string) => {
     updateTask(taskId, (task) => ({ ...task, citaStarted: true }));
+    const selectedTask = tasks.find((task) => task.id === taskId);
     runtimeStore.setItem(activeCitaTaskStorageKey, taskId);
+    if (selectedTask) {
+      runtimeStore.setItem(activeCitaTaskSnapshotStorageKey, JSON.stringify(selectedTask));
+    }
     runtimeStore.setItem(citaReturnUrlStorageKey, window.location.pathname);
     router.push("/dashboard/cotizador-preliminar");
   };

@@ -400,6 +400,12 @@ export default function DisenosPage() {
     const success = await persistTask(taskId, {
       designApprovedByAdmin: true,
       visitScheduledAt: isoDateTime,
+      status: "pendiente",
+      visita: {
+        fechaProgramada: isoDateTime,
+        aprobadaPorAdmin: true,
+        actualizadaEn: new Date().toISOString(),
+      },
     });
     if (success) {
       setVisitModalTaskId(null);

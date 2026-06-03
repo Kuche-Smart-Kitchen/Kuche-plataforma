@@ -58,6 +58,8 @@ const getResponseMessage = (response: unknown): string | undefined => {
 
 const buildTaskUpdatePayload = (patch: WorkflowTaskPatch): ActualizarTareaData => {
   const payload: ActualizarTareaData = {};
+  const visitaPatch: NonNullable<ActualizarTareaData["visita"]> = {};
+  let shouldMarkVisitaUpdatedAt = false;
   const assignedToIds = Array.isArray(patch.assignedToIds)
     ? patch.assignedToIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
     : [];
@@ -78,9 +80,21 @@ const buildTaskUpdatePayload = (patch: WorkflowTaskPatch): ActualizarTareaData =
   if (patch.followUpStatus !== undefined) payload.followUpStatus = patch.followUpStatus;
   if (patch.citaStarted !== undefined) payload.citaStarted = patch.citaStarted;
   if (patch.citaFinished !== undefined) payload.citaFinished = patch.citaFinished;
-  if (patch.designApprovedByAdmin !== undefined) payload.designApprovedByAdmin = patch.designApprovedByAdmin;
-  if (patch.designApprovedByClient !== undefined) payload.designApprovedByClient = patch.designApprovedByClient;
-  if (patch.visitScheduledAt !== undefined) payload.visitScheduledAt = patch.visitScheduledAt;
+  if (patch.designApprovedByAdmin !== undefined) {
+    payload.designApprovedByAdmin = patch.designApprovedByAdmin;
+    visitaPatch.aprobadaPorAdmin = patch.designApprovedByAdmin;
+    shouldMarkVisitaUpdatedAt = true;
+  }
+  if (patch.designApprovedByClient !== undefined) {
+    payload.designApprovedByClient = patch.designApprovedByClient;
+    visitaPatch.aprobadaPorCliente = patch.designApprovedByClient;
+    shouldMarkVisitaUpdatedAt = true;
+  }
+  if (patch.visitScheduledAt !== undefined) {
+    payload.visitScheduledAt = patch.visitScheduledAt;
+    visitaPatch.fechaProgramada = patch.visitScheduledAt;
+    shouldMarkVisitaUpdatedAt = true;
+  }
   if (patch.scheduledAt !== undefined) payload.scheduledAt = patch.scheduledAt;
   if (patch.sourceType !== undefined) payload.sourceType = patch.sourceType;
   if (patch.sourceId !== undefined) payload.sourceId = patch.sourceId;
@@ -92,8 +106,29 @@ const buildTaskUpdatePayload = (patch: WorkflowTaskPatch): ActualizarTareaData =
   if (patch.cotizacionesFormales !== undefined) payload.cotizacionesFormales = patch.cotizacionesFormales;
   if (patch.codigoProyecto !== undefined) payload.codigoProyecto = patch.codigoProyecto;
   if (patch.cita !== undefined) payload.cita = patch.cita;
-  if (patch.visita !== undefined) payload.visita = patch.visita;
+  if (patch.visita !== undefined) {
+    payload.visita = {
+      ...(patch.visita ?? {}),
+      ...visitaPatch,
+      ...(shouldMarkVisitaUpdatedAt ? { actualizadaEn: new Date().toISOString() } : {}),
+    };
+  } else if (Object.keys(visitaPatch).length > 0) {
+    if (shouldMarkVisitaUpdatedAt) {
+      visitaPatch.actualizadaEn = new Date().toISOString();
+    }
+    payload.visita = visitaPatch;
+  }
   if (patch.pagos !== undefined) (payload as Record<string, unknown>).pagos = patch.pagos;
+  if ((patch as Record<string, unknown>).inversion !== undefined) {
+    const inversion = Number((patch as Record<string, unknown>).inversion);
+    if (Number.isFinite(inversion)) {
+      (payload as Record<string, unknown>).inversion = inversion;
+      (payload as Record<string, unknown>).inversionTotal = inversion;
+    }
+  }
+  if ((patch as Record<string, unknown>).etapaActual !== undefined) {
+    (payload as Record<string, unknown>).etapaActual = (patch as Record<string, unknown>).etapaActual;
+  }
   if (patch.seguimientoNota !== undefined) (payload as Record<string, unknown>).seguimientoNota = patch.seguimientoNota;
   if (patch.notaSeguimiento !== undefined) (payload as Record<string, unknown>).notaSeguimiento = patch.notaSeguimiento;
 

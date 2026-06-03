@@ -954,13 +954,9 @@ const APPLIANCE_LEVANTAMIENTO_IMAGE_EXTRAS: Record<string, readonly string[]> = 
   ],
 };
 
-const ELECTRO_PUBLIC_PREFIX = "/images/electrodomesticos/";
-
-/** URLs que usa la UI: electrodomésticos vía API (query `n=` para nombres con `.jpg`). */
+/** Mantener URL original; no proxy por API para evitar solicitudes innecesarias. */
 function toApplianceDisplayUrl(url: string): string {
-  if (!url.startsWith(ELECTRO_PUBLIC_PREFIX)) return url;
-  const file = url.slice(ELECTRO_PUBLIC_PREFIX.length);
-  return `/api/electro-img?n=${encodeURIComponent(file)}`;
+  return url;
 }
 
 /** Orden: principal dedicada, alternativas en carpeta, imagen del catálogo, placeholder (sin duplicados). */
@@ -1110,6 +1106,10 @@ export type LevantamientoDetalle = {
   /** Medidas generales del espacio (m), formulario preliminar / PDF. */
   largo?: string;
   alto?: string;
+  /** Ajustes generales que afectan el cálculo del levantamiento. */
+  medidasGenerales?: {
+    hastaTecho?: boolean;
+  };
   sectionComments: Partial<Record<"a" | "b" | "c" | "d" | "e", string>>;
   /** Cantidad de paredes del flujo dinámico (wall-0 … wall-N-1). 0 = sin definir. */
   wallSlotCount: number;
@@ -1224,6 +1224,7 @@ export function initMeasuresMap(ids: string[]): Record<string, MedidasCampos> {
 export function defaultLevantamientoDetalle(): LevantamientoDetalle {
   return {
     conIsla: "",
+    medidasGenerales: {},
     sectionComments: {},
     wallSlotCount: 0,
     wallMeasures: initWallMeasuresMap(),
@@ -1385,11 +1386,18 @@ export function normalizeLevantamientoDetalle(raw: unknown): LevantamientoDetall
 
   const largoGen = typeof r.largo === "string" ? r.largo : undefined;
   const altoGen = typeof r.alto === "string" ? r.alto : undefined;
+  const medidasGenerales =
+    typeof r.medidasGenerales === "object" && r.medidasGenerales !== null
+      ? {
+          hastaTecho: (r.medidasGenerales as { hastaTecho?: unknown }).hastaTecho === true,
+        }
+      : { ...d.medidasGenerales };
 
   return {
     conIsla,
     largo: largoGen,
     alto: altoGen,
+    medidasGenerales,
     sectionComments,
     wallSlotCount,
     wallMeasures: normalizeWallMeasuresPayload(r.wallMeasures),

@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ItemCatalogo } from "@/lib/levantamiento-catalog";
-import { applianceLevantamientoImageCandidates } from "@/lib/levantamiento-catalog";
 
 type Props = {
   item: ItemCatalogo;
@@ -24,12 +23,8 @@ export default function ApplianceTypeImage({
 }: Props) {
   const candidates = useMemo(() => {
     const backendCandidates = preferredSrcs.filter((value): value is string => Boolean(value?.trim()));
-    return [...new Set([...backendCandidates, ...applianceLevantamientoImageCandidates(item)])];
-  }, [item, preferredSrcs]);
-
-  if (candidates.length === 0) {
-    return <div aria-hidden="true" className={className} />;
-  }
+    return [...new Set(backendCandidates)];
+  }, [preferredSrcs]);
 
   const [index, setIndex] = useState(0);
   const stopRef = useRef(false);
@@ -38,6 +33,10 @@ export default function ApplianceTypeImage({
     setIndex(0);
     stopRef.current = false;
   }, [item.id]);
+
+  if (candidates.length === 0) {
+    return <div aria-hidden="true" className={className} />;
+  }
 
   const max = Math.max(0, candidates.length - 1);
   const safeIndex = Math.min(index, max);

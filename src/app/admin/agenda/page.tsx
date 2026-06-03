@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Plus, Users, Loader2 } from "lucide-react";
-import KanbanBoard from "@/components/admin/KanbanBoard";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, Loader2, Plus, Users } from "lucide-react";
 import CitaModal from "@/components/admin/CitaModal";
 import CrearCitaModal from "@/components/admin/CrearCitaModal";
 import { 
@@ -15,6 +14,57 @@ import {
 } from "@/lib/axios/citasApi";
 import { listarEmpleados, type Usuario } from "@/lib/axios/usuariosApi";
 
+const WEEK_DAYS = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"];
+
+const formatLocalDateKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const formatLocalDateTime = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return { dateKey: "", timeLabel: "--:--" };
+  }
+
+  return {
+    dateKey: formatLocalDateKey(date),
+    timeLabel: new Intl.DateTimeFormat("es-MX", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(date),
+  };
+};
+
+const estadoStyles: Record<Cita["estado"], string> = {
+  programada: "bg-amber-100 text-amber-700",
+  en_proceso: "bg-sky-100 text-sky-700",
+  completada: "bg-emerald-100 text-emerald-700",
+  cancelada: "bg-rose-100 text-rose-700",
+};
+
+const estadoLabel: Record<Cita["estado"], string> = {
+  programada: "Programada",
+  en_proceso: "En proceso",
+  completada: "Completada",
+  cancelada: "Cancelada",
+};
+
+const getCitaAssignedLabel = (cita: Cita) => {
+  const assigned = cita.ingenieroAsignado;
+  if (!assigned) return "Sin asignar";
+  if (Array.isArray(assigned)) {
+    const labels = assigned
+      .map((item) => (typeof item === "string" ? item : item.nombre))
+      .filter(Boolean);
+    return labels.length > 0 ? labels.join(", ") : "Sin asignar";
+  }
+  return typeof assigned === "string" ? assigned : assigned.nombre;
+};
+
 
 export default function AgendaPage() {
   const [citas, setCitas] = useState<Cita[]>([]);
@@ -24,6 +74,11 @@ export default function AgendaPage() {
   const [selectedCita, setSelectedCita] = useState<Cita | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCrearCitaModalOpen, setIsCrearCitaModalOpen] = useState(false);
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+  const [selectedDateKey, setSelectedDateKey] = useState(() => formatLocalDateKey(new Date()));
 
   // Cargar citas al montar el componente
   useEffect(() => {
@@ -63,29 +118,6 @@ export default function AgendaPage() {
   const handleCitaClick = (cita: Cita) => {
     setSelectedCita(cita);
     setIsModalOpen(true);
-  };
-
-  const handleMoverCita = async (citaId: string, nuevoEstado: 'programada' | 'en_proceso' | 'completada') => {
-    try {
-      const response = await actualizarEstadoCita(citaId, { 
-        estado: nuevoEstado,
-        ...(nuevoEstado === 'completada' ? { fechaTermino: new Date().toISOString() } : {})
-      });
-
-      if (response.success && response.data) {
-        // Actualizar la cita en el estado local
-        setCitas(prevCitas => 
-          prevCitas.map(cita => 
-            cita._id === citaId ? response.data! : cita
-          )
-        );
-      } else {
-        alert(response.message || "Error al actualizar el estado");
-      }
-    } catch (err) {
-      console.error("Error al mover cita:", err);
-      alert("Error al actualizar el estado de la cita");
-    }
   };
 
   const handleActualizarDatos = async (citaId: string, datos: ActualizarDatosCitaData) => {
@@ -173,10 +205,75 @@ export default function AgendaPage() {
     setSelectedCita(null);
   };
 
-  // Filtrar citas por estado
-  const programadas = citas.filter(cita => cita.estado === 'programada');
-  const enProceso = citas.filter(cita => cita.estado === 'en_proceso');
-  const completadas = citas.filter(cita => cita.estado === 'completada');
+  const todayDateKey = useMemo(() => formatLocalDateKey(new Date()), []);
+
+  const citasByDate = useMemo(() => {
+    const grouped = new Map<string, Cita[]>();
+    for (const cita of citas) {
+      const { dateKey } = formatLocalDateTime(cita.fechaAgendada);
+      if (!dateKey) continue;
+      const items = grouped.get(dateKey) ?? [];
+      items.push(cita);
+      grouped.set(dateKey, items);
+    }
+
+    for (const [key, value] of grouped.entries()) {
+      value.sort((a, b) => new Date(a.fechaAgendada).getTime() - new Date(b.fechaAgendada).getTime());
+      grouped.set(key, value);
+    }
+
+    return grouped;
+  }, [citas]);
+
+  const selectedDateCitas = useMemo(() => citasByDate.get(selectedDateKey) ?? [], [citasByDate, selectedDateKey]);
+
+  const selectedDateLabel = useMemo(() => {
+    const date = new Date(`${selectedDateKey}T00:00:00`);
+    if (Number.isNaN(date.getTime())) {
+      return "Fecha invalida";
+    }
+
+    const formatted = new Intl.DateTimeFormat("es-MX", {
+      weekday: "long",
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    }).format(date);
+    return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+  }, [selectedDateKey]);
+
+  const daysInCurrentMonth = useMemo(() => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const total = new Date(year, month + 1, 0).getDate();
+    return Array.from({ length: total }, (_, index) => new Date(year, month, index + 1));
+  }, [currentMonth]);
+
+  const calendarCells = useMemo(() => {
+    const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+    const startOffset = (firstDay.getDay() + 6) % 7;
+    const total = startOffset + daysInCurrentMonth.length;
+    const trailing = (7 - (total % 7)) % 7;
+    return [
+      ...Array.from({ length: startOffset }, () => null),
+      ...daysInCurrentMonth,
+      ...Array.from({ length: trailing }, () => null),
+    ];
+  }, [currentMonth, daysInCurrentMonth]);
+
+  const changeMonth = (offset: number) => {
+    setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + offset, 1));
+  };
+
+  const programadasCount = useMemo(
+    () => citas.filter((cita) => cita.estado === "programada").length,
+    [citas],
+  );
+
+  const enProcesoCount = useMemo(
+    () => citas.filter((cita) => cita.estado === "en_proceso").length,
+    [citas],
+  );
 
   // Estadísticas
   const sinAsignar = citas.filter((cita) => {
@@ -263,7 +360,7 @@ export default function AgendaPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs text-secondary">Programadas</p>
-              <p className="mt-1 text-2xl font-bold text-yellow-600">{programadas.length}</p>
+              <p className="mt-1 text-2xl font-bold text-yellow-600">{programadasCount}</p>
             </div>
             <div className="rounded-lg bg-yellow-100 p-2">
               <span className="text-xl">📅</span>
@@ -274,7 +371,7 @@ export default function AgendaPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs text-secondary">En Proceso</p>
-              <p className="mt-1 text-2xl font-bold text-blue-600">{enProceso.length}</p>
+              <p className="mt-1 text-2xl font-bold text-blue-600">{enProcesoCount}</p>
             </div>
             <div className="rounded-lg bg-blue-100 p-2">
               <span className="text-xl">🔄</span>
@@ -294,14 +391,146 @@ export default function AgendaPage() {
         </div>
       </div>
 
-      {/* Kanban Board */}
-      <KanbanBoard
-        programadas={programadas}
-        enProceso={enProceso}
-        completadas={completadas}
-        onCitaClick={handleCitaClick}
-        onMoverCita={handleMoverCita}
-      />
+      <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Vista calendario</p>
+              <h2 className="mt-1 text-2xl font-semibold text-primary capitalize">
+                {currentMonth.toLocaleDateString("es-MX", { month: "long", year: "numeric" })}
+              </h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => changeMonth(-1)}
+                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 transition hover:bg-slate-100"
+                aria-label="Mes anterior"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const now = new Date();
+                  setCurrentMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+                  setSelectedDateKey(formatLocalDateKey(now));
+                }}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+              >
+                Hoy
+              </button>
+              <button
+                type="button"
+                onClick={() => changeMonth(1)}
+                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 transition hover:bg-slate-100"
+                aria-label="Mes siguiente"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-7 gap-2 text-center text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+            {WEEK_DAYS.map((day) => (
+              <div key={day} className="py-1">{day}</div>
+            ))}
+          </div>
+
+          <div className="mt-2 grid grid-cols-7 gap-2">
+            {calendarCells.map((date, index) => {
+              if (!date) {
+                return <div key={`empty-${index}`} className="min-h-[115px] rounded-2xl border border-transparent bg-transparent" />;
+              }
+
+              const dateKey = formatLocalDateKey(date);
+              const isToday = dateKey === todayDateKey;
+              const isSelected = dateKey === selectedDateKey;
+              const dayItems = citasByDate.get(dateKey) ?? [];
+
+              return (
+                <button
+                  key={dateKey}
+                  type="button"
+                  onClick={() => setSelectedDateKey(dateKey)}
+                  className={`min-h-[115px] rounded-2xl border p-2 text-left transition ${
+                    isSelected
+                      ? "border-[#8B1C1C]/40 bg-[#8B1C1C]/5"
+                      : dayItems.length > 0
+                        ? "border-slate-200 bg-slate-50 hover:bg-slate-100"
+                        : "border-slate-100 bg-white hover:bg-slate-50"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className={`text-sm font-semibold ${isToday ? "text-[#8B1C1C]" : "text-slate-700"}`}>{date.getDate()}</span>
+                    {dayItems.length > 0 ? (
+                      <span className="rounded-full bg-[#8B1C1C]/10 px-2 py-0.5 text-[10px] font-semibold text-[#8B1C1C]">
+                        {dayItems.length}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="mt-2 space-y-1">
+                    {dayItems.slice(0, 2).map((cita) => {
+                      const { timeLabel } = formatLocalDateTime(cita.fechaAgendada);
+                      return (
+                        <div key={cita._id} className="truncate rounded-lg bg-white px-2 py-1 text-[10px] font-medium text-slate-600 shadow-sm">
+                          {timeLabel} {cita.nombreCliente}
+                        </div>
+                      );
+                    })}
+                    {dayItems.length > 2 ? (
+                      <div className="text-[10px] font-semibold text-slate-400">+{dayItems.length - 2} mas</div>
+                    ) : null}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Detalle del dia</p>
+              <h3 className="mt-1 text-lg font-semibold text-primary">{selectedDateLabel}</h3>
+            </div>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+              {selectedDateCitas.length} cita(s)
+            </span>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {selectedDateCitas.length > 0 ? (
+              selectedDateCitas.map((cita) => {
+                const { timeLabel } = formatLocalDateTime(cita.fechaAgendada);
+                return (
+                  <button
+                    key={cita._id}
+                    type="button"
+                    onClick={() => handleCitaClick(cita)}
+                    className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-slate-300 hover:shadow-sm"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-primary">{cita.nombreCliente}</p>
+                        <p className="mt-1 text-xs text-secondary">{timeLabel} hrs</p>
+                      </div>
+                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${estadoStyles[cita.estado]}`}>
+                        {estadoLabel[cita.estado]}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">{getCitaAssignedLabel(cita)}</p>
+                  </button>
+                );
+              })
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                No hay citas para este dia.
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
 
       {/* Modal de Detalles */}
       <CitaModal

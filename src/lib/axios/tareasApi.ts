@@ -52,6 +52,7 @@ export interface VisitaTarea {
   fechaProgramada?: string;
   aprobadaPorAdmin?: boolean;
   aprobadaPorCliente?: boolean;
+  actualizadaEn?: string;
 }
 
 export interface PreliminarCotizacionTarea {
@@ -166,6 +167,9 @@ export interface ActualizarTareaData {
   cita?: CitaTarea;
   visita?: VisitaTarea;
   pagos?: unknown;
+  inversion?: number;
+  inversionTotal?: number;
+  etapaActual?: string;
   seguimientoNota?: string;
   notaSeguimiento?: string;
 }
