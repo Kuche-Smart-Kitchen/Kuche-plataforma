@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Manrope } from "next/font/google";
 import "./globals.css";
-import NumberInputWheelGuard from "@/components/NumberInputWheelGuard";
-import Navbar from "@/components/Navbar";
+import NumberInputWheelGuard from "@/components/layout/NumberInputWheelGuard";
+import Navbar from "@/components/layout/Navbar";
 
 const manrope = Manrope({
   variable: "--font-manrope",

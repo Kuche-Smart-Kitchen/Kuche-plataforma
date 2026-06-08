@@ -15,7 +15,7 @@ import {
   CloudUpload,
 } from "lucide-react";
 
-import { DueDateInput } from "@/components/DueDateInput";
+import { DueDateInput } from "@/components/ui/DueDateInput";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { syncSeguimientoEstadoFromKanbanConfirm } from "@/lib/seguimiento-project";

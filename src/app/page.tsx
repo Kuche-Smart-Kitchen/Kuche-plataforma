@@ -5,7 +5,7 @@ import Experience3D from "@/components/home/Experience3D";
 import LeadForm from "@/components/home/LeadForm";
 import Testimonials from "@/components/home/Testimonials";
 import Location from "@/components/home/Location";
-import Footer from "@/components/Footer";
+import Footer from "@/components/layout/Footer";
 
 export default function Home() {
   return (

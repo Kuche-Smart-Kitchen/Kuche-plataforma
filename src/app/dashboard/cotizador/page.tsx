@@ -29,7 +29,7 @@ import {
   type WorkshopPdfBuildInput,
 } from "@/lib/cotizacion-workshop-pdf";
 import { createFormalWorkshopPdfKeys, saveFormalPdf } from "@/lib/formal-pdf-storage";
-import { NumericInputEmptyZero } from "@/components/NumericInputEmptyZero";
+import { NumericInputEmptyZero } from "@/components/dashboard/NumericInputEmptyZero";
 import { formatDeliveryWeeksLabel, parseDeliveryWeeksRangeFromLabel } from "@/lib/delivery-weeks";
 import { emptyWhenZeroIntString, emptyWhenZeroNumericString } from "@/lib/numeric-input-empty-zero";
 import { generatePublicProjectCode } from "@/lib/project-code";
@@ -39,7 +39,7 @@ import {
   mergePagosPreservingReceipts,
   normalizeEtapaForStorage,
 } from "@/lib/seguimiento-project";
-import { CatalogProjectTypeField } from "@/components/CatalogProjectTypeField";
+import { CatalogProjectTypeField } from "@/components/catalogo/CatalogProjectTypeField";
 import { DashboardBackButton } from "@/components/dashboard/DashboardBackButton";
 import { CATALOG_PROJECT_TYPES, normalizeLegacyProjectTypeToCatalog } from "@/lib/catalog-project-types";
 import { KUCHE_EMAIL, KUCHE_FORMAL_PDF_FOOTER_LINE_1 } from "@/lib/kuche-contact";

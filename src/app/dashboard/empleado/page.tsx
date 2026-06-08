@@ -7,9 +7,9 @@ import { CheckCircle2, Plus } from "lucide-react";
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
-import { DueDateInput } from "@/components/DueDateInput";
-import { KanbanTablero } from "@/components/KanbanTablero";
-import { PublicStatusEditorModal } from "@/components/PublicStatusEditorModal";
+import { DueDateInput } from "@/components/ui/DueDateInput";
+import { KanbanTablero } from "@/components/admin/KanbanTablero";
+import { PublicStatusEditorModal } from "@/components/admin/PublicStatusEditorModal";
 import {
   kanbanColumns,
   kanbanStorageKey,

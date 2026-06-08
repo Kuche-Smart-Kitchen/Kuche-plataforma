@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useMemo, useState } from "react";
 import CatalogFilters from "@/components/catalogo/CatalogFilters";
 import ProjectCard, { type Project } from "@/components/catalogo/ProjectCard";
-import Footer from "@/components/Footer";
+import Footer from "@/components/layout/Footer";
 import { CATALOG_PROJECT_TYPES } from "@/lib/catalog-project-types";
 
 const primaryCategories = [...CATALOG_PROJECT_TYPES];

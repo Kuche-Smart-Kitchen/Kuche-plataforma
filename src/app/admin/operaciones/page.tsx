@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { UserPlus, Calculator, FileText } from "lucide-react";
 
-import { DueDateInput } from "@/components/DueDateInput";
-import { KanbanTablero } from "@/components/KanbanTablero";
-import { PublicStatusEditorModal } from "@/components/PublicStatusEditorModal";
+import { DueDateInput } from "@/components/ui/DueDateInput";
+import { KanbanTablero } from "@/components/admin/KanbanTablero";
+import { PublicStatusEditorModal } from "@/components/admin/PublicStatusEditorModal";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import {

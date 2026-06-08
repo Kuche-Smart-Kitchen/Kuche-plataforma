@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2 } from "lucide-react";
 
-import { DateInput } from "@/components/DateInput";
+import { DateInput } from "@/components/ui/DateInput";
 import DateMaskInput from "@/components/ui/DateMaskInput";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { seguimientoProjectStoragePrefix } from "@/lib/kanban";

@@ -1,7 +1,7 @@
 @startuml
 title Secuencia UML - Admin confirma o descarta seguimiento
 actor Admin
-participant "KanbanTablero\n(src/components/KanbanTablero.tsx)" as Kanban
+participant "KanbanTablero\n(src/components/admin/KanbanTablero.tsx)" as Kanban
 participant "localStorage\n(kuche-kanban-tasks)" as LS
 
 Admin -> Kanban: Ver tarjeta en columna "Contrato"\n(followUpStatus=pendiente)

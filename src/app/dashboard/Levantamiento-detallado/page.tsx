@@ -30,7 +30,7 @@ import {
   type KanbanTask,
   type PreliminarData,
 } from "@/lib/kanban";
-import { CatalogProjectTypeField } from "@/components/CatalogProjectTypeField";
+import { CatalogProjectTypeField } from "@/components/catalogo/CatalogProjectTypeField";
 import {
   CATALOG_PROJECT_TYPES,
   isCocinasProjectTypeForConIsla,

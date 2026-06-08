@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Captcha from "@/components/Captcha";
+import Captcha from "@/components/ui/Captcha";
 import MotionSection from "./MotionSection";
 
 export default function LeadForm() {

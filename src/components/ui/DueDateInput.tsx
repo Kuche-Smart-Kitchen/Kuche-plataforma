@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { DateInput } from "@/components/DateInput";
-import { DatetimeLocalInput } from "@/components/DatetimeLocalInput";
+import { DateInput } from "@/components/ui/DateInput";
+import { DatetimeLocalInput } from "@/components/ui/DatetimeLocalInput";
 import {
   dateInputValueToDueDate,
   datetimeLocalValueToDueDate,

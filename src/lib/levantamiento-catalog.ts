@@ -82,7 +82,7 @@ const WALL_IMAGE_BASENAME_BY_ID: Record<string, string> = {
 /**
  * Ruta de la imagen o diagrama de cada tipo de muro.
  * Por defecto se usa `{id}.jpg`; si el archivo tiene otro nombre, añádelo en `WALL_IMAGE_BASENAME_BY_ID`.
- * Si el archivo no existe, `WallTypeImage` usa la textura de respaldo del ítem (`image`).
+ * Si el archivo no existe, se usa la textura de respaldo del ítem (`image`).
  */
 export function wallTypeImageSrc(id: string, ext: "jpg" | "png" | "webp" = "jpg"): string {
   const basename = WALL_IMAGE_BASENAME_BY_ID[id] ?? id;

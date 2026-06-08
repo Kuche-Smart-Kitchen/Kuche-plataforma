@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RotateCcw, Save, Search, Trash2, X } from "lucide-react";
 import { DashboardBackButton } from "@/components/dashboard/DashboardBackButton";
-import { NumericInputEmptyZero } from "@/components/NumericInputEmptyZero";
+import { NumericInputEmptyZero } from "@/components/dashboard/NumericInputEmptyZero";
 import {
   createDefaultLevantamientoConfig,
   getLevantamientoConfig,

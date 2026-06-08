@@ -1,5 +1,5 @@
-import BookingSection from "@/components/BookingSection";
-import Footer from "@/components/Footer";
+import BookingSection from "@/components/agendar/BookingSection";
+import Footer from "@/components/layout/Footer";
 
 export default function AgendarPage() {
   return (
