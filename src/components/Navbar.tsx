@@ -55,7 +55,7 @@ export default function Navbar() {
               Catálogo
             </Link>
             <Link href="/acabados" className={navLinkClass("/acabados")}>
-              Acabados
+              Aliados
             </Link>
             <Link href="/agendar" className={ctaClass("/agendar")}>
               Agendar
