@@ -16,7 +16,7 @@ export const EXPERIENCE_STEP_MEDIA: readonly ExperienceStepMedia[] = [
   },
   {
     id: "paso-02",
-    image: "/images/home/experiencia-3d/slide-02-diseno-cotizacion.jpg",
+    image: "/images/home/experiencia-3d/slide-02-diseno-cotizacion.jpeg",
   },
   {
     id: "paso-03",
@@ -24,11 +24,11 @@ export const EXPERIENCE_STEP_MEDIA: readonly ExperienceStepMedia[] = [
   },
   {
     id: "paso-04",
-    image: "/images/home/experiencia-3d/slide-04-cortes-cnc.jpg",
+    image: "/images/home/experiencia-3d/slide-04-cortes-cnc.jpeg",
   },
   {
     id: "paso-05",
-    image: "/images/home/experiencia-3d/slide-05-seguimiento-portal.jpg",
+    image: "/images/home/experiencia-3d/slide-05-seguimiento-portal.jpeg",
     imageFit: "contain",
   },
   {

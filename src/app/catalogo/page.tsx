@@ -32,7 +32,7 @@ const secondaryCategoriesByPrimary: Record<string, string[]> = {
 const projects: Project[] = [
   {
     id: "terra-minimal",
-    title: "Terra Clara",
+    title: "Estilo Moderno",
     description:
       "Líneas limpias, luz suave y materiales cálidos para una cocina minimalista que se siente viva.",
     mainCategory: "Cocinas",
@@ -145,7 +145,7 @@ const projects: Project[] = [
   },
   {
     id: "isla-lumina",
-    title: "Lúmina Central",
+    title: "Residencial con isla",
     description:
       "Una isla protagonista que invita a reunirse, con acabados pulidos y acentos guinda sutiles.",
     mainCategory: "Cocinas",
