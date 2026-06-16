@@ -20,6 +20,7 @@ type ProjectImage = {
   src: string;
   alt: string;
   hotspots: Hotspot[];
+  objectFit?: "cover" | "contain";
 };
 
 type ProjectDetail = {
@@ -61,12 +62,16 @@ export default function ProjectCard({ project }: ProjectCardProps) {
   return (
     <article className="rounded-3xl bg-surface p-4 shadow-lg">
       <div className="grid gap-4 lg:grid-cols-[3fr_2fr] lg:grid-rows-[auto_auto] lg:items-start">
-        <div className="relative aspect-[16/10] w-full overflow-hidden rounded-2xl lg:col-start-1 lg:row-start-1">
+        <div className="relative aspect-[16/10] w-full overflow-hidden rounded-2xl bg-stone-100 lg:col-start-1 lg:row-start-1">
           <Image
             src={currentImage.src}
             alt={currentImage.alt}
             fill
-            className="object-cover"
+            className={
+              currentImage.objectFit === "contain"
+                ? "object-contain"
+                : "object-cover"
+            }
             sizes="(min-width: 1024px) 60vw, 100vw"
           />
 
@@ -131,7 +136,11 @@ export default function ProjectCard({ project }: ProjectCardProps) {
                     src={image.src}
                     alt={image.alt}
                     fill
-                    className="object-cover"
+                    className={
+                      image.objectFit === "contain"
+                        ? "object-contain bg-stone-100"
+                        : "object-cover"
+                    }
                   />
                 </button>
               );
@@ -187,12 +196,16 @@ export default function ProjectCard({ project }: ProjectCardProps) {
             className="w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="relative h-44 w-full">
+            <div className="relative h-44 w-full bg-stone-100">
               <Image
                 src={currentImage.src}
                 alt={currentImage.alt}
                 fill
-                className="object-cover"
+                className={
+                  currentImage.objectFit === "contain"
+                    ? "object-contain"
+                    : "object-cover"
+                }
                 sizes="(min-width: 768px) 480px, 100vw"
               />
             </div>

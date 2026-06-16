@@ -5,7 +5,7 @@ import ProjectCard from "./ProjectCard";
 
 const projects = [
   {
-    title: "Proyecto Atardecer",
+    title: "Atardecer",
     description: "Cocina luminosa con madera natural y diseño funcional.",
     images: [
       "/images/home/proyecto-destacado-1/cocina-1.jpg",
