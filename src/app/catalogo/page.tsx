@@ -34,7 +34,7 @@ const projects: Project[] = [
     id: "terra-minimal",
     title: "Estilo Moderno",
     description:
-      "Líneas limpias, luz suave y materiales cálidos para una cocina minimalista que se siente viva.",
+      "Cocina en L con península, alacenas blancas en alto brillo, módulos en gris mate, cubierta de cuarzo y lambrín de madera con iluminación LED integrada.",
     mainCategory: "Cocinas",
     subCategory: "Cocina lineal",
     category: "Cocina lineal",
@@ -67,79 +67,43 @@ const projects: Project[] = [
         hotspots: [
           {
             id: "encimera-granito",
-            label: "Encimera de Granito San Gabriel",
-            detail:
-              "Granito negro profundo con vetas discretas; resistente al calor y al uso diario sin perder elegancia.",
-            top: "30%",
-            left: "40%",
+            label: "Cuarzos",
+            top: "83%",
+            left: "57%",
+            imageSrc: "/images/pagina-catalogo/terra-clara/hotspot-cuarzos.png",
+            imageAlt: "Cuarzo blanco con vetas grises",
           },
           {
             id: "lamparas-ambientales",
-            label: "Luminarias colgantes en latón",
-            detail:
-              "Luz cálida puntual para la isla, con acabado latón que aporta contraste sin recargar el espacio.",
-            top: "20%",
-            left: "62%",
+            label: "Lambrin",
+            top: "68%",
+            left: "15%",
+            imageSrc:
+              "/images/pagina-catalogo/terra-clara/hotspot-lambrin.png",
+            imageAlt: "Lambrín vertical en madera con listones",
           },
           {
             id: "alacenas-blancas",
-            label: "Alacenas blancas satinadas",
-            detail:
-              "Frentes satinados con cierre suave; reflejan la luz natural y mantienen una lectura limpia.",
-            top: "46%",
-            left: "72%",
+            label: "Alto brillo",
+            top: "41%",
+            left: "40%",
+            imageSrc:
+              "/images/pagina-catalogo/terra-clara/hotspot-alto-brillo.png",
+            imageAlt: "Melamina blanca en acabado alto brillo",
           },
         ],
       },
       {
         src: "/images/pagina-catalogo/terra-clara/imagen-02-render-principal.jpg",
         alt: "Render de isla minimalista",
-        hotspots: [
-          {
-            id: "isla-compacta",
-            label: "Isla compacta con borde redondeado",
-            detail:
-              "Diseñada para circulación fluida; el borde suaviza el contacto y mejora la ergonomía.",
-            top: "58%",
-            left: "48%",
-          },
-          {
-            id: "pisos-madera",
-            label: "Pisos de madera natural",
-            detail:
-              "Duela cálida que equilibra la paleta neutra y aporta sensación doméstica.",
-            top: "78%",
-            left: "28%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/terra-clara/imagen-03-render-secundario.jpg",
         alt: "Render de detalles minimalistas",
-        hotspots: [
-          {
-            id: "paleta-neutra",
-            label: "Paleta neutra con textura mate",
-            detail:
-              "Tonos arena y marfil para mantener calma visual y permitir acentos decorativos.",
-            top: "46%",
-            left: "52%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/terra-clara/imagen-04-galeria.jpg",
         alt: "Vista amplia de cocina minimalista",
-        hotspots: [
-          {
-            id: "lineas-limpias",
-            label: "Paneles sin tiradores",
-            detail:
-              "Frentes lisos con sistema push-to-open para reforzar la estética limpia.",
-            top: "42%",
-            left: "62%",
-          },
-        ],
       },
     ],
   },
@@ -147,7 +111,7 @@ const projects: Project[] = [
     id: "isla-lumina",
     title: "Residencial con isla",
     description:
-      "Una isla protagonista que invita a reunirse, con acabados pulidos y acentos guinda sutiles.",
+      "Cocina con isla central en piedra oscura, madera y melamina supermate, vitrina de cristal con marco de aluminio, iluminación LED y módulo de vinos con granito y parrilla.",
     mainCategory: "Cocinas",
     subCategory: "Con isla",
     category: "Con isla",
@@ -180,103 +144,44 @@ const projects: Project[] = [
         hotspots: [
           {
             id: "isla-cuarsita",
-            label: "Isla de cuarsita blanca",
-            detail:
-              "Superficie resistente a manchas con vetas sutiles; ideal para preparación diaria.",
-            top: "58%",
-            left: "46%",
+            label: "Melamina supermate",
+            top: "39%",
+            left: "53%",
+            imageSrc:
+              "/images/pagina-catalogo/lumina-central/hotspot-melamina-supermate.png",
+            imageAlt: "Melamina supermate en acabado negro",
           },
           {
             id: "barra-vinos",
-            label: "Barra inferior para vinos",
-            detail:
-              "Nicho integrado con temperatura estable y espacio para copas y accesorios.",
-            top: "66%",
-            left: "70%",
+            label: "Puerta de cristal con marco de aluminio",
+            top: "52%",
+            left: "94%",
+            imageSrc:
+              "/images/pagina-catalogo/lumina-central/hotspot-puerta-cristal-aluminio.png",
+            imageAlt: "Puerta de cristal con marco de aluminio e iluminación interior",
           },
           {
             id: "alacena-nogal",
-            label: "Alacenas de nogal",
-            detail:
-              "Madera natural que aporta profundidad y contrasta con los planos claros.",
-            top: "42%",
-            left: "22%",
+            label: "Iluminación LED",
+            top: "28%",
+            left: "21%",
+            imageSrc:
+              "/images/pagina-catalogo/lumina-central/hotspot-iluminacion-led.png",
+            imageAlt: "Iluminación LED empotrada bajo sofito de madera",
           },
         ],
       },
       {
         src: "/images/pagina-catalogo/lumina-central/imagen-02-isla-real.jpeg",
         alt: "Isla con cubierta de granito y parrilla de gas",
-        hotspots: [
-          {
-            id: "cubierta-granito",
-            label: "Cubierta de granito veteado",
-            detail:
-              "Piedra oscura con vetas blancas en dos niveles que define la zona de cocción y la barra.",
-            top: "38%",
-            left: "50%",
-          },
-          {
-            id: "parrilla-gas",
-            label: "Parrilla de gas integrada",
-            detail:
-              "Quemadores empotrados en la cubierta para cocción directa sobre la isla.",
-            top: "48%",
-            left: "52%",
-          },
-          {
-            id: "gabinetes-madera",
-            label: "Gabinetes en madera",
-            detail:
-              "Frentes en tono nogal con cajón extraíble y almacenamiento oculto bajo la isla.",
-            top: "68%",
-            left: "28%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/lumina-central/imagen-03-vitrina-vinos.jpeg",
         alt: "Módulo de vinos con repisas iluminadas y vitrina de cristal",
-        hotspots: [
-          {
-            id: "botellero-diamante",
-            label: "Botellero en diamante",
-            detail:
-              "Rejilla integrada para doce botellas con lectura decorativa en la parte superior del módulo.",
-            top: "22%",
-            left: "28%",
-          },
-          {
-            id: "repisas-iluminadas",
-            label: "Repisas con luz LED",
-            detail:
-              "Dos niveles abiertos con iluminación vertical para exhibir copas, licores o piezas decorativas.",
-            top: "42%",
-            left: "30%",
-          },
-          {
-            id: "vitrina-cristal",
-            label: "Vitrina de cristal",
-            detail:
-              "Gabinete con puerta de vidrio y luz interior para almacenar y mostrar vajilla o botellas.",
-            top: "45%",
-            left: "72%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/lumina-central/imagen-04-detalle-acabados.jpg",
         alt: "Detalle de acabados en isla central",
-        hotspots: [
-          {
-            id: "mueble-bajo",
-            label: "Mueble bajo integrado",
-            detail:
-              "Almacenamiento oculto que mantiene la isla despejada y funcional.",
-            top: "62%",
-            left: "38%",
-          },
-        ],
       },
     ],
   },
@@ -317,87 +222,44 @@ const projects: Project[] = [
         hotspots: [
           {
             id: "molduras-suaves",
-            label: "Molduras suaves en puertas",
-            detail:
-              "Relieves discretos que aportan carácter clásico sin cargar el conjunto.",
-            top: "36%",
-            left: "64%",
+            label: "Melaminas en colores lisos",
+            top: "18%",
+            left: "84%",
+            imageSrc:
+              "/images/pagina-catalogo/atelier-clasico/hotspot-acabados-materiales.png",
+            imageAlt: "Paleta de acabados y texturas para alacenas",
           },
           {
             id: "griferia-dorada",
-            label: "Grifería dorada cepillada",
-            detail:
-              "Acabado cálido y elegante; combina con herrajes y luminarias.",
-            top: "58%",
-            left: "42%",
+            label: "Melamina con textura y acabado de madera",
+            top: "39%",
+            left: "46%",
+            imageSrc:
+              "/images/pagina-catalogo/atelier-clasico/hotspot-melamina-madera.png",
+            imageAlt: "Melaminas con textura y acabado de madera",
           },
           {
             id: "encimera-marmol",
-            label: "Encimera de mármol Carrara",
-            detail:
-              "Vetas finas y tono marfil; pieza icónica que eleva el conjunto clásico.",
-            top: "62%",
-            left: "28%",
+            label: "Granito",
+            top: "78%",
+            left: "68%",
+            imageSrc:
+              "/images/pagina-catalogo/atelier-clasico/hotspot-granito.png",
+            imageAlt: "Textura de granito negro",
           },
         ],
       },
       {
         src: "/images/pagina-catalogo/atelier-clasico/imagen-02-cocina-real.jpeg",
         alt: "Cocina Atardecer con isla y vista al atardecer",
-        hotspots: [
-          {
-            id: "isla-lambrin",
-            label: "Isla con lambrín de madera",
-            detail:
-              "Cubierta negra con parrilla integrada y frente en listones verticales de madera.",
-            top: "58%",
-            left: "48%",
-          },
-          {
-            id: "ventana-atardecer",
-            label: "Ventana en esquina",
-            detail:
-              "Apertura amplia que enmarca la luz cálida del atardecer sobre la zona de lavabo.",
-            top: "32%",
-            left: "62%",
-          },
-          {
-            id: "alacenas-gris-madera",
-            label: "Alacenas gris y madera",
-            detail:
-              "Combinación de frentes en gris mate y madera natural en módulos altos y bajos.",
-            top: "38%",
-            left: "22%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/atelier-clasico/imagen-03-render-materiales.jpg",
         alt: "Render de materiales clásicos",
-        hotspots: [
-          {
-            id: "paleta-tostada",
-            label: "Paleta tostada con acentos guinda",
-            detail:
-              "Combinación cálida y sofisticada que aporta personalidad al estilo clásico.",
-            top: "46%",
-            left: "52%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/atelier-clasico/imagen-04-vista-general.jpg",
         alt: "Vista general de cocina clásica",
-        hotspots: [
-          {
-            id: "molduras-herrajes",
-            label: "Herrajes clásicos",
-            detail:
-              "Tiradores con acabado latón que elevan el lenguaje tradicional.",
-            top: "52%",
-            left: "66%",
-          },
-        ],
       },
     ],
   },
@@ -435,98 +297,18 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/titanium/imagen-01-cocina-hero.jpg",
         alt: "Cocina Titanium en U con barra lateral",
-        hotspots: [
-          {
-            id: "cubierta-granito",
-            label: "Cubierta de granito oscuro",
-            detail:
-              "Granito pulido con vetas doradas y blancas; resistente al calor y al uso diario.",
-            top: "62%",
-            left: "28%",
-          },
-          {
-            id: "frentes-madera",
-            label: "Frentes con textura de madera",
-            detail:
-              "Melamina con veta vertical que aporta calidez sin perder la lectura limpia del diseño.",
-            top: "38%",
-            left: "42%",
-          },
-          {
-            id: "barra-lateral",
-            label: "Barra lateral integrada",
-            detail:
-              "Extensión de la cubierta que crea un punto de apoyo y circulación fluida en la U.",
-            top: "68%",
-            left: "12%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/titanium/imagen-02-render-zona-coccion.jpg",
         alt: "Zona de cocción de cocina Titanium",
-        hotspots: [
-          {
-            id: "estufa-acero",
-            label: "Estufa de acero inoxidable",
-            detail:
-              "Equipo empotrado con cubierta de vidrio y horno integrado para uso diario.",
-            top: "58%",
-            left: "48%",
-          },
-          {
-            id: "microondas-integrado",
-            label: "Microondas sobre estufa",
-            detail:
-              "Ubicación compacta que libera espacio en la cubierta y mantiene la línea visual.",
-            top: "28%",
-            left: "50%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/titanium/imagen-03-detalle-tarja.jpg",
         alt: "Detalle de tarja en cocina Titanium",
-        hotspots: [
-          {
-            id: "tarja-inox",
-            label: "Tarja bajo cubierta en acero",
-            detail:
-              "Instalación undermount que facilita la limpieza y mantiene continuidad en el granito.",
-            top: "52%",
-            left: "44%",
-          },
-          {
-            id: "gabinete-negro",
-            label: "Gabinete superior en negro brillante",
-            detail:
-              "Contraste puntual sobre la madera clara; concentra la luz sobre el área de lavado.",
-            top: "18%",
-            left: "48%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/titanium/imagen-04-vista-general.jpg",
         alt: "Vista general de cocina Titanium en U",
-        hotspots: [
-          {
-            id: "torre-refrigerador",
-            label: "Torre para refrigerador",
-            detail:
-              "Encastre a medida que alinea el electrodoméstico con la línea de gabinetes.",
-            top: "42%",
-            left: "88%",
-          },
-          {
-            id: "flujo-en-u",
-            label: "Circulación en U",
-            detail:
-              "Distribución que conecta preparación, cocción y lavado en un solo recorrido.",
-            top: "55%",
-            left: "50%",
-          },
-        ],
       },
     ],
   },
@@ -564,98 +346,18 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/cocina-inteligente/imagen-01-cocina-hero.jpg",
         alt: "Cocina inteligente con isla y mármol negro",
-        hotspots: [
-          {
-            id: "isla-marmol",
-            label: "Isla con cubierta de mármol negro",
-            detail:
-              "Superficie amplia con vetas blancas; incluye tarja integrada y espacio para convivir.",
-            top: "58%",
-            left: "42%",
-          },
-          {
-            id: "colgantes-dorados",
-            label: "Luminarias colgantes con malla dorada",
-            detail:
-              "Cuatro puntos de luz sobre la isla que aportan calidez y escala visual.",
-            top: "22%",
-            left: "48%",
-          },
-          {
-            id: "torre-electrodomesticos",
-            label: "Torre de electrodomésticos integrados",
-            detail:
-              "Horno, microondas y despachador en un solo módulo negro para mantener orden.",
-            top: "38%",
-            left: "82%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/cocina-inteligente/imagen-02-render-isla.jpg",
         alt: "Isla central de cocina inteligente",
-        hotspots: [
-          {
-            id: "tarja-isla",
-            label: "Tarja doble en la isla",
-            detail:
-              "Ubicación central que facilita preparación y lavado sin cambiar de zona.",
-            top: "52%",
-            left: "46%",
-          },
-          {
-            id: "lavavajillas-integrado",
-            label: "Lavavajillas empotrado",
-            detail:
-              "Panel en madera que mantiene continuidad visual en el frente de la isla.",
-            top: "62%",
-            left: "28%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/cocina-inteligente/imagen-03-torre-inteligente.jpg",
         alt: "Torre inteligente con pantalla integrada",
-        hotspots: [
-          {
-            id: "pantalla-control",
-            label: "Pantalla de control integrada",
-            detail:
-              "Centro de mando para recetas, temporizadores y automatización del hogar.",
-            top: "18%",
-            left: "52%",
-          },
-          {
-            id: "botellero",
-            label: "Botellero con celosía",
-            detail:
-              "Almacenamiento visible con fondo en madera que contrasta con el módulo negro.",
-            top: "32%",
-            left: "78%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/cocina-inteligente/imagen-04-zona-coccion.jpg",
         alt: "Zona de cocción de cocina inteligente",
-        hotspots: [
-          {
-            id: "salpicadero-marmol",
-            label: "Salpicadero de mármol continuo",
-            detail:
-              "La piedra sube hasta los gabinetes superiores para una lectura limpia y continua.",
-            top: "48%",
-            left: "50%",
-          },
-          {
-            id: "campana-profesional",
-            label: "Campana y estufa profesional",
-            detail:
-              "Equipo de acero inoxidable con extracción vertical y quemadores de alto rendimiento.",
-            top: "36%",
-            left: "50%",
-          },
-        ],
       },
     ],
   },
@@ -693,76 +395,14 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/vestidor-sereno/imagen-01-closet-hero.jpeg",
         alt: "Vestidor Sereno walk-in en tono taupe",
-        hotspots: [
-          {
-            id: "maleteros-techo",
-            label: "Maleteros hasta el techo",
-            detail:
-              "Almacenamiento superior continuo para temporada, equipaje y artículos poco frecuentes.",
-            top: "18%",
-            left: "50%",
-          },
-          {
-            id: "cajoneras-profundas",
-            label: "Cajoneras de gran capacidad",
-            detail:
-              "Cuatro cajones amplios para ropa doblada, accesorios y organización por niveles.",
-            top: "55%",
-            left: "78%",
-          },
-          {
-            id: "zona-colgado",
-            label: "Zona de colgado central",
-            detail:
-              "Barra metálica con altura cómoda y nicho inferior para calzado o canastos.",
-            top: "42%",
-            left: "48%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/vestidor-sereno/imagen-02-vista-general.jpeg",
         alt: "Vista general del walk-in Vestidor Sereno",
-        hotspots: [
-          {
-            id: "configuracion-u",
-            label: "Configuración envolvente",
-            detail:
-              "Distribución en U que aprovecha las tres paredes y mantiene circulación central libre.",
-            top: "50%",
-            left: "50%",
-          },
-          {
-            id: "repisas-abiertas",
-            label: "Repisas abiertas laterales",
-            detail:
-              "Espacios visibles para calzado, bolsos y piezas de uso frecuente.",
-            top: "38%",
-            left: "22%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/vestidor-sereno/imagen-03-tocador-integrado.jpeg",
         alt: "Tocador integrado en Vestidor Sereno",
-        hotspots: [
-          {
-            id: "tocador-integrado",
-            label: "Tocador con cajón",
-            detail:
-              "Superficie de trabajo para arreglo personal con almacenamiento oculto debajo.",
-            top: "58%",
-            left: "72%",
-          },
-          {
-            id: "repisas-flotantes",
-            label: "Repisas flotantes",
-            detail:
-              "Dos niveles abiertos para decoración, perfumes o piezas del día a día.",
-            top: "28%",
-            left: "78%",
-          },
-        ],
       },
     ],
   },
@@ -800,54 +440,10 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/vestidor-nogal/imagen-01-closet-hero.jpeg",
         alt: "Vestidor Nogal walk-in con iluminación integrada",
-        hotspots: [
-          {
-            id: "repisas-curvas",
-            label: "Repisas curvas con LED",
-            detail:
-              "Estantería en esquina con cantos redondeados y luz vertical que realza cada nivel.",
-            top: "38%",
-            left: "18%",
-          },
-          {
-            id: "barra-colgado",
-            label: "Barra de colgado iluminada",
-            detail:
-              "Luz bajo la repisa superior que mejora la visibilidad de prendas largas.",
-            top: "22%",
-            left: "48%",
-          },
-          {
-            id: "tocador-nogal",
-            label: "Tocador con cajón",
-            detail:
-              "Superficie de trabajo lateral con almacenamiento oculto para rutina diaria.",
-            top: "55%",
-            left: "82%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/vestidor-nogal/imagen-02-detalle-iluminacion.jpeg",
         alt: "Detalle de cajoneras y luz en Vestidor Nogal",
-        hotspots: [
-          {
-            id: "cajoneras-triple",
-            label: "Cajoneras de triple cajón",
-            detail:
-              "Tres cajones profundos para ropa doblada y accesorios, con apertura push.",
-            top: "62%",
-            left: "50%",
-          },
-          {
-            id: "nichos-abiertos",
-            label: "Nichos abiertos",
-            detail:
-              "Cubículos visibles para calzado, bolsos o piezas de uso inmediato.",
-            top: "48%",
-            left: "32%",
-          },
-        ],
       },
     ],
   },
@@ -886,55 +482,11 @@ const projects: Project[] = [
         src: "/images/pagina-catalogo/closet-bicolor/imagen-01-closet-hero.jpeg",
         alt: "Closet Bicolor lineal con acabado bicolor",
         objectFit: "contain",
-        hotspots: [
-          {
-            id: "puertas-altas",
-            label: "Puertas altas laterales",
-            detail:
-              "Dos módulos de piso a techo para colgado y almacenamiento oculto de temporada.",
-            top: "42%",
-            left: "18%",
-          },
-          {
-            id: "cubos-superiores",
-            label: "Cubos superiores en tono oscuro",
-            detail:
-              "Seis compartimentos abiertos para decoración, accesorios o ropa doblada.",
-            top: "18%",
-            left: "50%",
-          },
-          {
-            id: "cajonera-seis",
-            label: "Cajonera de seis cajones",
-            detail:
-              "Organización por niveles en el centro del módulo, con tiradores horizontales.",
-            top: "58%",
-            left: "50%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/closet-bicolor/imagen-02-detalle-central.jpeg",
         alt: "Detalle del nicho central en Closet Bicolor",
         objectFit: "contain",
-        hotspots: [
-          {
-            id: "nicho-central",
-            label: "Nicho central multifunción",
-            detail:
-              "Espacio abierto ideal para pantalla, espejo con luz o zona de carga y arreglo.",
-            top: "38%",
-            left: "50%",
-          },
-          {
-            id: "zocalo-oscuro",
-            label: "Zócalo en tono chocolate",
-            detail:
-              "Base continua que ancla el módulo y refuerza el contraste bicolor del diseño.",
-            top: "82%",
-            left: "50%",
-          },
-        ],
       },
     ],
   },
@@ -972,63 +524,11 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/closet-roble/imagen-01-closet-hero.jpeg",
         alt: "Closet Roble lineal de piso a techo",
-        hotspots: [
-          {
-            id: "maleteros-superiores",
-            label: "Maleteros superiores",
-            detail:
-              "Compartimentos hasta el techo para equipaje, temporada y artículos poco frecuentes.",
-            top: "14%",
-            left: "50%",
-          },
-          {
-            id: "modulos-triple",
-            label: "Tres módulos de puertas",
-            detail:
-              "Distribución simétrica en pared completa para colgado y almacenamiento cerrado.",
-            top: "48%",
-            left: "50%",
-          },
-          {
-            id: "tiradores-vertical",
-            label: "Tiradores verticales en acero",
-            detail:
-              "Perfiles alargados que facilitan la apertura y refuerzan el estilo contemporáneo.",
-            top: "55%",
-            left: "35%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/closet-roble/imagen-02-interior-organizado.jpeg",
         alt: "Interior organizado del Closet Roble",
         objectFit: "contain",
-        hotspots: [
-          {
-            id: "repisas-interiores",
-            label: "Repisas interiores",
-            detail:
-              "Niveles amplios en acabado blanco para ropa doblada, bolsos y cajas.",
-            top: "42%",
-            left: "22%",
-          },
-          {
-            id: "barra-colgado-roble",
-            label: "Barra de colgado",
-            detail:
-              "Zona dedicada para prendas largas con repisa superior complementaria.",
-            top: "38%",
-            left: "48%",
-          },
-          {
-            id: "cajonera-interior",
-            label: "Cajonera interior",
-            detail:
-              "Cinco cajones integrados con gabinete superior para accesorios y ropa íntima.",
-            top: "62%",
-            left: "62%",
-          },
-        ],
       },
     ],
   },
@@ -1066,54 +566,10 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/closet-grafito/imagen-01-closet-hero.jpeg",
         alt: "Closet Grafito lineal con repisas en esquina",
-        hotspots: [
-          {
-            id: "puertas-grafito",
-            label: "Puertas en acabado grafito",
-            detail:
-              "Frentes oscuros con textura de madera que anclan el módulo con presencia moderna.",
-            top: "42%",
-            left: "62%",
-          },
-          {
-            id: "tiradores-circulares",
-            label: "Tiradores circulares",
-            detail:
-              "Perfiles redondos en gris que facilitan la apertura y aportan un detalle distintivo.",
-            top: "48%",
-            left: "55%",
-          },
-          {
-            id: "repisas-esquina",
-            label: "Repisas flotantes en esquina",
-            detail:
-              "Estantería envolvente en colores vivos para libros, juguetes o piezas decorativas.",
-            top: "35%",
-            left: "22%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/closet-grafito/imagen-02-repisas-decorativas.jpeg",
         alt: "Detalle de cajonera y repisas en Closet Grafito",
-        hotspots: [
-          {
-            id: "cajonera-triple",
-            label: "Cajonera de tres cajones",
-            detail:
-              "Cajones amplios sin tirador para ropa doblada y organización diaria.",
-            top: "68%",
-            left: "58%",
-          },
-          {
-            id: "repisas-bloque",
-            label: "Repisas tipo bloque",
-            detail:
-              "Diseño modular con relieve circular que convierte la pared en zona de exhibición.",
-            top: "32%",
-            left: "78%",
-          },
-        ],
       },
     ],
   },
@@ -1152,55 +608,11 @@ const projects: Project[] = [
         src: "/images/pagina-catalogo/closet-flotante/imagen-01-closet-hero.jpeg",
         alt: "Closet Flotante lineal en madera clara",
         objectFit: "contain",
-        hotspots: [
-          {
-            id: "base-flotante",
-            label: "Base suspendida",
-            detail:
-              "Instalación elevada del suelo que aporta sensación de amplitud y limpieza visual.",
-            top: "78%",
-            left: "50%",
-          },
-          {
-            id: "maleteros-anchos",
-            label: "Maleteros superiores",
-            detail:
-              "Dos puertas horizontales de ancho completo para ropa de temporada y artículos voluminosos.",
-            top: "16%",
-            left: "50%",
-          },
-          {
-            id: "perfil-gola",
-            label: "Frentes con perfil gola",
-            detail:
-              "Apertura sin tirador que mantiene líneas continuas y un acabado minimalista.",
-            top: "48%",
-            left: "35%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/closet-flotante/imagen-02-vista-lateral.jpeg",
         alt: "Vista frontal del Closet Flotante",
         objectFit: "contain",
-        hotspots: [
-          {
-            id: "cajonera-lateral",
-            label: "Cajonera de tres cajones",
-            detail:
-              "Cajones amplios en el módulo derecho, con cerradura en el cajón central.",
-            top: "65%",
-            left: "72%",
-          },
-          {
-            id: "puertas-modulares",
-            label: "Puertas en distintas alturas",
-            detail:
-              "Combinación de módulos altos y bajos para colgado, repisas y almacenamiento flexible.",
-            top: "42%",
-            left: "28%",
-          },
-        ],
       },
     ],
   },
@@ -1239,32 +651,6 @@ const projects: Project[] = [
         src: "/images/pagina-catalogo/closet-escritorio/imagen-01-closet-hero.jpeg",
         alt: "Closet con Nicho Lateral lineal bicolor",
         objectFit: "contain",
-        hotspots: [
-          {
-            id: "puertas-altas-claras",
-            label: "Puertas altas en madera clara",
-            detail:
-              "Cuatro módulos verticales para colgado y almacenamiento cerrado de temporada.",
-            top: "32%",
-            left: "38%",
-          },
-          {
-            id: "cajonera-oscura",
-            label: "Cajonera en nogal",
-            detail:
-              "Tres cajones en tono oscuro con cubo abierto lateral para accesorios.",
-            top: "52%",
-            left: "42%",
-          },
-          {
-            id: "nicho-lateral",
-            label: "Nicho lateral abierto",
-            detail:
-              "Módulo lateral con repisa flotante y espacio abierto para decoración o almacenaje visible.",
-            top: "48%",
-            left: "78%",
-          },
-        ],
       },
     ],
   },
@@ -1302,32 +688,6 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/modulo-bajo-escalera/imagen-01-modulo-hero.jpeg",
         alt: "Módulo Bajo Escalera en madera clara",
-        hotspots: [
-          {
-            id: "panel-inclinado",
-            label: "Panel bajo escalera",
-            detail:
-              "Revestimiento en madera que sigue la inclinación del escalón y unifica el nicho.",
-            top: "28%",
-            left: "50%",
-          },
-          {
-            id: "cajonera-central",
-            label: "Cajonera central",
-            detail:
-              "Tres cajones amplios en el centro del módulo para almacenamiento de uso frecuente.",
-            top: "62%",
-            left: "48%",
-          },
-          {
-            id: "puertas-laterales",
-            label: "Puertas laterales",
-            detail:
-              "Dos módulos con puertas a cada lado para guardar artículos de mayor volumen.",
-            top: "58%",
-            left: "22%",
-          },
-        ],
       },
     ],
   },
@@ -1365,54 +725,10 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/closet-ebano/imagen-01-closet-hero.jpeg",
         alt: "Closet Ébano en L con interiores blancos",
-        hotspots: [
-          {
-            id: "doble-colgado",
-            label: "Doble barra de colgado",
-            detail:
-              "Dos niveles de colgado en la esquina para optimizar prendas cortas y largas.",
-            top: "38%",
-            left: "55%",
-          },
-          {
-            id: "repisas-laterales",
-            label: "Repisas verticales",
-            detail:
-              "Columnas abiertas en ambos extremos para calzado, bolsos y ropa doblada.",
-            top: "42%",
-            left: "18%",
-          },
-          {
-            id: "cajonera-central",
-            label: "Cajonera de cuatro cajones",
-            detail:
-              "Módulo central con frentes en ébano para organización de ropa y accesorios.",
-            top: "72%",
-            left: "62%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/closet-ebano/imagen-02-vista-esquina.jpeg",
         alt: "Vista de esquina del Closet Ébano",
-        hotspots: [
-          {
-            id: "configuracion-l",
-            label: "Configuración en L",
-            detail:
-              "Dos paredes conectadas que convierten la esquina en almacenamiento continuo.",
-            top: "50%",
-            left: "50%",
-          },
-          {
-            id: "interior-blanco",
-            label: "Interiores en blanco",
-            detail:
-              "Fondo claro que mejora la visibilidad y realza el contraste con el marco oscuro.",
-            top: "35%",
-            left: "42%",
-          },
-        ],
       },
     ],
   },
@@ -1450,76 +766,14 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/closet-luminoso/imagen-01-closet-hero.jpeg",
         alt: "Closet Luminoso en L con iluminación integrada",
-        hotspots: [
-          {
-            id: "puertas-espejo",
-            label: "Puertas con espejo",
-            detail:
-              "Seis módulos espejados que amplían visualmente el espacio y facilitan el arreglo.",
-            top: "42%",
-            left: "32%",
-          },
-          {
-            id: "cubos-led",
-            label: "Cubos iluminados",
-            detail:
-              "Columna de exhibición con luz interior para accesorios, calzado o piezas destacadas.",
-            top: "38%",
-            left: "52%",
-          },
-          {
-            id: "tocador-esquina",
-            label: "Tocador en esquina",
-            detail:
-              "Escritorio flotante con cajones y repisas que completan el recorrido en L.",
-            top: "55%",
-            left: "72%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/closet-luminoso/imagen-02-puertas-espejo.jpeg",
         alt: "Puertas espejo y cubos del Closet Luminoso",
-        hotspots: [
-          {
-            id: "lambrin-vertical",
-            label: "Muro de lambrín",
-            detail:
-              "Revestimiento vertical en madera que aporta textura y calidez a la zona de tocador.",
-            top: "35%",
-            left: "78%",
-          },
-          {
-            id: "repisas-flotantes-led",
-            label: "Repisas con luz perimetral",
-            detail:
-              "Estanterías flotantes con LED inferior que ilumina objetos y el muro de fondo.",
-            top: "22%",
-            left: "85%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/closet-luminoso/imagen-03-tocador-integrado.jpeg",
         alt: "Tocador integrado del Closet Luminoso",
-        hotspots: [
-          {
-            id: "modulo-almacenaje",
-            label: "Módulo de almacenaje lateral",
-            detail:
-              "Gabinetes altos y cajoneras bajas en blanco brillante para guardar ropa y complementos.",
-            top: "45%",
-            left: "88%",
-          },
-          {
-            id: "cajonera-tocador",
-            label: "Cajonera bajo tocador",
-            detail:
-              "Dos cajones amplios bajo la superficie de trabajo para organización diaria.",
-            top: "68%",
-            left: "58%",
-          },
-        ],
       },
     ],
   },
@@ -1558,32 +812,6 @@ const projects: Project[] = [
         src: "/images/pagina-catalogo/closet-en-l-bicolor/imagen-01-closet-hero.jpeg",
         alt: "Closet En L Bicolor con cajonera y repisa en esquina",
         objectFit: "contain",
-        hotspots: [
-          {
-            id: "maleteros-superiores-l",
-            label: "Alacenas superiores",
-            detail:
-              "Módulos de piso a techo en madera clara para ropa de temporada y artículos voluminosos.",
-            top: "18%",
-            left: "50%",
-          },
-          {
-            id: "repisa-esquina",
-            label: "Repisa en esquina",
-            detail:
-              "Nicho horizontal en tono oscuro que envuelve la esquina del closet en L.",
-            top: "42%",
-            left: "55%",
-          },
-          {
-            id: "cajonera-cuadruple-l",
-            label: "Cajonera de cuatro cajones",
-            detail:
-              "Cuatro cajones amplios en frentes claros para ropa doblada y accesorios.",
-            top: "68%",
-            left: "62%",
-          },
-        ],
       },
     ],
   },
@@ -1622,101 +850,21 @@ const projects: Project[] = [
         src: "/images/pagina-catalogo/closet-central/imagen-01-closet-hero.jpeg",
         alt: "Closet Central con isla y espejo de cuerpo completo",
         objectFit: "contain",
-        hotspots: [
-          {
-            id: "isla-central",
-            label: "Isla central con cristal",
-            detail:
-              "Módulo en madera con cubierta de vidrio y compartimentos para joyería, relojes o corbatas.",
-            top: "62%",
-            left: "48%",
-          },
-          {
-            id: "espejo-completo",
-            label: "Espejo de cuerpo completo",
-            detail:
-              "Panel espejado integrado que amplía el espacio y facilita la prueba de prendas.",
-            top: "38%",
-            left: "82%",
-          },
-          {
-            id: "gabinetes-brillo",
-            label: "Gabinetes en gris brillo",
-            detail:
-              "Frentes de alto brillo sin tirador que aportan profundidad y lectura contemporánea.",
-            top: "28%",
-            left: "42%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/closet-central/imagen-02-vista-isla.jpeg",
         alt: "Vista general de la isla en Closet Central",
         objectFit: "contain",
-        hotspots: [
-          {
-            id: "banca-integrada",
-            label: "Banca integrada",
-            detail:
-              "Asiento en madera junto a la isla para calzarse o revisar accesorios con comodidad.",
-            top: "72%",
-            left: "38%",
-          },
-          {
-            id: "colgado-iluminado",
-            label: "Zona de colgado con LED",
-            detail:
-              "Barra con luz bajo repisa que mejora la visibilidad de prendas largas.",
-            top: "32%",
-            left: "18%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/closet-central/imagen-03-vitrina-iluminada.jpeg",
         alt: "Vitrina iluminada del Closet Central",
         objectFit: "contain",
-        hotspots: [
-          {
-            id: "vitrina-vidrio",
-            label: "Vitrina de vidrio",
-            detail:
-              "Gabinete vertical con repisas en madera y luz LED para exhibir colecciones.",
-            top: "35%",
-            left: "72%",
-          },
-          {
-            id: "cajonera-gris",
-            label: "Cajonera en gris brillo",
-            detail:
-              "Cuatro cajones amplios bajo módulo central para ropa doblada y complementos.",
-            top: "58%",
-            left: "52%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/closet-central/imagen-04-zona-colgado.jpeg",
         alt: "Zona de colgado del Closet Central",
         objectFit: "contain",
-        hotspots: [
-          {
-            id: "repisas-madera",
-            label: "Repisas en madera",
-            detail:
-              "Estantes abiertos con iluminación inferior para calzado, bolsos o piezas decorativas.",
-            top: "48%",
-            left: "22%",
-          },
-          {
-            id: "organizador-isla",
-            label: "Organizador en isla",
-            detail:
-              "Cuadrícula bajo cristal que mantiene accesorios visibles y al alcance.",
-            top: "55%",
-            left: "55%",
-          },
-        ],
       },
     ],
   },
@@ -1754,54 +902,10 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/bano-marmol/imagen-01-bano-hero.jpeg",
         alt: "Baño Mármol con ovalín y mueble flotante",
-        hotspots: [
-          {
-            id: "ovalin-blanco",
-            label: "Ovalín de cerámica blanca",
-            detail:
-              "Lavabo sobre cubierta con forma redondeada que destaca sobre el mármol.",
-            top: "32%",
-            left: "48%",
-          },
-          {
-            id: "cubierta-marmol",
-            label: "Cubierta y salpicadero de mármol",
-            detail:
-              "Piedra con vetas suaves que envuelve la zona de lavabo con acabado continuo.",
-            top: "48%",
-            left: "55%",
-          },
-          {
-            id: "mueble-flotante",
-            label: "Mueble flotante de dos cajones",
-            detail:
-              "Gabinete suspendido sin tiradores que libera el piso y facilita la limpieza.",
-            top: "68%",
-            left: "42%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/bano-marmol/imagen-02-detalle-ovalin.jpeg",
         alt: "Detalle del ovalín en Baño Mármol",
-        hotspots: [
-          {
-            id: "griferia-negra",
-            label: "Grifería monomando en negro",
-            detail:
-              "Monomando alto con caño plano que contrasta con el mármol y el ovalín.",
-            top: "28%",
-            left: "52%",
-          },
-          {
-            id: "cajones-push",
-            label: "Cajones con apertura oculta",
-            detail:
-              "Frentes lisos con ranura central para mantener la lectura minimalista.",
-            top: "72%",
-            left: "38%",
-          },
-        ],
       },
     ],
   },
@@ -1839,54 +943,10 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/bano-dual/imagen-01-bano-hero.jpeg",
         alt: "Baño Dual con doble ovalín y espejo iluminado",
-        hotspots: [
-          {
-            id: "doble-ovalin",
-            label: "Doble ovalín",
-            detail:
-              "Dos lavabos sobre cubierta para uso simultáneo con comodidad y simetría.",
-            top: "52%",
-            left: "50%",
-          },
-          {
-            id: "espejo-led",
-            label: "Espejo con luz LED",
-            detail:
-              "Marco retroiluminado que aporta luz uniforme para el arreglo diario.",
-            top: "22%",
-            left: "48%",
-          },
-          {
-            id: "mueble-madera",
-            label: "Mueble en madera",
-            detail:
-              "Gabinete con veta vertical, cajones y puertas para toallas y productos.",
-            top: "68%",
-            left: "45%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/bano-dual/imagen-02-vista-lavabos.jpeg",
         alt: "Vista de lavabos en Baño Dual",
-        hotspots: [
-          {
-            id: "cubierta-piedra",
-            label: "Cubierta de piedra",
-            detail:
-              "Superficie clara con canto grueso y caída lateral tipo waterfall en el módulo.",
-            top: "48%",
-            left: "55%",
-          },
-          {
-            id: "griferia-cromada",
-            label: "Grifería cromada",
-            detail:
-              "Monomandos altos en acabado cromo que complementan los ovalines blancos.",
-            top: "38%",
-            left: "38%",
-          },
-        ],
       },
     ],
   },
@@ -1925,55 +985,11 @@ const projects: Project[] = [
         src: "/images/pagina-catalogo/bano-niveo/imagen-01-bano-hero.jpeg",
         alt: "Baño Níveo con ovalín y vanitorio flotante",
         objectFit: "contain",
-        hotspots: [
-          {
-            id: "ovalin-ceramico",
-            label: "Ovalín cerámico",
-            detail:
-              "Lavabo tipo bowl sobre cubierta con acabado liso y forma circular.",
-            top: "30%",
-            left: "50%",
-          },
-          {
-            id: "marmol-lateral",
-            label: "Revestimiento de mármol",
-            detail:
-              "Muro y cubierta en piedra clara que unifican la zona de lavabo.",
-            top: "45%",
-            left: "72%",
-          },
-          {
-            id: "vanitorio-perla",
-            label: "Vanitorio en gris perla",
-            detail:
-              "Gabinete flotante de dos cajones con frentes mate y apertura oculta.",
-            top: "65%",
-            left: "40%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/bano-niveo/imagen-02-detalle-vanitorio.jpeg",
         alt: "Detalle del vanitorio en Baño Níveo",
         objectFit: "contain",
-        hotspots: [
-          {
-            id: "monomando-negro",
-            label: "Monomando negro",
-            detail:
-              "Grifería alta con caño plano que aporta contraste sobre el mármol claro.",
-            top: "26%",
-            left: "48%",
-          },
-          {
-            id: "ranura-apertura",
-            label: "Ranura de apertura",
-            detail:
-              "Sistema gola entre cajones para mantener frentes lisos y minimalistas.",
-            top: "70%",
-            left: "35%",
-          },
-        ],
       },
     ],
   },
@@ -2012,32 +1028,6 @@ const projects: Project[] = [
         src: "/images/pagina-catalogo/bano-piedra-madera/imagen-01-bano-hero.jpeg",
         alt: "Baño Piedra & Madera con ovalín",
         objectFit: "contain",
-        hotspots: [
-          {
-            id: "ovalin-sobre-piedra",
-            label: "Ovalín sobre piedra",
-            detail:
-              "Lavabo tipo bowl blanco sobre cubierta en tono crema con grifería alta cromada.",
-            top: "32%",
-            left: "52%",
-          },
-          {
-            id: "canto-cascada-piedra",
-            label: "Canto cascada en piedra",
-            detail:
-              "Revestimiento continuo que baja por el lateral del mueble con acabado uniforme.",
-            top: "55%",
-            left: "28%",
-          },
-          {
-            id: "puerta-madera",
-            label: "Puerta en madera",
-            detail:
-              "Frente con veta oscura que contrasta con la piedra clara del vanitorio.",
-            top: "62%",
-            left: "58%",
-          },
-        ],
       },
     ],
   },
@@ -2075,32 +1065,6 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/bano-doble-rustico/imagen-01-bano-hero.jpeg",
         alt: "Baño Doble Rústico con dos ovalines",
-        hotspots: [
-          {
-            id: "doble-ovalin-rustico",
-            label: "Doble ovalín",
-            detail:
-              "Dos lavabos tipo bowl sobre cubierta de madera para uso simultáneo.",
-            top: "28%",
-            left: "50%",
-          },
-          {
-            id: "borde-vivo",
-            label: "Cubierta con borde vivo",
-            detail:
-              "Madera maciza con canto natural que aporta textura y carácter artesanal.",
-            top: "38%",
-            left: "48%",
-          },
-          {
-            id: "repisa-inferior",
-            label: "Repisa inferior abierta",
-            detail:
-              "Segundo nivel en madera para almacenamiento visible bajo el vanitorio.",
-            top: "72%",
-            left: "50%",
-          },
-        ],
       },
     ],
   },
@@ -2139,32 +1103,6 @@ const projects: Project[] = [
         src: "/images/pagina-catalogo/bano-geometrico/imagen-01-bano-hero.jpeg",
         alt: "Baño Geométrico con ovalín y espejo LED",
         objectFit: "contain",
-        hotspots: [
-          {
-            id: "ovalin-rectangular",
-            label: "Ovalín rectangular",
-            detail:
-              "Lavabo sobre cubierta con forma rectangular y acabado blanco liso.",
-            top: "52%",
-            left: "48%",
-          },
-          {
-            id: "espejo-led",
-            label: "Espejo con luz LED",
-            detail:
-              "Espejo circular con iluminación perimetral integrada para el arreglo diario.",
-            top: "22%",
-            left: "50%",
-          },
-          {
-            id: "muro-geometrico",
-            label: "Muro geométrico",
-            detail:
-              "Loseta en blanco y negro con patrón de círculos que define el carácter del baño.",
-            top: "40%",
-            left: "55%",
-          },
-        ],
       },
     ],
   },
@@ -2202,76 +1140,14 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/bano-cantera/imagen-01-bano-hero.jpeg",
         alt: "Baño Cantera con cubierta de piedra y doble lavabo",
-        hotspots: [
-          {
-            id: "cubierta-piedra",
-            label: "Cubierta de piedra",
-            detail:
-              "Superficie gruesa en tono blanco con vetas grises y lavabos rectangulares integrados.",
-            top: "42%",
-            left: "38%",
-          },
-          {
-            id: "espejo-enmarcado",
-            label: "Espejo enmarcado en madera",
-            detail:
-              "Panel amplio con marco del mismo tono del mueble que unifica la pared.",
-            top: "22%",
-            left: "48%",
-          },
-          {
-            id: "zona-tocador",
-            label: "Zona de tocador",
-            detail:
-              "Superficie a menor altura con banco de madera para maquillaje o arreglo personal.",
-            top: "55%",
-            left: "78%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/bano-cantera/imagen-02-vista-general.jpeg",
         alt: "Vista general del Baño Cantera",
-        hotspots: [
-          {
-            id: "mueble-madera",
-            label: "Mueble en madera",
-            detail:
-              "Vanitorio flotante con cajones y puertas en acabado natural con tiradores horizontales.",
-            top: "58%",
-            left: "35%",
-          },
-          {
-            id: "muro-marmol",
-            label: "Muro tipo mármol",
-            detail:
-              "Revestimiento claro con veta suave que complementa la cubierta de piedra.",
-            top: "30%",
-            left: "55%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/bano-cantera/imagen-03-detalle-tocador.jpeg",
         alt: "Detalle del tocador en Baño Cantera",
-        hotspots: [
-          {
-            id: "lavabo-integrado",
-            label: "Lavabo bajo cubierta",
-            detail:
-              "Instalación undermount que mantiene continuidad en la superficie de piedra.",
-            top: "38%",
-            left: "28%",
-          },
-          {
-            id: "banco-madera",
-            label: "Banco en madera",
-            detail:
-              "Asiento cuadrado del mismo material que el mueble, integrado bajo el tocador.",
-            top: "72%",
-            left: "72%",
-          },
-        ],
       },
     ],
   },
@@ -2309,40 +1185,6 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/bano-travertino/imagen-01-bano-hero.jpeg",
         alt: "Baño Travertino con lavabo integrado en piedra",
-        hotspots: [
-          {
-            id: "piedra-travertino",
-            label: "Cubierta de travertino",
-            detail:
-              "Loseta gruesa con vetas horizontales en tonos crema y marrón claro.",
-            top: "38%",
-            left: "50%",
-          },
-          {
-            id: "lavabo-tallado",
-            label: "Lavabo integrado en piedra",
-            detail:
-              "Cubeta rectangular tallada en la misma pieza para continuidad total.",
-            top: "42%",
-            left: "48%",
-          },
-          {
-            id: "mueble-flotante-madera",
-            label: "Mueble flotante en madera",
-            detail:
-              "Tres frentes en madera clara sin tirador, suspendidos sobre el piso.",
-            top: "68%",
-            left: "45%",
-          },
-          {
-            id: "griferia-negra-travertino",
-            label: "Grifería negra",
-            detail:
-              "Monomando mate que contrasta con la piedra cálida y la madera.",
-            top: "32%",
-            left: "52%",
-          },
-        ],
       },
     ],
   },
@@ -2381,32 +1223,6 @@ const projects: Project[] = [
         src: "/images/pagina-catalogo/bano-integrado-piedra/imagen-01-bano-hero.jpeg",
         alt: "Baño Piedra Integrada con lavabo en travertino",
         objectFit: "contain",
-        hotspots: [
-          {
-            id: "lavabo-tallado-travertino",
-            label: "Lavabo integrado en travertino",
-            detail:
-              "Cubeta rectangular tallada en loseta gruesa con vetas en tono crema.",
-            top: "38%",
-            left: "50%",
-          },
-          {
-            id: "mueble-madera-oscura",
-            label: "Mueble en madera oscura",
-            detail:
-              "Vanitorio flotante con cajones y repisa abierta en el mismo tono del espejo.",
-            top: "58%",
-            left: "48%",
-          },
-          {
-            id: "espejo-enmarcado",
-            label: "Espejo enmarcado",
-            detail:
-              "Marco grueso en madera que unifica la zona de lavabo con el mueble inferior.",
-            top: "18%",
-            left: "52%",
-          },
-        ],
       },
     ],
   },
@@ -2444,32 +1260,6 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/oficina-ejecutiva/imagen-01-oficina-hero.jpeg",
         alt: "Oficina Ejecutiva con escritorio y lambrín de madera",
-        hotspots: [
-          {
-            id: "escritorio-blanco",
-            label: "Escritorio a medida",
-            detail:
-              "Módulo en blanco con cubierta gruesa y panel lateral para trabajo diario.",
-            top: "58%",
-            left: "48%",
-          },
-          {
-            id: "lambrin-madera",
-            label: "Lambrín de madera",
-            detail:
-              "Revestimiento vertical tipo tambour que aporta textura y calidez al fondo.",
-            top: "35%",
-            left: "62%",
-          },
-          {
-            id: "repisas-flotantes",
-            label: "Repisas flotantes",
-            detail:
-              "Dos niveles abiertos para marcos, libros o elementos de consulta profesional.",
-            top: "18%",
-            left: "55%",
-          },
-        ],
       },
     ],
   },
@@ -2507,68 +1297,14 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/isla-monolitica/imagen-01-modulo-frontal.jpeg",
         alt: "Isla Monolítica con cajonera y vitrocerámica integrada",
-        hotspots: [
-          {
-            id: "cajonera-gola",
-            label: "Cajonera con perfil gola",
-            detail:
-              "Frentes amplios sin tirador con apertura oculta para organización interna.",
-            top: "55%",
-            left: "45%",
-          },
-          {
-            id: "vitroceramica-integrada",
-            label: "Vitrocerámica integrada",
-            detail:
-              "Superficie negra empotrada en cubierta para cocción en la isla.",
-            top: "32%",
-            left: "50%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/isla-monolitica/imagen-02-vista-lateral.jpeg",
         alt: "Vista lateral de la Isla Monolítica",
-        hotspots: [
-          {
-            id: "canto-cascada",
-            label: "Canto cascada",
-            detail:
-              "La cubierta cae en continuidad hasta el piso, reforzando la lectura monolítica.",
-            top: "48%",
-            left: "28%",
-          },
-          {
-            id: "volumen-continuo",
-            label: "Volumen continuo",
-            detail:
-              "Bloque único en blanco que define la isla sin interrupciones visuales.",
-            top: "42%",
-            left: "55%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/isla-monolitica/imagen-03-detalle-cubierta.jpeg",
         alt: "Detalle de cubierta en Isla Monolítica",
-        hotspots: [
-          {
-            id: "puertas-almacenaje",
-            label: "Puertas de almacenaje",
-            detail:
-              "Cuatro módulos cerrados con frentes lisos para ollas, vajilla y despensa.",
-            top: "52%",
-            left: "38%",
-          },
-          {
-            id: "zona-preparacion",
-            label: "Zona de preparación",
-            detail:
-              "Espacio abierto bajo cubierta para circulación y uso cómodo en la isla.",
-            top: "58%",
-            left: "72%",
-          },
-        ],
       },
     ],
   },
@@ -2606,54 +1342,10 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/isla-movil-granito/imagen-01-isla-hero.jpeg",
         alt: "Isla Móvil con Granito y extensión plegable",
-        hotspots: [
-          {
-            id: "cubierta-granito-isla",
-            label: "Cubierta de granito",
-            detail:
-              "Loseta pulida con vetas en gris y negro para preparación y resistencia al uso.",
-            top: "28%",
-            left: "48%",
-          },
-          {
-            id: "extension-plegable",
-            label: "Extensión plegable",
-            detail:
-              "Tablero abatible con soporte metálico para barra o zona de apoyo extra.",
-            top: "42%",
-            left: "18%",
-          },
-          {
-            id: "ruedas-moviles",
-            label: "Base sobre ruedas",
-            detail:
-              "Castores que permiten mover la isla según el flujo de la cocina.",
-            top: "78%",
-            left: "35%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/isla-movil-granito/imagen-02-detalle-cajones.jpeg",
         alt: "Detalle de cajones en Isla Móvil con Granito",
-        hotspots: [
-          {
-            id: "cajones-extraccion",
-            label: "Cajones de extracción total",
-            detail:
-              "Cuatro cajones profundos con rieles telescópicos para acceso completo al interior.",
-            top: "50%",
-            left: "52%",
-          },
-          {
-            id: "interior-blanco",
-            label: "Interior en blanco",
-            detail:
-              "Acabado claro en el interior de cajones para ollas, utensilios y despensa.",
-            top: "45%",
-            left: "42%",
-          },
-        ],
       },
     ],
   },
@@ -2692,55 +1384,11 @@ const projects: Project[] = [
         src: "/images/pagina-catalogo/consultorio-dental/imagen-01-consultorio-hero.jpeg",
         alt: "Consultorio Dental con mobiliario integrado",
         objectFit: "contain",
-        hotspots: [
-          {
-            id: "alacenas-superiores",
-            label: "Alacenas superiores",
-            detail:
-              "Módulos de piso a techo en blanco brillo para insumos y material clínico.",
-            top: "22%",
-            left: "48%",
-          },
-          {
-            id: "autoclave-integrado",
-            label: "Autoclave empotrado",
-            detail:
-              "Esterilizador integrado en el mueble para mantener continuidad visual.",
-            top: "52%",
-            left: "42%",
-          },
-          {
-            id: "tarja-clinica",
-            label: "Tarja integrada",
-            detail:
-              "Lavabo circular bajo cubierta con grifería cromada para higiene del consultorio.",
-            top: "48%",
-            left: "72%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/consultorio-dental/imagen-02-vista-clinica.jpeg",
         alt: "Vista clínica del Consultorio Dental",
         objectFit: "contain",
-        hotspots: [
-          {
-            id: "cubierta-marmol-clinica",
-            label: "Cubierta tipo mármol",
-            detail:
-              "Superficie clara con veta gris resistente al uso diario en consultorio.",
-            top: "38%",
-            left: "55%",
-          },
-          {
-            id: "cajonera-clinica",
-            label: "Cajonera multifunción",
-            detail:
-              "Cajones de distintos tamaños para instrumentos, toallas y material de trabajo.",
-            top: "58%",
-            left: "35%",
-          },
-        ],
       },
     ],
   },
@@ -2778,32 +1426,6 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/centro-lare-integrado/imagen-01-centro-hero.jpeg",
         alt: "Centro con Lare integrado y nicho para TV",
-        hotspots: [
-          {
-            id: "nicho-tv",
-            label: "Nicho para TV",
-            detail:
-              "Espacio recessado con marco en madera y toma eléctrica para pantalla plana.",
-            top: "28%",
-            left: "50%",
-          },
-          {
-            id: "repisa-piedra",
-            label: "Repisa en piedra negra",
-            detail:
-              "Cubierta delgada que separa la zona de TV y la chimenea con contraste elegante.",
-            top: "52%",
-            left: "48%",
-          },
-          {
-            id: "lare-integrado",
-            label: "Lare eléctrico integrado",
-            detail:
-              "Inserto de acero con piedras blancas decorativas para calidez visual sin humo.",
-            top: "72%",
-            left: "50%",
-          },
-        ],
       },
     ],
   },
@@ -2841,54 +1463,10 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/centro-muro-lambrin/imagen-01-centro-hero.jpeg",
         alt: "Centro Muro Lambrín con TV y mueble flotante",
-        hotspots: [
-          {
-            id: "lambrin-vertical",
-            label: "Panel de lambrín vertical",
-            detail:
-              "Revestimiento tipo tambour detrás de la TV que aporta textura y calidez visual.",
-            top: "38%",
-            left: "42%",
-          },
-          {
-            id: "mueble-flotante",
-            label: "Mueble flotante bicolor",
-            detail:
-              "Base suspendida con frentes en madera clara y marco negro para equipos y almacenaje.",
-            top: "68%",
-            left: "35%",
-          },
-          {
-            id: "cubos-exhibicion",
-            label: "Cubos de exhibición",
-            detail:
-              "Repisas abiertas en blanco para decoración, libros o elementos personales.",
-            top: "45%",
-            left: "18%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/centro-muro-lambrin/imagen-02-vista-general.jpeg",
         alt: "Vista general del Centro Muro Lambrín",
-        hotspots: [
-          {
-            id: "marco-superior",
-            label: "Marco superior con luz",
-            detail:
-              "Sobre módulo negro continuo con iluminación empotrada de piso a techo.",
-            top: "12%",
-            left: "50%",
-          },
-          {
-            id: "panel-marmol",
-            label: "Panel tipo mármol negro",
-            detail:
-              "Superficie de alto brillo con veta blanca que cierra la composición lateral.",
-            top: "48%",
-            left: "78%",
-          },
-        ],
       },
     ],
   },
@@ -2926,54 +1504,10 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/centro-bar-integrado/imagen-01-centro-hero.jpeg",
         alt: "Centro Bar Integrado con iluminación LED",
-        hotspots: [
-          {
-            id: "nicho-bar",
-            label: "Nicho de bar",
-            detail:
-              "Espacio recessado con cubierta negra y tomas eléctricas para cafetera o electrodomésticos.",
-            top: "52%",
-            left: "50%",
-          },
-          {
-            id: "luz-led-bar",
-            label: "Iluminación LED",
-            detail:
-              "Luz bajo repisa y spots en el nicho que crean ambiente y visibilidad en la zona de trabajo.",
-            top: "38%",
-            left: "48%",
-          },
-          {
-            id: "microondas-empotrado",
-            label: "Microondas empotrado",
-            detail:
-              "Electrodoméstico integrado en el módulo superior para uso rápido en el área social.",
-            top: "32%",
-            left: "38%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/centro-bar-integrado/imagen-02-vista-general.jpeg",
         alt: "Vista general del Centro Bar Integrado",
-        hotspots: [
-          {
-            id: "marco-madera",
-            label: "Marco en madera",
-            detail:
-              "Perfil continuo en tono madera que enmarca cada módulo y suaviza el gris mate.",
-            top: "45%",
-            left: "82%",
-          },
-          {
-            id: "cajonera-cuadruple",
-            label: "Cajonera de cuatro cajones",
-            detail:
-              "Almacenamiento amplio con tiradores horizontales en madera para organización.",
-            top: "72%",
-            left: "50%",
-          },
-        ],
       },
     ],
   },
@@ -3011,54 +1545,10 @@ const projects: Project[] = [
       {
         src: "/images/pagina-catalogo/centro-marmol-lamas/imagen-01-centro-hero.jpeg",
         alt: "Centro Mármol & Lamas con TV y consola flotante",
-        hotspots: [
-          {
-            id: "lamas-oscuro",
-            label: "Muro de lamas oscuras",
-            detail:
-              "Revestimiento vertical tipo tambour que enmarca el panel central con profundidad.",
-            top: "42%",
-            left: "50%",
-          },
-          {
-            id: "panel-marmol-tv",
-            label: "Panel de mármol negro",
-            detail:
-              "Superficie pulida con vetas blancas donde se monta la pantalla plana.",
-            top: "32%",
-            left: "48%",
-          },
-          {
-            id: "consola-flotante",
-            label: "Consola flotante",
-            detail:
-              "Mueble suspendido en madera natural con repisa y cajones para equipos y controles.",
-            top: "72%",
-            left: "45%",
-          },
-        ],
       },
       {
         src: "/images/pagina-catalogo/centro-marmol-lamas/imagen-02-vista-sala.jpeg",
         alt: "Vista del Centro Mármol & Lamas en sala",
-        hotspots: [
-          {
-            id: "zona-tv",
-            label: "Zona audiovisual",
-            detail:
-              "Composición centrada en la TV con acceso cómodo desde el mobiliario de la sala.",
-            top: "35%",
-            left: "52%",
-          },
-          {
-            id: "madera-rustica",
-            label: "Acabado en madera rústica",
-            detail:
-              "Veta variada en la consola que aporta calidez frente al mármol y las lamas.",
-            top: "68%",
-            left: "42%",
-          },
-        ],
       },
     ],
   },

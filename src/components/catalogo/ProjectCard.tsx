@@ -11,15 +11,17 @@ import { useFocusTrap } from "@/hooks/useFocusTrap";
 type Hotspot = {
   id: string;
   label: string;
-  detail: string;
+  detail?: string;
   top: string;
   left: string;
+  imageSrc?: string;
+  imageAlt?: string;
 };
 
 type ProjectImage = {
   src: string;
   alt: string;
-  hotspots: Hotspot[];
+  hotspots?: Hotspot[];
   objectFit?: "cover" | "contain";
 };
 
@@ -75,7 +77,7 @@ export default function ProjectCard({ project }: ProjectCardProps) {
             sizes="(min-width: 1024px) 60vw, 100vw"
           />
 
-          {currentImage.hotspots.map((spot) => {
+          {(currentImage.hotspots ?? []).map((spot) => {
             const isActive = activeHotspot === spot.id;
             return (
               <div
@@ -196,13 +198,13 @@ export default function ProjectCard({ project }: ProjectCardProps) {
             className="w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="relative h-44 w-full bg-stone-100">
+            <div className="relative h-44 w-full bg-stone-100 sm:h-56">
               <Image
-                src={currentImage.src}
-                alt={currentImage.alt}
+                src={selectedHotspot.imageSrc ?? currentImage.src}
+                alt={selectedHotspot.imageAlt ?? currentImage.alt}
                 fill
                 className={
-                  currentImage.objectFit === "contain"
+                  selectedHotspot.imageSrc || currentImage.objectFit === "contain"
                     ? "object-contain"
                     : "object-cover"
                 }
@@ -216,9 +218,11 @@ export default function ProjectCard({ project }: ProjectCardProps) {
               <h4 className="mt-3 text-xl font-semibold text-primary">
                 {selectedHotspot.label}
               </h4>
-              <p className="mt-3 text-sm leading-relaxed text-secondary">
-                {selectedHotspot.detail}
-              </p>
+              {selectedHotspot.detail ? (
+                <p className="mt-3 text-sm leading-relaxed text-secondary">
+                  {selectedHotspot.detail}
+                </p>
+              ) : null}
               <div className="mt-6 flex flex-wrap items-center gap-3">
                 <Link
                   href="/agendar"
