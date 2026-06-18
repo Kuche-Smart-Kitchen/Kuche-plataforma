@@ -106,6 +106,24 @@ const formatCurrency = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value);
 
+const formatMeters = (value: number) =>
+  new Intl.NumberFormat("es-MX", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(value);
+
+/** Metros lineales asignados a un frente en la tarjeta del showroom (reparto igual entre seleccionados). */
+function resolveShowroomFrenteMetrosForCard(
+  largoLineal: number,
+  selectedCount: number,
+  isActive: boolean,
+  splitLinearAmongSelections: boolean,
+): number {
+  if (!splitLinearAmongSelections || selectedCount <= 0) return largoLineal;
+  if (isActive) return largoLineal / selectedCount;
+  return largoLineal / (selectedCount + 1);
+}
+
 const parseMeasure = (raw: string | undefined): number | null => {
   if (!raw) return null;
   const v = Number.parseFloat(raw.replace(",", "."));
@@ -355,8 +373,10 @@ type MaterialGridProps = {
   materialSearch: string;
   /** Precio unitario $/m según catálogo de configuración (id/nombre). */
   unitPricePerM: (option: MaterialOption) => number;
+  /** Frentes: reparte metros lineales entre opciones seleccionadas. */
+  splitLinearAmongSelections?: boolean;
 } & (
-  | { multiSelect?: false; selectedId: string | null; onSelect: (id: string) => void }
+  | { multiSelect?: false; selectedId: string | null; onSelect: (id: string | null) => void }
   | { multiSelect: true; selectedIds: string[]; onToggle: (id: string) => void }
 );
 
@@ -367,9 +387,11 @@ const MaterialGrid = ({
   largoLineal,
   materialSearch,
   unitPricePerM,
+  splitLinearAmongSelections = false,
   ...rest
 }: MaterialGridProps) => {
   const isMulti = rest.multiSelect === true;
+  const selectedFrenteCount = isMulti ? rest.selectedIds.length : 0;
   const normalizedSearch = materialSearch.trim().toLowerCase();
   const filtered = options.filter((option) => {
     const matchesSearch = !normalizedSearch || option.name.toLowerCase().includes(normalizedSearch);
@@ -381,8 +403,16 @@ const MaterialGrid = ({
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-secondary">{title}</p>
         {isMulti ? (
-          <p className="mt-1 text-[11px] font-medium text-secondary/85">Puedes elegir más de uno.</p>
-        ) : null}
+          <p className="mt-1 text-[11px] font-medium text-secondary/85">
+            {splitLinearAmongSelections
+              ? "Puedes elegir más de uno. Los metros lineales se reparten a partes iguales entre los frentes seleccionados. Toca de nuevo una opción para quitarla."
+              : "Puedes elegir más de uno. Toca de nuevo una opción seleccionada para quitarla."}
+          </p>
+        ) : (
+          <p className="mt-1 text-[11px] font-medium text-secondary/85">
+            Toca de nuevo la opción seleccionada para dejarla sin elegir.
+          </p>
+        )}
       </div>
       {filtered.length === 0 ? (
         <div className="rounded-2xl border border-primary/10 bg-white px-4 py-3 text-xs text-secondary">
@@ -396,13 +426,26 @@ const MaterialGrid = ({
               : rest.selectedId !== null && option.id === rest.selectedId;
             const imageSrc = resolveMaterialImage(option.id, option.name, category, option.image);
             const pricePerM = unitPricePerM(option);
-            const optionPrice = Math.max(0, largoLineal * pricePerM);
+            const metrosAsignados = resolveShowroomFrenteMetrosForCard(
+              largoLineal,
+              selectedFrenteCount,
+              isActive,
+              splitLinearAmongSelections,
+            );
+            const optionPrice = Math.max(0, metrosAsignados * pricePerM);
             return (
               <button
                 key={option.id}
                 type="button"
-                onClick={() => (isMulti ? rest.onToggle(option.id) : rest.onSelect(option.id))}
-                className={`group shrink-0 rounded-2xl border border-primary/10 bg-white p-2.5 text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl sm:p-3 ${
+                aria-pressed={isActive}
+                onClick={() => {
+                  if (isMulti) {
+                    rest.onToggle(option.id);
+                    return;
+                  }
+                  rest.onSelect(rest.selectedId === option.id ? null : option.id);
+                }}
+                className={`group shrink-0 touch-manipulation rounded-2xl border border-primary/10 bg-white p-2.5 text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl sm:p-3 ${
                   /* 2 visibles en móvil; desde sm, 4 visibles en el ancho del carril (entre flechas) */
                   "w-[calc((100cqw-0.75rem)/2)] sm:w-[calc((100cqw-3*1rem)/4)]"
                 } ${
@@ -434,6 +477,13 @@ const MaterialGrid = ({
                 <p className="mt-3 line-clamp-2 text-xs font-medium text-secondary">{option.name}</p>
                 <p className="mt-2 text-[11px] font-medium tabular-nums text-secondary">
                   {formatCurrency(pricePerM)} / m
+                  {splitLinearAmongSelections && selectedFrenteCount > 0 ? (
+                    <span className="text-secondary/75">
+                      {" "}
+                      · {formatMeters(metrosAsignados)} m
+                      {isActive ? "" : " si lo agregas"}
+                    </span>
+                  ) : null}
                 </p>
                 <p className="mt-2 text-xs font-semibold text-[#8B1C1C]">
                   Estimado con tus medidas {formatCurrency(optionPrice)}
@@ -469,6 +519,25 @@ function buildMaterialShowroomCatalog(): {
 }
 
 const materialCatalog = buildMaterialShowroomCatalog();
+
+function computeShowroomFrentesCost(
+  largoValue: number,
+  selectedFrenteIds: string[],
+  mats: LevantamientoConfig["materiales"],
+): number {
+  const count = selectedFrenteIds.length;
+  if (count === 0 || largoValue <= 0) return 0;
+  const metrosPorFrente = largoValue / count;
+  return selectedFrenteIds.reduce((acc, fid) => {
+    const f = materialCatalog.frentes.find((item) => item.id === fid);
+    if (!f) return acc;
+    const precioM = resolvePrecioPorMetroForShowroomSelection(mats, "frente", {
+      id: f.id,
+      name: f.name,
+    });
+    return acc + metrosPorFrente * precioM;
+  }, 0);
+}
 
 type AutoScenarioId = "esencial" | "tendencia" | "premium";
 
@@ -1172,12 +1241,6 @@ export default function CotizadorPreliminarPage() {
 
     const precioCubiertaM = resolvePrecioPorMetroForShowroomSelection(mats, "cubierta", pickC);
     const precioHerrajeM = resolvePrecioPorMetroForShowroomSelection(mats, "herraje", pickH);
-    const precioFrentesPorM = selectedFrenteIds.reduce((acc, fid) => {
-      const f = materialCatalog.frentes.find((item) => item.id === fid);
-      if (!f) return acc;
-      const pickF = { id: f.id, name: f.name };
-      return acc + resolvePrecioPorMetroForShowroomSelection(mats, "frente", pickF);
-    }, 0);
 
     const factorConfig = Math.min(
       5,
@@ -1187,7 +1250,8 @@ export default function CotizadorPreliminarPage() {
       levantamiento.medidasGenerales?.hastaTecho === true ? factorConfig : 1;
 
     const costoCubiertas = largoValue * precioCubiertaM;
-    const costoFrentes = largoValue * precioFrentesPorM * factorActivo;
+    const costoFrentes =
+      computeShowroomFrentesCost(largoValue, selectedFrenteIds, mats) * factorActivo;
     const costoHerrajes = largoValue * precioHerrajeM * factorActivo;
     const ep = levantamientoConfig.extrasPrecios;
     const costoIluminacion = cotizacionIluminacionTotal(levantamiento, ep.iluminacion);
@@ -2752,6 +2816,7 @@ export default function CotizadorPreliminarPage() {
               largoLineal={metrics.largoValue}
               materialSearch={materialSearch}
               unitPricePerM={materialUnitPriceByCategory.frentes}
+              splitLinearAmongSelections
             />
             <MaterialGrid
               title="Herrajes"
