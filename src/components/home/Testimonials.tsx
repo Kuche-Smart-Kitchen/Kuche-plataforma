@@ -31,7 +31,7 @@ const testimonials = [
 export default function Testimonials() {
   return (
     <section className="relative overflow-hidden py-20 mx-4 md:mx-6 rounded-3xl">
-      <div className="absolute inset-0 bg-[url('/images/cocina3.jpg')] bg-cover bg-center bg-fixed" />
+      <div className="absolute inset-0 bg-[url('/images/home/testimonios-section/fondo-seccion-opiniones.jpg')] bg-cover bg-center bg-fixed" />
       <div className="absolute inset-0 bg-black/35" />
 
       <MotionSection className="relative z-10">

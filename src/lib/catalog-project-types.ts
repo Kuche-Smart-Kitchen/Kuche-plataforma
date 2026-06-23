@@ -26,7 +26,7 @@ export function normalizeLegacyProjectTypeToCatalog(raw: string): string {
   return t;
 }
 
-/** ¿Mostrar "¿Con isla?" en levantamiento? (acepta Cocina/Cocinas con mayúsculas variables). */
+/** ¿Mostrar «¿Con isla?» en levantamiento? (acepta Cocina/Cocinas con mayúsculas variables). */
 export function isCocinasProjectTypeForConIsla(value: string): boolean {
   const s = value.trim().toLowerCase();
   return s === "cocinas" || s === "cocina";

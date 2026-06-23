@@ -1,62 +1,64 @@
 "use client";
 
 import { useState } from "react";
-import Captcha from "@/components/Captcha";
+import Captcha from "@/components/ui/Captcha";
 import MotionSection from "./MotionSection";
 
 export default function LeadForm() {
   const [captchaToken, setCaptchaToken] = useState("");
 
   return (
-    <MotionSection className="bg-accent py-20 mx-4 md:mx-6 rounded-3xl">
-      <div className="mx-auto max-w-5xl px-6">
-        <div className="rounded-3xl bg-white p-8 shadow-lg shadow-black/10 md:p-12">
-          <div className="grid gap-10 md:grid-cols-[1.1fr_0.9fr] md:items-center">
-            <div>
-              <h2 className="text-3xl font-semibold text-primary md:text-4xl">
-                Inicia tu proyecto
-              </h2>
-              <p className="mt-4 text-base leading-relaxed text-secondary">
-                Cuéntanos lo esencial y en breve un especialista Küche te
-                compartirá ideas y recomendaciones personalizadas.
-              </p>
-            </div>
-            <form
-              className="grid gap-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!captchaToken) return;
-              }}
-            >
-              <input
-                type="text"
-                placeholder="Nombre"
-                className="w-full rounded-2xl border border-secondary/20 bg-[#F9F9F9] px-4 py-3 text-sm text-primary outline-none focus:border-accent"
-              />
-              <input
-                type="tel"
-                placeholder="Teléfono"
-                className="w-full rounded-2xl border border-secondary/20 bg-[#F9F9F9] px-4 py-3 text-sm text-primary outline-none focus:border-accent"
-              />
-              <div className="rounded-2xl border border-secondary/20 bg-[#F4F4F4] px-4 py-3">
-                <p className="text-xs text-secondary">Verificación de seguridad</p>
-                <Captcha
-                  onVerify={setCaptchaToken}
-                  onExpire={() => setCaptchaToken("")}
-                  onError={() => setCaptchaToken("")}
-                  className="mt-3"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={!captchaToken}
-                className="rounded-full bg-[#6F1414] px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-black/10 transition enabled:hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                Solicitar detalles
-              </button>
-            </form>
+    <MotionSection className="mx-0 rounded-none bg-accent py-14 shadow-xl shadow-black/5 md:mx-auto md:w-[95%] md:max-w-7xl md:rounded-3xl">
+      <div className="mx-auto w-full px-6 text-center lg:px-12">
+        <h2 className="text-3xl font-semibold tracking-tight text-white md:text-4xl">
+          Inicia tu proyecto
+        </h2>
+        <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-white/80">
+          Cuéntanos lo esencial y en breve un especialista Küche te compartirá ideas y
+          recomendaciones personalizadas.
+        </p>
+
+        <form
+          className="mx-auto mt-10 flex flex-col gap-4 text-left md:mt-12 md:flex-row md:items-center md:justify-center md:gap-5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!captchaToken) return;
+          }}
+        >
+          <div className="w-full md:w-64 lg:w-72">
+            <input
+              type="text"
+              placeholder="Nombre"
+              className="w-full rounded-full border border-white/20 bg-white/10 px-5 py-3.5 text-sm text-white placeholder-white/60 shadow-sm outline-none backdrop-blur-sm transition-all focus:border-white focus:bg-white focus:text-primary focus:placeholder-gray-400 focus:ring-4 focus:ring-white/20"
+            />
           </div>
-        </div>
+
+          <div className="w-full md:w-64 lg:w-72">
+            <input
+              type="tel"
+              placeholder="Teléfono"
+              className="w-full rounded-full border border-white/20 bg-white/10 px-5 py-3.5 text-sm text-white placeholder-white/60 shadow-sm outline-none backdrop-blur-sm transition-all focus:border-white focus:bg-white focus:text-primary focus:placeholder-gray-400 focus:ring-4 focus:ring-white/20"
+            />
+          </div>
+
+          <div className="flex w-full flex-col gap-4 md:w-auto md:flex-row md:items-center md:gap-4">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-2 backdrop-blur-sm md:rounded-full md:p-1">
+              <Captcha
+                onVerify={setCaptchaToken}
+                onExpire={() => setCaptchaToken("")}
+                onError={() => setCaptchaToken("")}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={!captchaToken}
+              className="w-full rounded-full bg-white px-8 py-3.5 text-sm font-bold text-accent shadow-md transition-all duration-300 enabled:hover:scale-105 enabled:hover:bg-gray-50 enabled:hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 md:w-auto md:whitespace-nowrap"
+            >
+              Solicitar detalles
+            </button>
+          </div>
+        </form>
       </div>
     </MotionSection>
   );

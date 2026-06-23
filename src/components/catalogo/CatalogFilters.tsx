@@ -1,7 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
-
 type CatalogFiltersProps = {
   primaryCategories: string[];
   secondaryCategories: string[];
@@ -10,6 +8,21 @@ type CatalogFiltersProps = {
   onPrimaryChange: (category: string) => void;
   onSecondaryChange: (category: string) => void;
 };
+
+const rowClassName =
+  "scrollbar-hide flex w-full snap-x gap-3 overflow-x-auto whitespace-nowrap pb-2 md:flex-wrap md:justify-center md:overflow-visible";
+
+const pillBaseClassName =
+  "shrink-0 snap-center rounded-full px-5 py-2.5 text-sm font-semibold uppercase tracking-[0.12em] transition-all sm:tracking-[0.15em]";
+
+function pillClassName(isActive: boolean) {
+  return [
+    pillBaseClassName,
+    isActive
+      ? "bg-[#6F1414] text-white shadow-md"
+      : "border border-gray-200 bg-white text-gray-600 shadow-sm",
+  ].join(" ");
+}
 
 export default function CatalogFilters({
   primaryCategories,
@@ -20,8 +33,8 @@ export default function CatalogFilters({
   onSecondaryChange,
 }: CatalogFiltersProps) {
   return (
-    <div className="flex w-full flex-col items-center gap-3">
-      <div className="inline-flex flex-wrap items-center justify-center gap-2 rounded-full bg-white/80 p-2 shadow-lg shadow-black/5 backdrop-blur">
+    <div className="flex w-full flex-col items-center gap-4">
+      <div className={rowClassName}>
         {primaryCategories.map((category) => {
           const isActive = category === activePrimary;
 
@@ -30,28 +43,16 @@ export default function CatalogFilters({
               key={category}
               type="button"
               onClick={() => onPrimaryChange(category)}
-              className="relative px-5 py-2 text-xs font-semibold uppercase tracking-[0.2em]"
+              className={pillClassName(isActive)}
+              aria-pressed={isActive}
             >
-              {isActive && (
-                <motion.span
-                  layoutId="activePrimaryCategory"
-                  className="absolute inset-0 rounded-full bg-accent"
-                  transition={{ type: "spring", stiffness: 420, damping: 32 }}
-                />
-              )}
-              <span
-                className={`relative z-10 ${
-                  isActive ? "text-white" : "text-secondary"
-                }`}
-              >
-                {category}
-              </span>
+              {category}
             </button>
           );
         })}
       </div>
 
-      <div className="inline-flex flex-wrap items-center justify-center gap-2 rounded-full bg-white/70 p-2 shadow-lg shadow-black/5 backdrop-blur">
+      <div className={rowClassName}>
         {secondaryCategories.map((category) => {
           const isActive = category === activeSecondary;
 
@@ -60,22 +61,10 @@ export default function CatalogFilters({
               key={category}
               type="button"
               onClick={() => onSecondaryChange(category)}
-              className="relative px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em]"
+              className={pillClassName(isActive)}
+              aria-pressed={isActive}
             >
-              {isActive && (
-                <motion.span
-                  layoutId="activeSecondaryCategory"
-                  className="absolute inset-0 rounded-full bg-accent"
-                  transition={{ type: "spring", stiffness: 420, damping: 32 }}
-                />
-              )}
-              <span
-                className={`relative z-10 ${
-                  isActive ? "text-white" : "text-secondary"
-                }`}
-              >
-                {category}
-              </span>
+              {category}
             </button>
           );
         })}
