@@ -1,0 +1,51 @@
+@startuml
+title Secuencia UML - Cliente consulta "Mi proyecto" (/seguimiento)
+actor Cliente
+participant "UI /seguimiento\n(src/app/seguimiento/page.tsx)" as UI
+participant "localStorage" as LS
+participant "PDF utils\n(src/lib/pdf-preliminar.ts)" as PDF
+participant "formal-pdf-storage\n(IndexedDB)" as IDB
+participant "Modal imagen" as Modal
+
+Cliente -> UI: Envia codigo de proyecto (form submit)
+UI -> LS: getItem("kuche_project_<codigo>")
+LS --> UI: JSON (SeguimientoProject) o null
+
+alt Proyecto encontrado
+  UI -> UI: JSON.parse + merge con baseMockProject
+  UI -> UI: setProject(); setHasAccess(true)
+  UI -> UI: Renderiza timeline, pagos y archivos
+
+  alt Cliente selecciona un "Ver PDF" o "Descargar PDF"
+    alt isProspect == true
+      UI -> PDF: openPreliminarPdfInNewTab(data)\n o downloadPreliminarPdf(data, filename)
+      PDF -> PDF: buildPreliminarPdf(data)\n-> Blob/ObjectURL
+    else isProspect == false
+      UI -> PDF: openFormalPdfInNewTab(data)\n o downloadFormalPdf(data, filename)
+      alt data.formalPdfKey existe
+        PDF -> IDB: getFormalPdf(formalPdfKey)
+        IDB --> PDF: URL o null
+        alt URL existe
+          PDF -> PDF: window.open(url)\n o link.click(download)
+        else fallback preliminar
+          PDF -> PDF: openPreliminarPdfInNewTab(data)\n o downloadPreliminarPdf(data)
+        end
+      else fallback preliminar
+        PDF -> PDF: openPreliminarPdfInNewTab(data)\n o downloadPreliminarPdf(data)
+      end
+    end
+  end
+
+  alt Cliente selecciona un archivo JPG (ver imagen)
+    UI -> Modal: setSelectedImage({name, src})
+    Modal --> UI: muestra modal con <img src=...>
+    Cliente -> Modal: click "Cerrar"
+    Modal -> UI: setSelectedImage(null)
+  end
+
+else Proyecto no encontrado
+  UI -> UI: setCodeError("No encontramos un proyecto con ese código")
+end
+
+@enduml
+

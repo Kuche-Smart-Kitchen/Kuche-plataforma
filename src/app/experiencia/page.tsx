@@ -4,15 +4,25 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
+import { EXPERIENCE_STEP_MEDIA } from "@/lib/experience-steps-media";
 
-const steps = [
+type ExperienciaStep = {
+  number: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  image: string;
+  imageFit: "cover" | "contain";
+  alt: string;
+};
+
+const STEP_COPY: Omit<ExperienciaStep, "image" | "imageFit">[] = [
   {
     number: "01",
     title: "El primer contacto",
     subtitle: "Agendar Cita",
     description:
       "No es solo una visita, es el inicio de tu proyecto. Un experto Küche va a tu domicilio para analizar la luz, el espacio y tus necesidades. Sin compromisos, solo entendimiento puro de lo que buscas.",
-    image: "/images/cocina1.jpg",
     alt: "Libreta, café y muestras de color para agendar una cita.",
   },
   {
@@ -21,7 +31,6 @@ const steps = [
     subtitle: "Diseño y Cotización",
     description:
       "Olvídate de esperar semanas por un precio. Diseñamos contigo en tiempo real. Tú eliges materiales y acabados, y el presupuesto se ajusta al momento. Transparencia total desde el minuto uno.",
-    image: "/images/render2.jpg",
     alt: "Render de planos en una pantalla.",
   },
   {
@@ -30,7 +39,6 @@ const steps = [
     subtitle: "Realidad Virtual",
     description:
       "Prohibido imaginar. En Küche, te pones nuestros lentes VR y caminas dentro de tu cocina antes de que cortemos la primera tabla. Abre cajones, siente las alturas y valida tu inversión con seguridad absoluta.",
-    image: "/images/cocina37.jpg",
     alt: "Persona usando lentes de realidad virtual.",
   },
   {
@@ -39,7 +47,6 @@ const steps = [
     subtitle: "Cortes CNC",
     description:
       "Aquí la artesanía se encuentra con la ingeniería. Nuestra maquinaria de Control Numérico Computarizado (CNC) corta cada pieza con precisión milimétrica. Cero errores humanos, ensambles perfectos.",
-    image: "/images/render5.jpg",
     alt: "Detalle de cortes CNC sobre madera.",
   },
   {
@@ -48,7 +55,6 @@ const steps = [
     subtitle: "Portal privado",
     description:
       "Accede a tu portal privado para ver pagos, renders y avances en tiempo real. Transparencia total durante todo el proceso.",
-    image: "/images/render4.jpg",
     alt: "Vista de un portal digital de seguimiento.",
   },
   {
@@ -57,10 +63,18 @@ const steps = [
     subtitle: "Instalación y Entrega",
     description:
       "El momento mágico. Nuestro equipo de instalación certificado monta tu proyecto con limpieza y rapidez. Te entregamos no solo muebles, sino el corazón de tu nuevo hogar listo para usarse.",
-    image: "/images/cocina11.jpg",
     alt: "Cocina terminada con luz natural.",
   },
-] as const;
+];
+
+const steps: ExperienciaStep[] = STEP_COPY.map((copy, index) => {
+  const media = EXPERIENCE_STEP_MEDIA[index]!;
+  return {
+    ...copy,
+    image: media.image,
+    imageFit: media.imageFit ?? "cover",
+  };
+});
 
 const fadeInUp = {
   hidden: { opacity: 0, y: 28 },
@@ -154,7 +168,7 @@ export default function ExperienciaPage() {
             ref={(element) => {
               sectionRefs.current[index] = element;
             }}
-            className="relative h-screen w-full snap-center px-6 py-14 md:px-12"
+            className="relative h-screen w-full snap-center px-6 pt-24 pb-8 md:py-14 md:px-12"
           >
             <div className="mx-auto flex h-full max-w-6xl flex-col items-center gap-12 md:flex-row md:gap-16">
               <div
@@ -162,7 +176,7 @@ export default function ExperienciaPage() {
                   isEven ? "md:order-2" : ""
                 }`}
               >
-                <div className="pointer-events-none absolute -top-12 left-0 text-[5rem] font-semibold text-transparent md:-left-6 md:text-[7rem] lg:text-[8rem]">
+                <div className="pointer-events-none absolute -top-2 left-0 text-[6rem] font-semibold text-transparent md:-top-12 md:-left-6 md:text-[7rem] lg:text-[8rem]">
                   <span
                     className="block"
                     style={{ WebkitTextStroke: "1px rgba(148,163,184,0.45)" }}
@@ -201,12 +215,20 @@ export default function ExperienciaPage() {
                   isEven ? "md:order-1" : ""
                 }`}
               >
-                <div className="relative aspect-[4/5] overflow-hidden rounded-[32px] shadow-2xl shadow-black/10">
+                <div
+                  className={`relative aspect-[4/5] overflow-hidden rounded-[32px] shadow-2xl shadow-black/10 ${
+                    step.imageFit === "contain" ? "bg-neutral-900" : ""
+                  }`}
+                >
                   <Image
                     src={step.image}
                     alt={step.alt}
                     fill
-                    className="object-cover"
+                    className={
+                      step.imageFit === "contain"
+                        ? "object-contain object-center"
+                        : "object-cover"
+                    }
                     sizes="(min-width: 1024px) 42vw, (min-width: 768px) 50vw, 90vw"
                     priority={index === 0}
                   />

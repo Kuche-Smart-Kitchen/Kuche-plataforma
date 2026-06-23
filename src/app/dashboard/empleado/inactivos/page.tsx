@@ -1,0 +1,341 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { motion, AnimatePresence } from "framer-motion";
+import { ArrowLeft, XCircle, User, Calendar, RotateCcw, X, MessageSquare } from "lucide-react";
+import {
+  initialKanbanTasks,
+  kanbanStorageKey,
+  getTaskCardSubtitle,
+  saveKanbanTasksToLocalStorage,
+  type KanbanTask,
+} from "@/lib/kanban";
+import { ClientDocuments } from "@/components/admin/ClientDocuments";
+import { splitIntoColumns } from "@/lib/split-into-columns";
+import { useClientCardColumns } from "@/hooks/useClientCardColumns";
+import { EMPLEADO_DASHBOARD_USER } from "@/lib/empleado-dashboard-user";
+
+const formatDate = (timestamp: number | undefined): string => {
+  if (!timestamp) return "Sin fecha";
+  const date = new Date(timestamp);
+  return date.toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" });
+};
+
+function isAssignedToEmpleado(t: KanbanTask): boolean {
+  return (t.assignedTo ?? []).some((n) => n === EMPLEADO_DASHBOARD_USER);
+}
+
+/** Inactivos: seguimiento descartado en Kanban (`followUpStatus`), no el campo `status` de la tarea. */
+function isEmpleadoInactivo(t: KanbanTask): boolean {
+  return t.followUpStatus === "descartado" && isAssignedToEmpleado(t);
+}
+
+const mergeTasks = (storedTasks: KanbanTask[]): KanbanTask[] => {
+  const map = new Map(storedTasks.map((task) => [task.id, task]));
+  initialKanbanTasks.forEach((task) => {
+    if (!map.has(task.id)) {
+      map.set(task.id, task);
+    }
+  });
+  return Array.from(map.values());
+};
+
+export default function EmpleadoInactivosPage() {
+  const [clients, setClients] = useState<KanbanTask[]>([]);
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [selectedClient, setSelectedClient] = useState<KanbanTask | null>(null);
+  const columnCount = useClientCardColumns(3);
+  const clientColumns = useMemo(() => {
+    if (clients.length === 0) return [];
+    return splitIntoColumns(clients, columnCount);
+  }, [clients, columnCount]);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(kanbanStorageKey);
+    let allTasks: KanbanTask[] = [];
+
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as KanbanTask[];
+        allTasks = mergeTasks(parsed);
+        saveKanbanTasksToLocalStorage(allTasks);
+      } catch {
+        allTasks = initialKanbanTasks;
+      }
+    } else {
+      allTasks = initialKanbanTasks;
+      saveKanbanTasksToLocalStorage(allTasks);
+    }
+
+    setClients(allTasks.filter(isEmpleadoInactivo));
+    setIsHydrated(true);
+  }, []);
+
+  const handleReactivate = (clientId: string) => {
+    const target = clients.find((c) => c.id === clientId);
+    if (!target || !isAssignedToEmpleado(target)) return;
+
+    const stored = window.localStorage.getItem(kanbanStorageKey);
+    if (!stored) return;
+    try {
+      const tasks = JSON.parse(stored) as KanbanTask[];
+      const updatedTasks = tasks.map((task) => {
+        if (task.id !== clientId) return task;
+        if (!isAssignedToEmpleado(task)) return task;
+        return {
+          ...task,
+          followUpStatus: "pendiente" as const,
+          status: "pendiente" as const,
+          stage: "contrato" as const,
+          followUpEnteredAt: Date.now(),
+        };
+      });
+      saveKanbanTasksToLocalStorage(updatedTasks);
+      setClients(updatedTasks.filter(isEmpleadoInactivo));
+      setSelectedClient(null);
+    } catch {
+      console.error("Error al reactivar cliente");
+    }
+  };
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (selectedClient) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = prev;
+      };
+    }
+  }, [selectedClient]);
+
+  if (!isHydrated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-slate-200/25 to-white px-4 py-8 md:px-8">
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-8">
+          <Link
+            href="/dashboard/empleado"
+            className="inline-flex items-center gap-2 text-sm text-secondary hover:text-primary"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Regresar
+          </Link>
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+        >
+          <div className="mb-2 flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-200/90">
+              <XCircle className="h-6 w-6 text-slate-600" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">Dashboard Empleado</p>
+              <h1 className="text-2xl font-semibold text-gray-900">Mis Proyectos Inactivos</h1>
+            </div>
+          </div>
+          <p className="ml-15 mt-2 text-sm text-secondary">
+            Proyectos inactivos asignados a ti. Solo ves tus tareas.
+          </p>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.1 }}
+          className="mt-8"
+        >
+          {clients.length === 0 ? (
+            <div className="rounded-3xl border border-primary/10 bg-white p-12 text-center">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
+                <User className="h-8 w-8 text-gray-400" />
+              </div>
+              <p className="mt-4 text-lg font-medium text-gray-900">No tienes proyectos inactivos</p>
+              <p className="mt-2 text-sm text-secondary">
+                Los proyectos que marques como descartados en seguimiento aparecerán aquí.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4 md:flex-row md:items-start">
+              {clientColumns.map((col, colIdx) => (
+                <div key={colIdx} className="flex min-w-0 flex-1 flex-col gap-4">
+                  {col.map((client) => {
+                    const notesMotivo = client.notes?.trim();
+                    const cardSubtitle = getTaskCardSubtitle(client);
+                    return (
+                      <div
+                        key={client.id}
+                        className="min-w-0 rounded-2xl border border-gray-200/80 bg-white p-5 shadow-sm transition hover:border-slate-300 hover:shadow-md"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex min-w-0 flex-1 items-start gap-3">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100">
+                              <User className="h-5 w-5 text-slate-500" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-secondary">Proyecto</p>
+                              <h3 className="break-words text-base font-semibold text-gray-900">{client.project}</h3>
+                              <p className="mt-0.5 text-sm text-secondary">{client.title}</p>
+                              {client.codigoProyecto ? (
+                                <p className="mt-2 break-all text-[11px] text-secondary">
+                                  Código:{" "}
+                                  <span className="font-semibold text-primary">{client.codigoProyecto}</span>
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                          <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                            Inactivo
+                          </span>
+                        </div>
+
+                        <div className="mt-4 space-y-2 border-t border-gray-100 pt-4 text-sm text-secondary">
+                          <div className="flex items-center gap-2">
+                            <Calendar className="h-4 w-4 shrink-0 opacity-70" />
+                            <span>Registro: {formatDate(client.createdAt)}</span>
+                          </div>
+                          {notesMotivo ? (
+                            <div className="flex items-start gap-2">
+                              <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 opacity-70" />
+                              <span className="min-w-0 leading-snug">
+                                <span className="block text-[10px] font-semibold uppercase tracking-wide text-secondary/90">
+                                  Motivo / notas
+                                </span>
+                                <span className="text-gray-800">{notesMotivo}</span>
+                              </span>
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedClient(client)}
+                          className="mt-5 w-full rounded-xl bg-slate-600 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700"
+                        >
+                          Abrir expediente
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.4, delay: 0.2 }}
+          className="mt-8 rounded-2xl bg-slate-100 px-6 py-4"
+        >
+          <p className="text-sm text-slate-700">
+            <strong>Total (mis proyectos inactivos):</strong> {clients.length}
+          </p>
+          <p className="mt-1 text-xs text-secondary">
+            Puedes reactivar un cliente si vuelve a estar en seguimiento; solo aplica a tus proyectos asignados.
+          </p>
+        </motion.div>
+      </div>
+
+      <AnimatePresence>
+        {selectedClient ? (
+          <motion.div
+            key={selectedClient.id}
+            className="fixed inset-0 z-[100] flex"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <button
+              type="button"
+              aria-label="Cerrar panel"
+              className="h-full min-h-0 flex-1 cursor-default bg-black/50"
+              onClick={() => setSelectedClient(null)}
+            />
+            <motion.aside
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="empleado-inactivos-expediente"
+              className="flex h-full w-full max-w-lg shrink-0 flex-col bg-white shadow-2xl"
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "tween", duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-100 px-6 py-5">
+                <div className="min-w-0">
+                  <p
+                    id="empleado-inactivos-expediente"
+                    className="text-xs font-semibold uppercase tracking-wider text-secondary"
+                  >
+                    Expediente
+                  </p>
+                  <h2 className="mt-1 break-words text-xl font-semibold leading-tight text-gray-900">
+                    {selectedClient.project}
+                  </h2>
+                  {(() => {
+                    const subtitle = getTaskCardSubtitle(selectedClient);
+                    return subtitle ? <p className="mt-1 text-sm text-secondary">{subtitle}</p> : null;
+                  })()}
+                  {selectedClient.codigoProyecto ? (
+                    <p className="mt-2 break-all text-[11px] text-secondary">
+                      Código: <span className="font-semibold text-primary">{selectedClient.codigoProyecto}</span>
+                    </p>
+                  ) : null}
+                  <div className="mt-3 space-y-1 text-sm text-secondary">
+                    <p>Registro: {formatDate(selectedClient.createdAt)}</p>
+                    {selectedClient.notes?.trim() ? (
+                      <p className="text-gray-800">
+                        <span className="font-medium text-secondary">Motivo / notas: </span>
+                        {selectedClient.notes.trim()}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedClient(null)}
+                  className="rounded-xl p-2 text-secondary hover:bg-gray-100 hover:text-gray-900"
+                  aria-label="Cerrar"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+                <div className="space-y-6 pb-6">
+                  <ClientDocuments task={selectedClient} />
+                </div>
+
+                <div className="border-t border-gray-100 pt-6">
+                  <button
+                    type="button"
+                    onClick={() => handleReactivate(selectedClient.id)}
+                    className="flex w-full items-center justify-center gap-2 rounded-2xl border border-primary/15 bg-primary py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    Reactivar cliente
+                  </button>
+                </div>
+              </div>
+            </motion.aside>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  );
+}

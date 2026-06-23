@@ -1,0 +1,454 @@
+@startuml
+title Navegacion UML - Rutas publicas y redirecciones por rol
+
+start
+
+partition "Sitio publico (Landing + Navbar)" {
+  :Inicio (/);
+
+  note right
+    Navegacion publica:
+    /experiencia, /catalogo, /acabados, /agendar, /seguimiento
+  end note
+
+  if (Destino = /experiencia?) then (si)
+    :/experiencia;
+  elseif (Destino = /catalogo?) then (si)
+    :/catalogo;
+  elseif (Destino = /acabados?) then (si)
+    :/acabados;
+  elseif (Destino = /agendar?) then (si)
+    :/agendar;
+  elseif (Destino = /seguimiento?) then (si)
+    :/seguimiento (Mi proyecto con codigo);
+  else (otro)
+    :Permanece en /;
+  endif
+
+  :Visita /aviso-de-privacidad;
+  :Regresa a /;
+  :Accede a /login;
+}
+
+partition "Login y acceso por rol" {
+  :/login;
+
+  if (Rol = admin?) then (si)
+    :Redireccion a /admin (Dashboard);
+    :Navega a /admin/precios o /admin/disenos\n o /admin/operaciones o /admin/agenda;
+    :Cerrar sesion -> /login;
+  else (empleado)
+    :Redireccion a /dashboard/empleado (Kanban);
+    :Navega a /dashboard/cotizador o /dashboard/cotizador-preliminar\n o /dashboard/levantamiento;
+    :Cerrar sesion -> /login;
+  endif
+}
+
+stop
+@enduml
+
+@startuml
+title Navegacion UML - Rutas publicas + redirecciones por rol
+
+start
+
+partition "Sitio público (Landing + Navbar)" {
+  :Inicio (/);
+
+  note right
+    Navbar y CTAs permiten navegar entre:
+    /experiencia, /catalogo, /acabados, /agendar, /seguimiento.
+  end note
+
+  switch (Destino elegido) {
+    case (/experiencia)
+      :/experiencia;
+      break
+    case (/catalogo)
+      :/catalogo;
+      break
+    case (/acabados)
+      :/acabados;
+      break
+    case (/agendar)
+      :/agendar;
+      break
+    case (/seguimiento)
+      :/seguimiento (Mi proyecto con código);
+      break
+  }
+
+  :Visita /aviso-de-privacidad;
+  :Regresa a / (Inicio);
+  :Accede a /login;
+}
+
+partition "Login y redirecciones por rol" {
+  :/login;
+
+  if (Rol = admin) then (admin)
+    :Redirige a /admin (Dashboard);
+  else (empleado)
+    :Redirige a /dashboard/empleado (Kanban);
+  endif
+}
+
+partition "Área Admin" {
+  :/admin (Dashboard);
+
+  :Selecciona módulo;
+  switch (Sección) {
+    case (/admin/precios)
+      :/admin/precios;
+      break
+    case (/admin/disenos)
+      :/admin/disenos;
+      break
+    case (/admin/operaciones)
+      :/admin/operaciones;
+      break
+    case (/admin/agenda)
+      :/admin/agenda;
+      break
+  }
+
+  :Cerrar sesión -> /login;
+}
+
+partition "Área Empleado" {
+  :/dashboard/empleado;
+
+  :Selecciona módulo en Dashboard;
+  switch (Módulo) {
+    case (/dashboard/cotizador)
+      :/dashboard/cotizador (Cotización formal);
+      break
+    case (/dashboard/cotizador-preliminar)
+      :/dashboard/cotizador-preliminar (Levantamiento preliminar);
+      break
+    case (/dashboard/levantamiento)
+      :/dashboard/levantamiento (Levantamiento completo);
+      break
+  }
+
+  :Cerrar sesión -> /login;
+}
+
+stop
+@enduml
+ 
+/'
+@startuml
+title Navegacion UML - Rutas publicas + redirecciones por rol
+
+start
+
+partition "Sitio público (Landing + Navbar)" {
+  :Inicio (/);
+
+  note right
+    Navbar y CTAs permiten navegar entre:
+    /experiencia, /catalogo, /acabados, /agendar, /seguimiento.
+  end note
+
+  switch (Destino elegido) {
+    case (/experiencia)
+      :/experiencia;
+      break
+    case (/catalogo)
+      :/catalogo;
+      break
+    case (/acabados)
+      :/acabados;
+      break
+    case (/agendar)
+      :/agendar;
+      break
+    case (/seguimiento)
+      :/seguimiento (Mi proyecto con código);
+      break
+  }
+
+  :Visita /aviso-de-privacidad;
+  :Regresa a / (Inicio);
+  :Accede a /login;
+}
+
+partition "Login y redirecciones por rol" {
+  :/login;
+
+  if (Rol = admin) then (admin)
+    :Redirige a /admin (Dashboard);
+  else (empleado)
+    :Redirige a /dashboard/empleado (Kanban);
+  endif
+}
+
+partition "Área Admin" {
+  :/admin (Dashboard);
+
+  :Selecciona módulo;
+  switch (Sección) {
+    case (/admin/precios)
+      :/admin/precios;
+      break
+    case (/admin/disenos)
+      :/admin/disenos;
+      break
+    case (/admin/operaciones)
+      :/admin/operaciones;
+      break
+    case (/admin/agenda)
+      :/admin/agenda;
+      break
+  }
+
+  :Cerrar sesión -> /login;
+}
+
+partition "Área Empleado" {
+  :/dashboard/empleado;
+
+  :Selecciona módulo en Dashboard;
+  switch (Módulo) {
+    case (/dashboard/cotizador)
+      :/dashboard/cotizador (Cotización formal);
+      break
+    case (/dashboard/cotizador-preliminar)
+      :/dashboard/cotizador-preliminar (Levantamiento preliminar);
+      break
+    case (/dashboard/levantamiento)
+      :/dashboard/levantamiento (Levantamiento completo);
+      break
+  }
+
+  :Cerrar sesión -> /login;
+}
+
+stop
+@enduml
+ 
+'/ 
+@startuml
+title Navegacion UML - Rutas publicas + redirecciones por rol
+
+start
+
+partition "Sitio público (Landing + Navbar)" {
+  :Inicio (/);
+
+  note right
+    Navbar y CTAs permiten navegar entre:
+    /experiencia, /catalogo, /acabados, /agendar, /seguimiento.
+  end note
+
+  switch (Destino elegido) {
+    case (/experiencia)
+      :/experiencia;
+      break
+    case (/catalogo)
+      :/catalogo;
+      break
+    case (/acabados)
+      :/acabados;
+      break
+    case (/agendar)
+      :/agendar;
+      break
+    case (/seguimiento)
+      :/seguimiento (Mi proyecto con código);
+      break
+  }
+
+  :Visita /aviso-de-privacidad;
+  :Regresa a / (Inicio);
+
+  :Accede a /login;
+}
+
+partition "Login y redirecciones por rol" {
+  :/login;
+
+  if (Rol = admin) then (admin)
+    :Redirige a /admin (Dashboard);
+  else (empleado)
+    :Redirige a /dashboard/empleado (Kanban);
+  endif
+}
+
+partition "Área Admin" {
+  :/admin (Dashboard);
+
+  :Selecciona módulo;
+  switch (Sección) {
+    case (/admin/precios)
+      :/admin/precios;
+      break
+    case (/admin/disenos)
+      :/admin/disenos;
+      break
+    case (/admin/operaciones)
+      :/admin/operaciones;
+      break
+    case (/admin/agenda)
+      :/admin/agenda;
+      break
+  }
+
+  :Cerrar sesión -> /login;
+}
+
+partition "Área Empleado" {
+  :/dashboard/empleado;
+
+  :Selecciona módulo en Dashboard;
+  switch (Módulo) {
+    case (/dashboard/cotizador)
+      :/dashboard/cotizador (Cotización formal);
+      break
+    case (/dashboard/cotizador-preliminar)
+      :/dashboard/cotizador-preliminar (Levantamiento preliminar);
+      break
+    case (/dashboard/levantamiento)
+      :/dashboard/levantamiento (Levantamiento completo);
+      break
+  }
+
+  :Cerrar sesión -> /login;
+}
+
+stop
+@enduml
+
+@startuml
+title Navegacion UML - Rutas publicas + redirecciones por rol
+
+start
+
+partition "Sitio público (Landing + Navbar)" {
+  :Inicio (/);
+
+  note right
+    Navbar y CTAs permiten navegar entre:
+    /experiencia, /catalogo, /acabados, /agendar, /seguimiento.
+  end note
+
+  switch (Destino elegido) {
+    case (/experiencia)
+      :/experiencia;
+      break
+    case (/catalogo)
+      :/catalogo;
+      break
+    case (/acabados)
+      :/acabados;
+      break
+    case (/agendar)
+      :/agendar;
+      break
+    case (/seguimiento)
+      :/seguimiento (Mi proyecto con código);
+      break
+  }
+
+  :Visita /aviso-de-privacidad;
+  :Regresa a / (Inicio);
+
+  :Accede a /login;
+}
+
+partition "Login y redirecciones por rol" {
+  :/login;
+
+  if (Rol = admin) then (admin)
+    :Redirige a /admin (Dashboard);
+  else (empleado)
+    :Redirige a /dashboard/empleado (Kanban);
+  endif
+}
+
+partition "Área Admin" {
+  :/admin (Dashboard);
+
+  :Selecciona módulo;
+  switch (Sección) {
+    case (/admin/precios)
+      :/admin/precios;
+      break
+    case (/admin/disenos)
+      :/admin/disenos;
+      break
+    case (/admin/operaciones)
+      :/admin/operaciones;
+      break
+    case (/admin/agenda)
+      :/admin/agenda;
+      break
+  }
+
+  :Cerrar sesión -> /login;
+}
+
+partition "Área Empleado" {
+  :/dashboard/empleado;
+
+  :Selecciona módulo en Dashboard;
+  switch (Módulo) {
+    case (/dashboard/cotizador)
+      :/dashboard/cotizador (Cotización formal);
+      break
+    case (/dashboard/cotizador-preliminar)
+      :/dashboard/cotizador-preliminar (Levantamiento preliminar);
+      break
+    case (/dashboard/levantamiento)
+      :/dashboard/levantamiento (Levantamiento completo);
+      break
+  }
+
+  :Cerrar sesión -> /login;
+}
+
+stop
+@enduml
+/'
+'@startuml
+title Navegacion UML - Rutas publicas + redirecciones por rol
+start
+:Visita pagina publica "/";
+note right
+Incluye Navbar (Experiencia, Catalogo, Acabados, Agendar, Seguimiento).
+end note
+
+:Puede ir a /agendar\n(CTA principal);
+:Puede ir a /seguimiento\n"Mi proyecto" (con codigo);
+:Puede ir a /aviso-de-privacidad;
+if (Desde aviso?) then (si)
+  :Regresa a "/";
+endif
+
+:Puede ir a /login;
+
+if (Credencial demo?) then (admin)
+  :Redireccion a /admin;
+  :Admin entra a /admin-dashboard;
+  :Selecciona seccion:
+  * /admin/precios
+  * /admin/disenos
+  * /admin/operaciones
+  * /admin/agenda
+  ;
+  :Puede cerrar sesion -> /login;
+else (empleado)
+  :Redireccion a /dashboard/empleado;
+  :Selecciona modulo en Dashboard:
+  * /dashboard/cotizador
+  * /dashboard/cotizador-preliminar
+  * /dashboard/levantamiento
+  ;
+  :Puede cerrar sesion -> /login;
+endif
+
+stop
+@enduml
+ '/
+

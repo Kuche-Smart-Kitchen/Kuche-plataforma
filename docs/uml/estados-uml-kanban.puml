@@ -1,0 +1,42 @@
+@startuml
+title Estados UML - KanbanTask (flujo citas -> disenos -> cotizacion -> Seguimiento)
+hide empty description
+skinparam state {
+  BackgroundColor<<Seguimiento>> #FFF8E1
+}
+
+[*] --> Citas_Pendiente
+
+state "Citas (pendiente)\nstage=citas\nstatus=pendiente\ncitaStarted=false" as Citas_Pendiente
+state "Citas (en curso)\nstage=citas\nstatus=pendiente\ncitaStarted=true" as Citas_EnCurso
+
+state "Disenos (pendiente)\nstage=disenos\nstatus=pendiente\ndesignApprovedByAdmin=false" as Disenos_Pendiente
+state "Disenos (admin aprobo)\nstage=disenos\nstatus=pendiente\ndesignApprovedByAdmin=true\nespera cliente" as Disenos_AdminAprobo
+
+state "Cotizacion (pendiente)\nstage=cotizacion\nstatus=pendiente\ncitaStarted=false" as Cotizacion_Pendiente
+state "Cotizacion (en curso)\nstage=cotizacion\nstatus=pendiente\ncitaStarted=true" as Cotizacion_EnCurso
+
+state "Seguimiento - seguimiento pendiente\n<<Seguimiento>>\nstage=seguimiento\nstatus=pendiente\nfollowUpStatus=pendiente" as Seguimiento_Pendiente
+state "Seguimiento - cliente confirmado\n<<Seguimiento>>\nstage=seguimiento\nstatus=completada\nfollowUpStatus=confirmado" as Seguimiento_Confirmado
+state "Seguimiento - cliente descartado\n<<Seguimiento>>\nstage=seguimiento\nstatus=completada\nfollowUpStatus=descartado" as Seguimiento_Descartado
+
+' --- Citas ---
+Citas_Pendiente --> Citas_EnCurso : iniciarCita / set citaStarted=true
+Citas_EnCurso --> Disenos_Pendiente : terminarCita / set citaFinished=true\nautoAdvanceCompletedTasks()
+
+' --- Disenos ---
+Disenos_Pendiente --> Disenos_Pendiente : subirArchivo / add TaskFile[]
+Disenos_Pendiente --> Disenos_AdminAprobo : aprobarDesignAsAdmin\n/ set designApprovedByAdmin=true
+Disenos_AdminAprobo --> Cotizacion_Pendiente : clienteAcepto\n/ set designApprovedByClient=true\n(stage->cotizacion, citaStarted=false, citaFinished=false)
+
+' --- Cotizacion formal ---
+Cotizacion_Pendiente --> Cotizacion_EnCurso : startCotizacionFormal\n/ set citaStarted=true\n(router push /dashboard/cotizador)
+Cotizacion_EnCurso --> Seguimiento_Pendiente : terminarCotizacion\n/ set citaFinished=true\nstage->seguimiento\nfollowUpEnteredAt=now\nfollowUpStatus=pendiente
+
+' --- Contrato / seguimiento ---
+Seguimiento_Pendiente --> Seguimiento_Confirmado : confirmarFollowUp\n/ followUpStatus=confirmado\nstatus=completada
+Seguimiento_Pendiente --> Seguimiento_Descartado : discardFollowUp\n/ followUpStatus=descartado\nstatus=completada
+Seguimiento_Pendiente --> Seguimiento_Descartado : autoDiscardExpiredFollowUps\n[daysPassed >= 10]\n/ followUpStatus=descartado\nstatus=completada
+
+@enduml
+

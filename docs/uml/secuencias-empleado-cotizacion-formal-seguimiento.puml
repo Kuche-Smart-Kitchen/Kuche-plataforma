@@ -1,0 +1,23 @@
+@startuml
+title Secuencia UML - Empleado guarda cotización formal y proyecto pasa a seguimiento
+
+actor Empleado
+participant "App Web\n(dashboard/cotizador)" as Web
+participant "API Express" as API
+database "MongoDB" as DB
+
+Empleado -> Web: Completa cotización formal y confirma guardar
+Web -> API: POST /api/proyectos/{id}/cotizaciones\n{ tipo: formal, lineas, total, pdfUrl? }
+API -> DB: insertOne en colección cotizaciones
+DB --> API: cotizaciónId
+API -> DB: updateOne proyecto:\nestadoActual = seguimiento_pendiente\nfollowUpStatus = pendiente\nfollowUpEnteredAt = now
+DB --> API: OK
+API --> Web: 201 + cotización + proyecto actualizado
+Web --> Empleado: Mensaje éxito / redirige a tablero
+
+note right of API
+  El código de seguimiento del cliente
+  ya existe en el proyecto o se genera aquí
+end note
+
+@enduml

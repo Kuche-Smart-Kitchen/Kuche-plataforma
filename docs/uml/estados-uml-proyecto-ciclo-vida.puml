@@ -1,0 +1,49 @@
+@startuml
+title Estados UML - Proyecto (ciclo de vida dominio / API MongoDB)
+hide empty description
+
+skinparam state {
+  BackgroundColor<<Seguimiento>> #FFF8E1
+  BackgroundColor<<Cerrado>> #ECEFF1
+}
+
+[*] --> Nuevo
+
+state "Nuevo\nproyecto creado\nsin etapa activa" as Nuevo
+
+state "En citas\nestadoActual=citas\nempleado agenda / atiende" as EnCitas
+
+state "En diseños\nestadoActual=disenos\narchivos + aprobación admin/cliente" as EnDisenos
+
+state "En cotización\nestadoActual=cotizacion\nborrador o formal en curso" as EnCotizacion
+
+state "Seguimiento pendiente\n<<Seguimiento>>\nestadoActual=seguimiento\nfollowUpStatus=pendiente" as SegPendiente
+
+state "Cerrado - confirmado\n<<Cerrado>>\nstatus=completada\nfollowUpStatus=confirmado" as CerradoOk
+
+state "Cerrado - descartado\n<<Cerrado>>\nstatus=completada\nfollowUpStatus=descartado" as CerradoNo
+
+' --- Transiciones principales ---
+Nuevo --> EnCitas : crear cita / asignar pipeline
+
+EnCitas --> EnDisenos : cita finalizada\n(avance de etapa)
+
+EnDisenos --> EnCotizacion : diseño aprobado\n(admin + aceptación cliente)
+
+EnCotizacion --> SegPendiente : cotización formal guardada\n+ entra a seguimiento
+
+SegPendiente --> CerradoOk : confirmar seguimiento\n(Admin)
+
+SegPendiente --> CerradoNo : descartar seguimiento\n(Admin)
+
+SegPendiente --> CerradoNo : expira plazo seguimiento\n[ej. días >= umbral]
+
+CerradoOk --> [*]
+CerradoNo --> [*]
+
+note bottom of SegPendiente
+  Vista agregada: no incluye
+  subestados de Kanban (citaStarted, etc.)
+end note
+
+@enduml

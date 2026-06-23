@@ -1,0 +1,23 @@
+@startuml
+title Secuencia UML - Admin confirma o descarta seguimiento
+actor Admin
+participant "KanbanTablero\n(src/components/admin/KanbanTablero.tsx)" as Kanban
+participant "localStorage\n(kuche-kanban-tasks)" as LS
+
+Admin -> Kanban: Ver tarjeta en columna "Contrato"\n(followUpStatus=pendiente)
+
+alt Admin hace click "Confirmar"
+  Admin -> Kanban: confirmarFollowUp(taskId)
+  Kanban -> Kanban: updateTask:\nfollowUpStatus=confirmado\nstatus=completada
+  Kanban -> LS: useEffect => setItem("kuche-kanban-tasks", kanbanTasks)
+else Admin hace click "Descartar"
+  Admin -> Kanban: discardFollowUp(taskId)
+  Kanban -> Kanban: updateTask:\nfollowUpStatus=descartado\nstatus=completada
+  Kanban -> LS: useEffect => setItem("kuche-kanban-tasks", kanbanTasks)
+  Kanban -> Kanban: onAfterDiscard?(...) // opcional
+end
+
+Kanban -> Kanban: Oculta tarjeta\n(columna contrato muestra solo followUpStatus=pendiente)
+
+@enduml
+

@@ -1,0 +1,28 @@
+@startuml
+title Secuencia UML - Admin aprueba diseño (versión final)
+
+actor Admin
+participant "App Web\n(admin/diseños)" as Web
+participant "API Express" as API
+database "MongoDB" as DB
+
+Admin -> Web: Abre listado de diseños pendientes
+Web -> API: GET /api/proyectos?estadoDiseno=pendiente_aprobacion_admin
+API -> DB: find proyectos con archivos de diseño
+DB --> API: lista de proyectos
+API --> Web: JSON proyectos
+Web --> Admin: Muestra tarjetas / preview
+
+Admin -> Web: Click "Aprobar diseño" (proyectoId)
+Web -> API: PATCH /api/proyectos/{id}/diseno\n{ designApprovedByAdmin: true }
+API -> DB: updateOne proyecto
+DB --> API: OK
+API --> Web: 200 + proyecto actualizado
+Web --> Admin: Confirmacion UI
+
+note right of API
+  Opcional: notificar al empleado
+  o al cliente (fuera de este diagrama)
+end note
+
+@enduml

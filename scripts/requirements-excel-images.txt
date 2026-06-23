@@ -1,0 +1,2 @@
+# Solo para scripts/extract_excel_embedded_images.py
+openpyxl>=3.1.0

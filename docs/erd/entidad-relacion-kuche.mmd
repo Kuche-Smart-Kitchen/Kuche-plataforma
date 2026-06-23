@@ -1,0 +1,74 @@
+erDiagram
+    SEGUIMIENTO_PROYECTO {
+        string codigo PK
+        string cliente
+        boolean isProspect
+    }
+
+    KANBAN_TASK {
+        string id PK
+        string stage  // citas | disenos | cotizacion | contrato
+        string status // pendiente | completada
+        string followUpStatus // pendiente | confirmado | descartado
+        number createdAt
+        number followUpEnteredAt
+        string project
+        string title
+        string priority
+        string dueDate
+        string location
+        string mapsUrl
+        boolean citaStarted
+        boolean citaFinished
+        boolean designApprovedByAdmin
+        boolean designApprovedByClient
+        string codigoProyecto FK
+    }
+
+    TASK_ASSIGNED_TO {
+        string taskId PK,FK
+        string employeeName PK
+    }
+
+    TASK_FILE {
+        string fileId PK
+        string taskId FK
+        string name
+        string type // pdf | render | otro
+        string src  // dataURL opcional (para render/images)
+    }
+
+    PRELIMINAR_COTIZACION {
+        string cotId PK
+        string taskId FK
+        string client
+        string projectType
+        string location
+        string date
+        string rangeLabel
+        string cubierta
+        string frente
+        string herraje
+    }
+
+    COTIZACION_FORMAL {
+        string cotId PK
+        string taskId FK
+        string client
+        string projectType
+        string location
+        string date
+        string rangeLabel
+        string cubierta
+        string frente
+        string herraje
+        string formalPdfKey
+        string pdfDataUrl // deprecated
+    }
+
+    SEGUIMIENTO_PROYECTO ||--o{ KANBAN_TASK : "codigoProyecto"
+    KANBAN_TASK ||--o{ TASK_ASSIGNED_TO : "asignado a"
+    KANBAN_TASK ||--o{ TASK_FILE : "archivos"
+    KANBAN_TASK ||--o{ PRELIMINAR_COTIZACION : "preliminarCotizaciones"
+    KANBAN_TASK ||--o{ COTIZACION_FORMAL : "cotizacionesFormales"
+

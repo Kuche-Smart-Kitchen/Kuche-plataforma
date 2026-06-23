@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 
+/** Excluimos `input[type=file]`: suelen ir ocultos (`sr-only`); al cerrar el diálogo del SO el foco
+ *  puede quedar ahí y el trap obliga a enfocarlos → scroll raro, modal “en blanco” o sensación de bloqueo. */
 const focusableSelectors = [
   "a[href]",
   "button:not([disabled])",
-  "input:not([disabled])",
+  'input:not([disabled]):not([type="file"])',
   "select:not([disabled])",
   "textarea:not([disabled])",
   "[tabindex]:not([tabindex='-1'])",
@@ -23,6 +25,18 @@ export const useFocusTrap = (
       return;
     }
 
+    const safeFocus = (el: HTMLElement) => {
+      // Algunos navegadores hacen scroll de la ventana cuando se hace focus.
+      // `preventScroll` evita el salto en pantallas donde el usuario ya estaba
+      // scrolleando (como el tablero).
+      try {
+        (el as any).focus?.({ preventScroll: true });
+      } catch {
+        // Fallback: si el navegador no soporta preventScroll, al menos no rompemos.
+        el.focus();
+      }
+    };
+
     const getFocusable = () =>
       Array.from(container.querySelectorAll<HTMLElement>(focusableSelectors)).filter(
         (el) => !el.hasAttribute("disabled") && !el.getAttribute("aria-hidden"),
@@ -31,9 +45,9 @@ export const useFocusTrap = (
     const focusFirst = () => {
       const focusables = getFocusable();
       if (focusables.length > 0) {
-        focusables[0]?.focus();
+        safeFocus(focusables[0]);
       } else {
-        container.focus();
+        safeFocus(container);
       }
     };
 
@@ -45,7 +59,7 @@ export const useFocusTrap = (
       const focusables = getFocusable();
       if (focusables.length === 0) {
         event.preventDefault();
-        container.focus();
+        safeFocus(container);
         return;
       }
 
@@ -56,24 +70,29 @@ export const useFocusTrap = (
 
       if (!isInside) {
         event.preventDefault();
-        first.focus();
+        safeFocus(first);
         return;
       }
 
       if (event.shiftKey && active === first) {
         event.preventDefault();
-        last.focus();
+        safeFocus(last);
         return;
       }
 
       if (!event.shiftKey && active === last) {
         event.preventDefault();
-        first.focus();
+        safeFocus(first);
       }
     };
 
-    focusFirst();
+    // Retrasamos el focus para dar tiempo a que el overlay/panel se pinte con `fixed/absolute`,
+    // evitando que el foco dispare un scroll brusco de la ventana.
+    const rafId = window.requestAnimationFrame(() => focusFirst());
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
   }, [isOpen, containerRef]);
 };

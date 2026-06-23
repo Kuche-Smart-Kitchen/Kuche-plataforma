@@ -1,0 +1,49 @@
+@startuml
+title Navegacion UML - Rutas publicas y redirecciones por rol
+
+start
+
+partition "Sitio publico (Landing + Navbar)" {
+  :Inicio (/);
+
+  note right
+    Navegacion publica:
+    /experiencia, /catalogo, /acabados, /agendar, /seguimiento
+  end note
+
+  if (Destino = /experiencia?) then (si)
+    :/experiencia;
+  elseif (Destino = /catalogo?) then (si)
+    :/catalogo;
+  elseif (Destino = /acabados?) then (si)
+    :/acabados;
+  elseif (Destino = /agendar?) then (si)
+    :/agendar;
+  elseif (Destino = /seguimiento?) then (si)
+    :/seguimiento (Mi proyecto con codigo);
+  else (otro)
+    :Permanece en /;
+  endif
+
+  :Visita /aviso-de-privacidad;
+  :Regresa a /;
+  :Accede a /login;
+}
+
+partition "Login y acceso por rol" {
+  :/login;
+
+  if (Rol = admin?) then (si)
+    :Redireccion a /admin (Dashboard);
+    :Navega a /admin/precios o /admin/disenos\n o /admin/operaciones o /admin/agenda;
+    :Cerrar sesion -> /login;
+  else (empleado)
+    :Redireccion a /dashboard/empleado (Kanban);
+    :Navega a /dashboard/cotizador o /dashboard/cotizador-preliminar\n o /dashboard/levantamiento;
+    :Cerrar sesion -> /login;
+  endif
+}
+
+stop
+@enduml
+

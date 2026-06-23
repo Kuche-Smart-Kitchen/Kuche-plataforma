@@ -1,0 +1,40 @@
+@startuml
+title Secuencia UML - Empleado termina cotizador preliminar (crea codigo y avanza)
+actor Empleado
+participant "UI /dashboard/cotizador-preliminar" as UI
+participant "localStorage\n(kuche-kanban-tasks)" as LS_Kanban
+participant "localStorage\n(kuche_project_<codigo>)" as LS_Seguimiento
+participant "PDF utils\n(downloadPreliminarPdf)" as PDF
+participant "Next router" as Router
+
+Empleado -> UI: Click "Terminar cita" (handleFinishCita)
+UI -> UI: validatePreliminarSections()
+
+alt Validacion OK
+  UI -> LS_Kanban: getItem("kuche-kanban-tasks")
+  LS_Kanban --> UI: tasks[]
+
+  UI -> UI: buildPreliminarDataFromForm()\n+ obtiene/crea codigoProyecto = task.codigoProyecto ?? K-<now>
+  UI -> UI: actualiza tarea activa:\npreliminarCotizaciones += newPreliminar\ncitaFinished=true
+  UI -> LS_Kanban: setItem("kuche-kanban-tasks", updatedTasks)
+
+  UI -> LS_Seguimiento: setItem(\n "kuche_project_<codigoProyecto>",\n seguimientoProject{codigo, cliente, isProspect=true, preliminarCotizaciones})
+
+  UI -> UI: updatedTasksWithStage:\nstage="disenos"\nstatus="pendiente"
+  UI -> LS_Kanban: setItem("kuche-kanban-tasks", updatedTasksWithStage)
+
+  UI -> LS_Kanban: removeItem(activeCitaTaskStorageKey)
+
+  UI -> PDF: downloadPreliminarPdf(newPreliminar, filename)
+
+  UI -> LS_Kanban: getItem(citaReturnUrlStorageKey)
+  LS_Kanban --> UI: returnUrl
+  UI -> LS_Kanban: removeItem(citaReturnUrlStorageKey)
+
+  UI -> Router: push(returnUrl || "/dashboard/empleado")
+else Validacion FAIL
+  UI -> UI: setFinishError("Completa al menos...")
+end
+
+@enduml
+
