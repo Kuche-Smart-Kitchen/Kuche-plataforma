@@ -24,14 +24,22 @@ const safeSerialize = (value: unknown) => {
 
 const resolveBaseUrl = () => {
   const raw = (process.env.NEXT_PUBLIC_API_URL || '').trim();
-  if (!raw) return 'http://localhost:3001';
+  if (!raw) {
+    return process.env.NODE_ENV === 'production'
+      ? 'https://backend-cocinas-inteligentes.vercel.app'
+      : 'http://localhost:3001';
+  }
 
   const candidates = raw
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean);
 
-  if (!candidates.length) return 'http://localhost:3001';
+  if (!candidates.length) {
+    return process.env.NODE_ENV === 'production'
+      ? 'https://backend-cocinas-inteligentes.vercel.app'
+      : 'http://localhost:3001';
+  }
   if (candidates.length === 1) return candidates[0];
 
   if (process.env.NODE_ENV !== 'production') {

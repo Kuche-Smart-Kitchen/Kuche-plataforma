@@ -28,7 +28,7 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { Lock, User, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import Captcha from "@/components/Captcha";
+import Captcha from "@/components/ui/Captcha";
 import { getLoginRedirectForUser } from "@/lib/role-routes";
 
 export default function LoginPage() {

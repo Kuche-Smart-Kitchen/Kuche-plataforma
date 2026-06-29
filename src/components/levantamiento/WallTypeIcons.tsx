@@ -275,7 +275,7 @@ export function WallIcon2Puertas({ className, ...rest }: IconProps) {
 
 const FALLBACK_KEYS = new Set(["otro", "pared-otro", ""]);
 
-export function WallTypeIcon({ wallId, className, ...rest }: IconProps & { wallId: string }) {
+export function WallTypeIcon({ wallId, className, focusedGroup: _focusedGroup, ...rest }: IconProps & { wallId: string; focusedGroup?: unknown }) {
   const base = `text-primary h-full w-full ${className ?? ""}`.trim();
 
   if (FALLBACK_KEYS.has(wallId)) {

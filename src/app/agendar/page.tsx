@@ -1,6 +1,6 @@
-import BookingSection from "@/components/BookingSection";
-import LevantamientoSection from "@/components/LevantamientoSection";
-import Footer from "@/components/Footer";
+import BookingSection from "@/components/agendar/BookingSection";
+import LevantamientoSection from "@/components/agendar/LevantamientoSection";
+import Footer from "@/components/layout/Footer";
 import { AgendarCitaProvider } from "@/contexts/AgendarCitaContext";
 
 export default function AgendarPage() {

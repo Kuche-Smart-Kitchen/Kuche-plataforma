@@ -1,6 +1,9 @@
 import axiosInstance from "./axiosConfig";
 
-const DEFAULT_UPLOAD_ENDPOINT = "/api/archivos/upload";
+const DEFAULT_UPLOAD_ENDPOINT =
+  process.env.NODE_ENV === "production"
+    ? "https://backend-cocinas-inteligentes.vercel.app/api/archivos/upload"
+    : "/api/archivos/upload";
 
 export type UploadRelacionadoA = "tarea" | "proyecto" | "cotizacion" | "cliente";
 

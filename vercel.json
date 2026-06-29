@@ -2,5 +2,10 @@
   "framework": "nextjs",
   "buildCommand": "npm run build",
   "installCommand": "npm install",
-  "outputDirectory": ".next"
+  "outputDirectory": ".next",
+  "env": {
+    "NEXT_PUBLIC_API_URL": "https://backend-cocinas-inteligentes.vercel.app",
+    "NEXT_PUBLIC_FILE_UPLOAD_ENDPOINT": "https://backend-cocinas-inteligentes.vercel.app/api/archivos/upload",
+    "NEXT_PUBLIC_TURNSTILE_SITE_KEY": "0x4AAAAAAC5tkCTPmiBULbEx"
+  }
 }

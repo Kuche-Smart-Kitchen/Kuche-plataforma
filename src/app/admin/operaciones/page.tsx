@@ -1279,7 +1279,7 @@ export default function OperacionesPage() {
         ) : null}
       </AnimatePresence>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
+      <div className="mt-6 grid gap-4 md:grid-cols-3">
         <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-md">
           <div className="flex items-start gap-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
@@ -1319,6 +1319,28 @@ export default function OperacionesPage() {
                 className="mt-4 rounded-2xl border border-primary/20 bg-white px-5 py-2.5 text-sm font-semibold text-primary shadow-sm transition hover:border-primary/40"
               >
                 Abrir Preliminar
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-md">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
+              <Calculator className="h-6 w-6 text-primary" />
+            </div>
+            <div className="flex-1">
+              <p className="text-xs uppercase tracking-[0.3em] text-secondary">Configuracion</p>
+              <h3 className="mt-1 text-xl font-semibold">Precios y Catalogo</h3>
+              <p className="mt-2 text-sm text-secondary">
+                Ajusta escenarios, IVA, margen, factor y extras para el levantamiento detallado.
+              </p>
+              <button
+                type="button"
+                onClick={() => router.push("/admin/precios")}
+                className="mt-4 rounded-2xl border border-primary/20 bg-white px-5 py-2.5 text-sm font-semibold text-primary shadow-sm transition hover:border-primary/40"
+              >
+                Abrir Precios y Catalogo
               </button>
             </div>
           </div>

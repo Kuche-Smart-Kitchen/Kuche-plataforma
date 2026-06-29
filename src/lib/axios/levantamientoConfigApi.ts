@@ -20,7 +20,12 @@ const getLastPathErrorMessage = (errors: unknown[]) => {
   });
 
   if (hasNetworkError) {
-    const backendUrl = axiosInstance.defaults.baseURL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+    const backendUrl =
+      axiosInstance.defaults.baseURL
+      || process.env.NEXT_PUBLIC_API_URL
+      || (process.env.NODE_ENV === "production"
+        ? "https://backend-cocinas-inteligentes.vercel.app"
+        : "http://localhost:3001");
     return `No se pudo conectar con el backend (${backendUrl}).`;
   }
 

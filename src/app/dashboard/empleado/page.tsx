@@ -805,6 +805,19 @@ export default function EmpleadoDashboard() {
           </button>
         </div>
         <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-md">
+          <p className="text-xs uppercase tracking-[0.3em] text-secondary">Configuración</p>
+          <h3 className="mt-2 text-xl font-semibold">Precios y catálogo</h3>
+          <p className="mt-3 text-sm text-secondary">
+            Administra escenarios, IVA, margen, factor hasta techo y precios unitarios de materiales y extras.
+          </p>
+          <button
+            onClick={() => router.push("/dashboard/configuracion-levantamiento")}
+            className="mt-4 rounded-2xl border border-primary/20 bg-white px-4 py-2 text-xs font-semibold text-primary shadow-sm transition hover:border-primary/40"
+          >
+            Abrir precios y catálogo
+          </button>
+        </div>
+        <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-md">
           <p className="text-xs uppercase tracking-[0.3em] text-secondary">Clientes</p>
           <h3 className="mt-2 text-xl font-semibold">Clientes en proceso</h3>
           <p className="mt-3 text-sm text-secondary">
