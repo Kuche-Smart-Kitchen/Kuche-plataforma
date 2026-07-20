@@ -77,7 +77,9 @@ const buildTaskUpdatePayload = (patch: WorkflowTaskPatch): ActualizarTareaData =
   if (patch.location !== undefined) payload.ubicacion = patch.location;
   if (patch.mapsUrl !== undefined) payload.mapsUrl = patch.mapsUrl;
   if (patch.followUpEnteredAt !== undefined) payload.followUpEnteredAt = patch.followUpEnteredAt;
-  if (patch.followUpStatus !== undefined) payload.followUpStatus = patch.followUpStatus;
+  if (patch.followUpStatus !== undefined) {
+    payload.followUpStatus = patch.followUpStatus === "descartado" ? "inactivo" : patch.followUpStatus;
+  }
   if (patch.citaStarted !== undefined) payload.citaStarted = patch.citaStarted;
   if (patch.citaFinished !== undefined) payload.citaFinished = patch.citaFinished;
   if (patch.designApprovedByAdmin !== undefined) {

@@ -632,6 +632,8 @@ export const buildTaskUpdatePayload = (task: AdminWorkflowTask): Partial<KanbanI
   const approvedByAdmin = task.designApprovedByAdmin ?? task.visita?.aprobadaPorAdmin ?? false;
   const approvedByClient = task.designApprovedByClient ?? task.visita?.aprobadaPorCliente ?? false;
   const visitScheduledAt = task.visitScheduledAt ?? task.visita?.fechaProgramada;
+  const normalizedFollowUpStatus =
+    task.followUpStatus === "descartado" ? "inactivo" : (task.followUpStatus ?? "pendiente");
 
   return {
     etapa: task.stage as EtapaTarea,
@@ -644,7 +646,7 @@ export const buildTaskUpdatePayload = (task: AdminWorkflowTask): Partial<KanbanI
     ubicacion: task.location,
     mapsUrl: task.mapsUrl,
     followUpEnteredAt: task.followUpEnteredAt,
-    followUpStatus: task.followUpStatus ?? "pendiente",
+    followUpStatus: normalizedFollowUpStatus,
     citaStarted: task.citaStarted ?? false,
     citaFinished: task.citaFinished ?? false,
     designApprovedByAdmin: approvedByAdmin,

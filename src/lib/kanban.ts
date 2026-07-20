@@ -1,9 +1,10 @@
 import { runtimeStore } from "@/lib/runtime-store";
+import { parseDeliveryWeeksRangeFromLabel } from "@/lib/delivery-weeks";
 
 export type TaskStage = "citas" | "disenos" | "cotizacion" | "contrato";
 export type TaskStatus = "pendiente" | "completada";
 export type TaskPriority = "alta" | "media" | "baja";
-export type FollowUpStatus = "pendiente" | "confirmado" | "inactivo";
+export type FollowUpStatus = "pendiente" | "confirmado" | "inactivo" | "descartado";
 
 export type TaskFile = {
   id: string;
@@ -101,6 +102,10 @@ export type KanbanTask = {
   cotizacionesFormales?: CotizacionFormalData[];
   /** Monto total del proyecto para el seguimiento de pagos del cliente. */
   inversion?: number;
+  /** Fecha de contrato guardada para planeacion de entrega. */
+  contractDate?: string;
+  /** Fecha estimada de entrega guardada manualmente. */
+  estimatedDeliveryDate?: string;
   /** Paso actual de la linea de tiempo visible para el cliente en seguimiento. */
   etapaActual?: string;
   /** Código para que el cliente acceda a /seguimiento (ej. K-8821). Se genera al crear la tarea. */
@@ -129,6 +134,73 @@ export const kanbanColumns = [
   { id: "cotizacion", label: "Cotización Formal" },
   { id: "contrato", label: "Seguimiento" },
 ] as const;
+
+export const stageStyles: Record<TaskStage, { border: string; badge: string }> = {
+  citas: { border: "border-sky-500", badge: "bg-sky-50 text-sky-600" },
+  disenos: { border: "border-violet-500", badge: "bg-violet-50 text-violet-600" },
+  cotizacion: { border: "border-emerald-500", badge: "bg-emerald-50 text-emerald-600" },
+  contrato: { border: "border-amber-500", badge: "bg-amber-50 text-amber-700" },
+};
+
+type ConfirmedProjectLine = {
+  projectType: string;
+  weeksLabel: string;
+};
+
+export function getConfirmedCardProjectLines(task: KanbanTask): ConfirmedProjectLine[] {
+  const source = getCotizacionesFormalesList(task).length > 0
+    ? getCotizacionesFormalesList(task)
+    : getPreliminarList(task);
+
+  return source.map((item) => ({
+    projectType: typeof item.projectType === "string" ? item.projectType.trim() : "",
+    weeksLabel: typeof item.date === "string" ? item.date.trim() : "",
+  }));
+}
+
+export function deriveProjectTypesLabel(task: KanbanTask): string {
+  const seen = new Set<string>();
+  const labels: string[] = [];
+
+  for (const line of getConfirmedCardProjectLines(task)) {
+    const label = line.projectType;
+    if (!label) continue;
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    labels.push(label);
+  }
+
+  return labels.join(", ");
+}
+
+export function getAggregatedDeliveryWeeksFromTask(
+  task: KanbanTask,
+): { min: number; max: number } | null {
+  const ranges = getConfirmedCardProjectLines(task)
+    .map((line) => parseDeliveryWeeksRangeFromLabel(line.weeksLabel))
+    .filter((range): range is { min: number; max: number } => Boolean(range));
+
+  if (ranges.length === 0) return null;
+
+  return {
+    min: Math.min(...ranges.map((r) => r.min)),
+    max: Math.max(...ranges.map((r) => r.max)),
+  };
+}
+
+export function getTaskCardSubtitle(task: KanbanTask): string | null {
+  const location = task.location?.trim();
+  const dueDate = task.dueDate?.trim();
+  const meta = [location, dueDate].filter(Boolean);
+
+  if (meta.length > 0) return meta.join(" · ");
+
+  const notes = task.notes?.trim();
+  if (!notes) return null;
+
+  return notes.length > 96 ? `${notes.slice(0, 93)}...` : notes;
+}
 
 /** Lista inicial de tareas del tablero. Vacía para que el tablero se llene solo con "Asignar pendiente". */
 export const initialKanbanTasks: KanbanTask[] = [];

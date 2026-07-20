@@ -138,6 +138,7 @@ export const promoverCitaATarea = async (task: AdminWorkflowTask, stageDestino: 
   }
 
   const clientName = task.cita?.nombreCliente || task.project || task.title;
+  const normalizedFollowUpStatus = task.followUpStatus === "descartado" ? "inactivo" : task.followUpStatus;
 
   const createResponse = await crearTarea({
     titulo: task.title || clientName,
@@ -152,7 +153,7 @@ export const promoverCitaATarea = async (task: AdminWorkflowTask, stageDestino: 
     ubicacion: task.location,
     mapsUrl: task.mapsUrl,
     followUpEnteredAt: task.followUpEnteredAt,
-    followUpStatus: task.followUpStatus,
+    followUpStatus: normalizedFollowUpStatus,
     citaStarted: task.citaStarted,
     citaFinished: true,
     designApprovedByAdmin: task.designApprovedByAdmin,

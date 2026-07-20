@@ -117,7 +117,7 @@ export default function TaskDetailModal({
                 <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8B1C1C]">
                   Codigo de seguimiento: {buildTrackingCodeFromTask(activeTask)}
                 </p>
-                    Guardar responsables
+              ) : null}
               <p className="mt-0.5 text-sm text-secondary">{activeTask.title}</p>
             </div>
             <button
@@ -126,7 +126,7 @@ export default function TaskDetailModal({
               className="shrink-0 rounded-full border border-primary/10 px-3 py-2 text-xs font-semibold text-secondary transition hover:bg-primary/5"
             >
               Cerrar
-                    Guardar cambios
+            </button>
           </div>
 
           <div className="flex-1 overflow-y-auto px-6 py-5">

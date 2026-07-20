@@ -17,6 +17,8 @@ declare global {
     turnstile?: {
       render: (container: HTMLElement, options: Record<string, unknown>) => string;
       remove?: (widgetId: string) => void;
+      getResponse?: (container: HTMLElement) => string;
+      reset?: (container: HTMLElement) => void;
     };
   }
 }

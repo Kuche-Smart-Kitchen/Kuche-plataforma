@@ -35,11 +35,18 @@ export type LevantamientoWorkshopPdfInput = {
   notes: WorkshopNoteRow[];
 };
 
-const COLORS = {
-  dark: [31, 41, 55] as const,
-  muted: [100, 116, 139] as const,
-  softFill: [248, 250, 252] as const,
-  border: [226, 232, 240] as const,
+type Rgb = [number, number, number];
+
+const COLORS: {
+  dark: Rgb;
+  muted: Rgb;
+  softFill: Rgb;
+  border: Rgb;
+} = {
+  dark: [31, 41, 55],
+  muted: [100, 116, 139],
+  softFill: [248, 250, 252],
+  border: [226, 232, 240],
 };
 
 function getFinalY(doc: jsPDF): number {

@@ -443,6 +443,28 @@ export default function EmpleadoDashboard() {
     return archivos;
   };
 
+  const refreshTaskFilesFromSourceOfTruth = async (task: DashboardFlowItem) => {
+    if (task.stage === "disenos" && task.backendSource === "tarea") {
+      const backendTaskId = task.sourceId?.trim();
+      if (!backendTaskId) return;
+
+      const response = await obtenerArchivosTarea(backendTaskId);
+      if (!response.success) {
+        throw new Error(response.message || "No se pudieron recargar los archivos del diseño");
+      }
+
+      const files = pickFilesForStage(response.data ?? [], task.stage).map(mapArchivoToTaskFile);
+      updateTask(task.id, (prev) => ({ ...prev, files }));
+      return;
+    }
+
+    const clienteId = task.clientId?.trim();
+    if (!clienteId) return;
+
+    const files = await loadClienteArchivosCached(clienteId);
+    updateTask(task.id, (prev) => ({ ...prev, files }));
+  };
+
   const handleFilesUpload = async (taskId: string, files: FileList | null) => {
     if (!files?.length) return;
 

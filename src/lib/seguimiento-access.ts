@@ -1,8 +1,8 @@
 import {
   kanbanStorageKey,
   seguimientoProjectStoragePrefix,
-  type KanbanTask,
 } from "@/lib/kanban";
+import type { KanbanTask } from "@/lib/kanban";
 import { computeIsProspectFromKanban } from "@/lib/seguimiento-project";
 
 /** Quita espacios, caracteres invisibles y unifica mayúsculas para comparar códigos. */

@@ -2,6 +2,9 @@
   "name": "kuche-plataforma",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "fix:checkerboard-electro": "node scripts/fix-checkerboard-bg.mjs",
     "normalize:electrodomesticos": "node scripts/normalize-electrodomesticos.mjs",

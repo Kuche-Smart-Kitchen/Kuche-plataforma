@@ -2,7 +2,13 @@
  * Modelo y utilidades del proyecto de seguimiento del cliente (`kuche_project_${codigo}` en localStorage).
  */
 
-import type { CotizacionFormalData, PreliminarData, TaskStage, TaskStatus } from "@/lib/kanban";
+import type {
+  CotizacionFormalData,
+  FollowUpStatus,
+  PreliminarData,
+  TaskStage,
+  TaskStatus,
+} from "@/lib/kanban";
 
 export const TIMELINE_STEPS = [
   "Diseño Aprobado",
@@ -13,6 +19,31 @@ export const TIMELINE_STEPS = [
 ] as const;
 
 export type TimelineStep = (typeof TIMELINE_STEPS)[number];
+
+export const ESTADO_PROYECTO = {
+  EN_PROCESO: "En proceso",
+  CONFIRMADO: "Confirmado",
+  ENTREGADO: "Entregado",
+} as const;
+
+export function normalizeEstadoProyecto(value: unknown): string {
+  if (typeof value !== "string") return ESTADO_PROYECTO.EN_PROCESO;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "confirmado") return ESTADO_PROYECTO.CONFIRMADO;
+  if (normalized === "entregado") return ESTADO_PROYECTO.ENTREGADO;
+  return ESTADO_PROYECTO.EN_PROCESO;
+}
+
+/** Regla compartida para inferir si un cliente sigue como prospecto según Kanban. */
+export function computeIsProspectFromKanban(
+  stage: TaskStage | undefined,
+  followUpStatus: FollowUpStatus | undefined,
+): boolean {
+  if (followUpStatus === "confirmado") return false;
+  if (followUpStatus === "pendiente") return true;
+  if (stage === "contrato") return false;
+  return false;
+}
 
 export type SeguimientoPago = {
   amount: number;
@@ -36,6 +67,19 @@ export function defaultPagosForInversion(_inversion: number): SeguimientoPagos {
     receiptImage: "",
   });
   return { anticipo: mk(0), segundoPago: mk(0), liquidacion: mk(0) };
+}
+
+export function pagosMatchDefaultInversionSplit(inversion: number, pagos: SeguimientoPagos): boolean {
+  if (inversion <= 0) {
+    return pagos.anticipo.amount === 0 && pagos.segundoPago.amount === 0 && pagos.liquidacion.amount === 0;
+  }
+
+  const third = Math.round(inversion / 3);
+  return (
+    pagos.anticipo.amount === third
+    && pagos.segundoPago.amount === third
+    && pagos.liquidacion.amount === third
+  );
 }
 
 function coercePago(raw: unknown, fallback: SeguimientoPago): SeguimientoPago {

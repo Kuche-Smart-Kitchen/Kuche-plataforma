@@ -5,8 +5,8 @@ import { useEffect, useState } from "react";
 import { obtenerArchivosCliente, type ClienteArchivo } from "@/lib/axios/archivosClienteApi";
 import type { TaskFile } from "@/lib/kanban";
 
-const clientFilesCache = new Map<string, ClienteArchivo[]>();
-const clientFilesRequests = new Map<string, Promise<ClienteArchivo[]>>();
+const clientFilesCache = new Map<string, TaskFile[]>();
+const clientFilesRequests = new Map<string, Promise<TaskFile[]>>();
 
 type UseClienteArchivosResult = {
   archivos: TaskFile[];
@@ -67,7 +67,7 @@ export const loadClienteArchivosCached = async (clienteId: string): Promise<Task
 };
 
 export function useClienteArchivos(clienteId?: string | null, enabled = true): UseClienteArchivosResult {
-  const [archivos, setArchivos] = useState<ClienteArchivo[]>([]);
+  const [archivos, setArchivos] = useState<TaskFile[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

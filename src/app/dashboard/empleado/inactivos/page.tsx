@@ -9,8 +9,8 @@ import {
   kanbanStorageKey,
   getTaskCardSubtitle,
   saveKanbanTasksToLocalStorage,
-  type KanbanTask,
 } from "@/lib/kanban";
+import type { KanbanTask } from "@/lib/kanban";
 import { ClientDocuments } from "@/components/admin/ClientDocuments";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";

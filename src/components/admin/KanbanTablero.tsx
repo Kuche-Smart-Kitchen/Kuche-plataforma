@@ -541,7 +541,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
   const startCita = (taskId: string) => {
     updateTask(taskId, (task) => ({ ...task, citaStarted: true }));
-    const selectedTask = tasks.find((task) => task.id === taskId);
+    const selectedTask = kanbanTasks.find((task) => task.id === taskId);
     runtimeStore.setItem(activeCitaTaskStorageKey, taskId);
     if (selectedTask) {
       runtimeStore.setItem(activeCitaTaskSnapshotStorageKey, JSON.stringify(selectedTask));

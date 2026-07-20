@@ -151,3 +151,13 @@ export async function resolveSeguimientoMediaRefWithType(
 
   return { missing: true };
 }
+
+/**
+ * Persistencia local para seguimiento. Se deja async por compatibilidad futura.
+ */
+export async function persistSeguimientoRecordForLocalStorage(
+  record: Record<string, unknown>,
+  _codigoProyecto?: string,
+): Promise<Record<string, unknown>> {
+  return { ...record };
+}
