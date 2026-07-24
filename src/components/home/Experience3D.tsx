@@ -10,6 +10,7 @@ type ExperienceStep = {
   title: string;
   description: string;
   image: string;
+  /** "contain" muestra la imagen completa dentro del marco (útil para capturas/UI); "cover" llena el marco recortando. */
   imageFit?: "cover" | "contain";
 };
 
@@ -53,8 +54,6 @@ const experienceSteps: ExperienceStep[] = EXPERIENCE_STEP_MEDIA.map((media, inde
   imageFit: media.imageFit,
 }));
 
-const SWIPE_THRESHOLD_PX = 48;
-
 function useAutoplayCarousel(length: number, delay: number) {
   const [activeIndex, setActiveIndex] = useState(0);
   const autoplayRef = useRef<number | null>(null);
@@ -82,100 +81,6 @@ function useAutoplayCarousel(length: number, delay: number) {
   return { activeIndex, setActiveIndex, resetAutoplay, isFirst, isLast };
 }
 
-function StepTextOverlay({
-  step,
-  stepNumber,
-  align = "right",
-}: {
-  step: ExperienceStep;
-  stepNumber: number;
-  align?: "right" | "center";
-}) {
-  const alignClass =
-    align === "center"
-      ? "left-0 right-0 mx-auto w-full max-w-[90%] text-center"
-      : "right-6 max-w-[60%] text-right";
-
-  return (
-    <div
-      className={`absolute bottom-6 rounded-2xl bg-black/40 px-4 py-4 text-white backdrop-blur sm:px-5 ${alignClass}`}
-    >
-      <p className="text-[10px] uppercase tracking-[0.25em] text-white/70 sm:tracking-[0.3em]">
-        Proceso Küche
-      </p>
-      <h3 className="mt-2 text-base font-semibold whitespace-normal break-words sm:text-xl">
-        {step.title}
-      </h3>
-      <p className="mt-2 text-sm leading-relaxed text-white/85 whitespace-normal break-words md:text-base">
-        {step.description}
-      </p>
-      {align === "center" && (
-        <p className="mt-3 text-xs font-semibold tracking-wide text-white/60">
-          {String(stepNumber).padStart(2, "0")} / {String(experienceSteps.length).padStart(2, "0")}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function MobileExperienceSlide({
-  step,
-  index,
-  onSwipeLeft,
-  onSwipeRight,
-}: {
-  step: ExperienceStep;
-  index: number;
-  onSwipeLeft: () => void;
-  onSwipeRight: () => void;
-}) {
-  const touchStartX = useRef(0);
-  const touchStartY = useRef(0);
-
-  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
-    touchStartX.current = event.touches[0]?.clientX ?? 0;
-    touchStartY.current = event.touches[0]?.clientY ?? 0;
-  };
-
-  const handleTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
-    const endX = event.changedTouches[0]?.clientX ?? 0;
-    const endY = event.changedTouches[0]?.clientY ?? 0;
-    const deltaX = touchStartX.current - endX;
-    const deltaY = Math.abs(touchStartY.current - endY);
-
-    if (Math.abs(deltaX) < SWIPE_THRESHOLD_PX || deltaY > Math.abs(deltaX)) return;
-
-    if (deltaX > 0) onSwipeLeft();
-    else onSwipeRight();
-  };
-
-  return (
-    <div
-      className="relative aspect-[4/5] w-full max-h-[min(72vh,520px)] overflow-hidden rounded-2xl shadow-2xl touch-pan-y"
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-    >
-      <img
-        src={step.image}
-        alt={step.title}
-        className={
-          step.imageFit === "contain"
-            ? "box-border h-full w-full bg-neutral-900 object-contain object-center"
-            : "h-full w-full object-cover"
-        }
-        draggable={false}
-      />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/10" />
-      <div className="pointer-events-none absolute left-4 top-4 rounded-xl bg-black/40 px-3 py-1.5 text-white backdrop-blur">
-        <p className="text-lg font-semibold tracking-wide">
-          {String(index + 1).padStart(2, "0")}
-        </p>
-      </div>
-      <StepTextOverlay step={step} stepNumber={index + 1} align="center" />
-    </div>
-  );
-}
-
 function Coverflow3D({
   steps,
   activeIndex,
@@ -184,7 +89,7 @@ function Coverflow3D({
   activeIndex: number;
 }) {
   return (
-    <div className="relative hidden w-full md:block" style={{ perspective: "1600px" }}>
+    <div className="relative w-full" style={{ perspective: "1600px" }}>
       <div className="relative mx-auto h-[480px] w-full max-w-6xl">
         {steps.map((step, index) => {
           const distance = index - activeIndex;
@@ -197,7 +102,6 @@ function Coverflow3D({
           const opacity = isActive ? 1 : 0.5;
           const rotateY = isLeft ? 45 : isRight ? -45 : 0;
           const z = isActive ? 140 : -80;
-
           return (
             <motion.div
               key={step.id}
@@ -246,7 +150,19 @@ function Coverflow3D({
                     {String(index + 1).padStart(2, "0")}
                   </p>
                 </div>
-                {isActive && <StepTextOverlay step={step} stepNumber={index + 1} align="right" />}
+                {isActive && (
+                  <div className="absolute bottom-6 right-6 max-w-[60%] rounded-2xl bg-black/40 px-5 py-4 text-right text-white backdrop-blur">
+                    <p className="text-[10px] uppercase tracking-[0.3em] text-white/70">
+                      Proceso Küche
+                    </p>
+                    <h3 className="mt-2 text-xl font-semibold">
+                      {step.title}
+                    </h3>
+                    <p className="mt-2 text-sm text-white/85">
+                      {step.description}
+                    </p>
+                  </div>
+                )}
               </div>
             </motion.div>
           );
@@ -262,30 +178,33 @@ export default function Experience3D() {
     () => experienceSteps[primary.activeIndex],
     [primary.activeIndex],
   );
-
-  const goNext = useCallback(() => {
-    primary.setActiveIndex((prev) => Math.min(experienceSteps.length - 1, prev + 1));
-    primary.resetAutoplay();
-  }, [primary]);
-
-  const goPrev = useCallback(() => {
-    primary.setActiveIndex((prev) => Math.max(0, prev - 1));
-    primary.resetAutoplay();
-  }, [primary]);
-
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
-      if (key === "arrowleft" || key === "a" || key === "arrowup" || key === "w") {
-        goPrev();
+      if (
+        key === "arrowleft" ||
+        key === "a" ||
+        key === "arrowup" ||
+        key === "w"
+      ) {
+        primary.setActiveIndex((prev) => Math.max(0, prev - 1));
+        primary.resetAutoplay();
       }
-      if (key === "arrowright" || key === "d" || key === "arrowdown" || key === "s") {
-        goNext();
+      if (
+        key === "arrowright" ||
+        key === "d" ||
+        key === "arrowdown" ||
+        key === "s"
+      ) {
+        primary.setActiveIndex((prev) =>
+          Math.min(experienceSteps.length - 1, prev + 1),
+        );
+        primary.resetAutoplay();
       }
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [goNext, goPrev]);
+  }, [primary]);
 
   return (
     <section
@@ -297,50 +216,41 @@ export default function Experience3D() {
           <h2 className="text-3xl font-semibold text-accent md:text-4xl">
             Experiencia KüCHE
           </h2>
-
           <div className="relative w-full">
-            <div className="w-full md:hidden">
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={activeStep.id}
-                  initial={{ opacity: 0, x: 24 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -24 }}
-                  transition={{ duration: 0.3, ease: "easeOut" }}
-                >
-                  <MobileExperienceSlide
-                    step={activeStep}
-                    index={primary.activeIndex}
-                    onSwipeLeft={goNext}
-                    onSwipeRight={goPrev}
-                  />
-                </motion.div>
-              </AnimatePresence>
-            </div>
-
-            <Coverflow3D steps={experienceSteps} activeIndex={primary.activeIndex} />
+            <Coverflow3D
+              steps={experienceSteps}
+              activeIndex={primary.activeIndex}
+            />
 
             <button
               type="button"
-              onClick={goPrev}
+              onClick={() => {
+                primary.setActiveIndex((prev) => Math.max(0, prev - 1));
+                primary.resetAutoplay();
+              }}
               disabled={primary.isFirst}
-              className="absolute left-4 top-1/2 hidden -translate-y-1/2 items-center justify-center rounded-full border border-white/50 bg-white/40 p-3 text-secondary shadow-xl backdrop-blur-xl transition hover:bg-white/70 disabled:opacity-40 md:left-10 md:flex"
+              className="absolute left-4 top-1/2 -translate-y-1/2 rounded-full border border-white/50 bg-white/40 p-4 text-secondary shadow-xl backdrop-blur-xl transition hover:bg-white/70 disabled:opacity-40 md:left-10"
               aria-label="Paso anterior"
             >
               <ChevronLeft className="h-6 w-6 shrink-0" aria-hidden />
             </button>
             <button
               type="button"
-              onClick={goNext}
+              onClick={() =>
+                primary.setActiveIndex((prev) => {
+                  primary.resetAutoplay();
+                  return Math.min(experienceSteps.length - 1, prev + 1);
+                })
+              }
               disabled={primary.isLast}
-              className="absolute right-4 top-1/2 hidden -translate-y-1/2 items-center justify-center rounded-full border border-white/50 bg-white/40 p-3 text-secondary shadow-xl backdrop-blur-xl transition hover:bg-white/70 disabled:opacity-40 md:right-10 md:flex"
+              className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full border border-white/50 bg-white/40 p-4 text-secondary shadow-xl backdrop-blur-xl transition hover:bg-white/70 disabled:opacity-40 md:right-10"
               aria-label="Paso siguiente"
             >
               <ChevronRight className="h-6 w-6 shrink-0" aria-hidden />
             </button>
           </div>
 
-          <div className="mt-2 flex items-center justify-center gap-2 md:hidden">
+          <div className="flex items-center gap-2">
             {experienceSteps.map((step, index) => (
               <button
                 key={step.id}
@@ -349,14 +259,12 @@ export default function Experience3D() {
                   primary.setActiveIndex(index);
                   primary.resetAutoplay();
                 }}
-                className={[
-                  "rounded-full transition-all duration-300",
+                className={`h-2.5 w-2.5 rounded-full transition ${
                   index === primary.activeIndex
-                    ? "h-2 w-6 bg-primary"
-                    : "h-2 w-2 bg-gray-300",
-                ].join(" ")}
-                aria-label={`Ir al paso ${index + 1}: ${step.title}`}
-                aria-current={index === primary.activeIndex ? "step" : undefined}
+                    ? "bg-secondary"
+                    : "bg-secondary/30 hover:bg-secondary/60"
+                }`}
+                aria-label={`Ir al paso ${index + 1}`}
               />
             ))}
           </div>
@@ -373,8 +281,10 @@ export default function Experience3D() {
               {activeStep.title}
             </motion.div>
           </AnimatePresence>
+
         </div>
       </div>
     </section>
   );
 }
+

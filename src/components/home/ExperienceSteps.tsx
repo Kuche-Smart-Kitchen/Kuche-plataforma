@@ -31,7 +31,7 @@ const steps: Step[] = [
     title: "Agenda cita",
     description: "Agendamos una visita para conocer tu espacio y estilo.",
     image: {
-      src: "/images/home/experiencia-3d/slide-01-cita-domicilio.jpg",
+      src: "/images/home/linea-tiempo-7-pasos/01-agenda-cita.jpg",
       alt: "Agenda de cita para diseño de cocina",
     },
     icon: Calendar,
@@ -62,7 +62,7 @@ const steps: Step[] = [
     title: "Realidad virtual",
     description: "Visualiza tu cocina en VR antes de fabricar.",
     image: {
-      src: "/images/home/experiencia-3d/slide-03-realidad-virtual.jpg",
+      src: "/images/home/linea-tiempo-7-pasos/04-realidad-virtual.jpg",
       alt: "Recorrido virtual de cocina",
     },
     icon: Boxes,
@@ -73,7 +73,7 @@ const steps: Step[] = [
     title: "Cortes precisos con tecnología",
     description: "Precisión CNC para cada pieza y ensamble perfecto.",
     image: {
-      src: "/images/home/experiencia-3d/slide-04-cortes-cnc.jpg",
+      src: "/images/home/linea-tiempo-7-pasos/05-cortes-cnc.jpg",
       alt: "Cortes precisos con máquina CNC",
     },
     icon: Cpu,
@@ -252,6 +252,4 @@ export default function ExperienceSteps() {
     </MotionSection>
   );
 }
-
-
 

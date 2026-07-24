@@ -168,7 +168,7 @@ export default function ExperienciaPage() {
             ref={(element) => {
               sectionRefs.current[index] = element;
             }}
-            className="relative h-screen w-full snap-center px-6 pt-24 pb-8 md:py-14 md:px-12"
+            className="relative h-screen w-full snap-center px-6 py-14 md:px-12"
           >
             <div className="mx-auto flex h-full max-w-6xl flex-col items-center gap-12 md:flex-row md:gap-16">
               <div
@@ -176,7 +176,7 @@ export default function ExperienciaPage() {
                   isEven ? "md:order-2" : ""
                 }`}
               >
-                <div className="pointer-events-none absolute -top-2 left-0 text-[6rem] font-semibold text-transparent md:-top-12 md:-left-6 md:text-[7rem] lg:text-[8rem]">
+                <div className="pointer-events-none absolute -top-12 left-0 text-[5rem] font-semibold text-transparent md:-left-6 md:text-[7rem] lg:text-[8rem]">
                   <span
                     className="block"
                     style={{ WebkitTextStroke: "1px rgba(148,163,184,0.45)" }}
