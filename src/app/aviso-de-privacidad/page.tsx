@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { KUCHE_EMAIL, KUCHE_EMAIL_MAILTO_HREF } from "@/lib/kuche-contact";
+
 export const metadata: Metadata = {
   title: "Aviso de Privacidad | Küche",
   description:
@@ -28,15 +30,21 @@ export default function AvisoDePrivacidadPage() {
               <h2 className="text-base font-semibold text-primary md:text-lg">1. Responsable</h2>
               <p className="mt-2">
                 El responsable del tratamiento de sus datos personales es{" "}
-                <strong className="text-primary">Küche Cocinas Inteligentes</strong> (en adelante, “Küche”),
-                con domicilio en <strong className="text-primary">Calle Industrial 45, Ciudad de México</strong>.
+                <strong className="text-primary">
+                  Küche Cocinas Inteligentes (en adelante el Responsable)
+                </strong>
+                , con domicilio en{" "}
+                <strong className="text-primary">
+                  Av Universidad España 119, Cd Industrial, Español, 34209 Durango, Dgo.
+                </strong>{" "}
                 Para asuntos de privacidad puede contactarnos en{" "}
                 <a
-                  href="mailto:hola@kuche.mx"
+                  href={KUCHE_EMAIL_MAILTO_HREF}
                   className="font-semibold text-accent underline-offset-2 hover:underline"
                 >
-                  hola@Küche.mx
-                </a>.
+                  {KUCHE_EMAIL}
+                </a>
+                .
               </p>
             </section>
 
@@ -49,6 +57,10 @@ export default function AvisoDePrivacidadPage() {
                 nombre, teléfono, correo electrónico y los datos que voluntariamente nos envíe en mensajes.
                 Por el uso del sitio también pueden generarse datos técnicos (por ejemplo, tipo de navegador,
                 dirección IP o identificadores de sesión) necesarios para seguridad y funcionamiento.
+              </p>
+              <p className="mt-2">
+                Le informamos que para cumplir con las finalidades descritas en este aviso, no tratamos datos
+                personales sensibles.
               </p>
             </section>
 
@@ -92,8 +104,14 @@ export default function AvisoDePrivacidadPage() {
               <p className="mt-2">
                 Usted tiene derecho a <strong className="text-primary">Acceder, Rectificar, Cancelar u Oponerse</strong>{" "}
                 al tratamiento de sus datos (ARCO), así como a revocar el consentimiento que hubiere otorgado,
-                en los términos de la ley. Para ejercer estos derechos, envíe su solicitud al correo de contacto
-                del responsable, indicando nombre, medio de respuesta y el derecho que desea ejercer.
+                en los términos de la ley.
+              </p>
+              <p className="mt-2">
+                Para ejercer sus derechos ARCO, deberá enviar una solicitud al correo {KUCHE_EMAIL}. Dicha
+                solicitud deberá ir acompañada de una copia de su identificación oficial y una descripción clara
+                de los datos respecto de los cuales busca ejercer el derecho. El Responsable comunicará la
+                respuesta en un plazo máximo de 20 (veinte) días hábiles, contados desde la fecha en que se
+                recibió la solicitud.
               </p>
             </section>
 
@@ -107,7 +125,17 @@ export default function AvisoDePrivacidadPage() {
                 <Link href="/aviso-de-privacidad" className="font-semibold text-accent underline-offset-2 hover:underline">
                   esta página
                 </Link>
-                . Le recomendamos revisarla periódicamente.
+                .                 Le recomendamos revisarla periódicamente.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="text-base font-semibold text-primary md:text-lg">7. Autoridad</h2>
+              <p className="mt-2">
+                Si usted considera que su derecho a la protección de sus datos personales ha sido lesionado por
+                alguna conducta u omisión de nuestra parte, podrá interponer la queja o denuncia correspondiente
+                ante el Instituto Nacional de Transparencia, Acceso a la Información y Protección de Datos
+                Personales (INAI).
               </p>
             </section>
           </div>

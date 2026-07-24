@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import Footer from "@/components/layout/Footer";
+import Footer from "@/components/Footer";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 
@@ -66,24 +66,24 @@ export default function AliadosPage() {
   useFocusTrap(Boolean(activePartner), modalRef);
 
   return (
-    <main className="overflow-x-hidden bg-background pt-28 md:pt-32">
-      <section className="px-4 pb-12 sm:pb-16 md:pb-20">
-        <div className="mx-auto max-w-6xl space-y-8 sm:space-y-10">
+    <main className="bg-background">
+      <section className="px-4 py-16 md:py-20">
+        <div className="mx-auto max-w-6xl space-y-10">
           <div className="text-center">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">Aliados</p>
-            <h1 className="mt-3 text-2xl font-semibold text-primary sm:text-3xl md:text-4xl">Aliados</h1>
-            <p className="mx-auto mt-2 max-w-xl px-2 text-sm text-secondary sm:text-base">
+            <h1 className="mt-3 text-2xl font-semibold text-primary md:text-4xl">Aliados</h1>
+            <p className="mt-2 text-sm text-secondary md:text-base">
               Socios y proveedores con los que sostenemos calidad, especificacion y cierre de proyecto.
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             {partnerLogos.map((logo) => (
               <button
                 key={logo.name}
                 type="button"
                 onClick={() => setActivePartner(logo)}
-                className="flex h-20 min-w-0 items-center justify-center rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm transition duration-300 hover:-translate-y-0.5 hover:shadow-md sm:h-24 sm:px-4 sm:py-3"
+                className="flex h-24 items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm transition duration-300 hover:-translate-y-0.5 hover:shadow-md"
               >
                 <div className="relative h-full w-full">
                   <Image
@@ -104,50 +104,50 @@ export default function AliadosPage() {
       <AnimatePresence>
         {activePartner && (
           <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-10"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setActivePartner(null)}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
           >
             <motion.div
               ref={modalRef}
               tabIndex={-1}
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-2xl rounded-3xl bg-white p-8 shadow-2xl"
+              initial={{ y: 30, opacity: 0, scale: 0.98 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 10, opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.35, ease: "easeOut" }}
               onClick={(event) => event.stopPropagation()}
-              className="relative max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl sm:p-8"
             >
               <button
                 type="button"
                 onClick={() => setActivePartner(null)}
-                className="absolute right-4 top-4 rounded-full border border-gray-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-secondary transition hover:border-primary/40 hover:text-primary sm:right-6 sm:top-6"
+                className="absolute right-6 top-6 rounded-full border border-gray-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-secondary transition hover:border-primary/40 hover:text-primary"
               >
                 Cerrar
               </button>
-              <div className="flex flex-col gap-4 pt-8 sm:gap-6 sm:pt-0 md:flex-row md:items-center">
-                <div className="flex h-14 w-full max-w-[10rem] items-center justify-center sm:justify-start md:h-16 md:w-40">
+              <div className="flex flex-col gap-6 md:flex-row md:items-center">
+                <div className="flex h-16 w-40 items-center justify-start">
                   <Image
                     src={activePartner.src}
                     alt={activePartner.name}
                     width={160}
                     height={64}
                     unoptimized
-                    className="h-10 w-auto max-w-full object-contain sm:h-12"
+                    className="h-12 w-auto object-contain"
                   />
                 </div>
-                <div className="min-w-0 text-center md:text-left">
-                  <p className="text-xs font-semibold uppercase tracking-[0.25em] text-secondary sm:tracking-[0.3em]">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-secondary">
                     Aliado
                   </p>
-                  <h3 className="mt-1 text-xl font-semibold text-primary sm:mt-2 sm:text-2xl md:text-3xl">
+                  <h3 className="mt-2 text-2xl font-semibold text-primary md:text-3xl">
                     {activePartner.name}
                   </h3>
                 </div>
               </div>
-              <p className="mt-4 text-sm leading-relaxed text-secondary sm:mt-6 md:text-base">
+              <p className="mt-6 text-sm leading-relaxed text-secondary md:text-base">
                 {activePartner.description}
               </p>
             </motion.div>
