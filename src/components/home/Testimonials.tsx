@@ -69,7 +69,7 @@ export default function Testimonials() {
                   ))}
                 </div>
                 <p className="mt-4 text-sm leading-relaxed text-secondary">
-                  "{item.quote}"
+                  &ldquo;{item.quote}&rdquo;
                 </p>
               </div>
             ))}

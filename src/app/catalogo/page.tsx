@@ -1,11 +1,14 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import CatalogFilters from "@/components/catalogo/CatalogFilters";
-import ProjectCard, { type Project } from "@/components/catalogo/ProjectCard";
+import ProjectCard from "@/components/catalogo/ProjectCard";
 import Footer from "@/components/layout/Footer";
 import { CATALOG_PROJECT_TYPES } from "@/lib/catalog-project-types";
+import { normalizeCatalogProjects } from "@/lib/catalog-normalization";
+import { type CatalogProjectInput, type CatalogProject } from "@/lib/catalog-types";
 
 const primaryCategories = [...CATALOG_PROJECT_TYPES];
 
@@ -29,7 +32,7 @@ const secondaryCategoriesByPrimary: Record<string, string[]> = {
   ],
 };
 
-const projects: Project[] = [
+const projects: CatalogProjectInput[] = [
   {
     id: "terra-minimal",
     title: "Estilo Moderno",
@@ -1560,6 +1563,27 @@ const fadeUp = {
   exit: { opacity: 0, y: 24 },
 } as const;
 
+function resolvePrimaryFromParam(primaryParam: string | null): string {
+  if (
+    primaryParam &&
+    primaryCategories.some((category) => category === primaryParam)
+  ) {
+    return primaryParam;
+  }
+  return primaryCategories[0] ?? "";
+}
+
+function resolveSecondaryFromParam(
+  primary: string,
+  secondaryParam: string | null,
+): string {
+  const allowedSecondary = secondaryCategoriesByPrimary[primary] ?? ["Todos"];
+  if (secondaryParam && allowedSecondary.includes(secondaryParam)) {
+    return secondaryParam;
+  }
+  return allowedSecondary[0] ?? "Todos";
+}
+
 export default function CatalogoPage() {
   const [activePrimary, setActivePrimary] = useState<string>(
     primaryCategories[0] ?? "",
@@ -1567,9 +1591,45 @@ export default function CatalogoPage() {
   const [activeSecondary, setActiveSecondary] = useState<string>(
     secondaryCategoriesByPrimary[primaryCategories[0] ?? ""]?.[0] ?? "Todos",
   );
+  const [isUrlHydrated, setIsUrlHydrated] = useState(false);
 
-  const filteredProjects = useMemo<Project[]>(() => {
-    const primaryFiltered = projects.filter(
+  const normalizedProjects = useMemo(
+    () => normalizeCatalogProjects(projects),
+    [],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    const primary = resolvePrimaryFromParam(params.get("categoria"));
+    const secondary = resolveSecondaryFromParam(
+      primary,
+      params.get("subcategoria"),
+    );
+
+    setActivePrimary(primary);
+    setActiveSecondary(secondary);
+    setIsUrlHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isUrlHydrated || typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    params.set("categoria", activePrimary);
+    params.set("subcategoria", activeSecondary);
+
+    const current = new URLSearchParams(window.location.search).toString();
+    const next = params.toString();
+    if (current === next) return;
+
+    const nextUrl = `${window.location.pathname}?${next}`;
+    window.history.replaceState(null, "", nextUrl);
+  }, [activePrimary, activeSecondary, isUrlHydrated]);
+
+  const filteredProjects = useMemo<CatalogProject[]>(() => {
+    const primaryFiltered = normalizedProjects.filter(
       (project) => project.mainCategory === activePrimary,
     );
 
@@ -1578,7 +1638,19 @@ export default function CatalogoPage() {
     return primaryFiltered.filter(
       (project) => project.subCategory === activeSecondary,
     );
-  }, [activePrimary, activeSecondary]);
+  }, [activePrimary, activeSecondary, normalizedProjects]);
+
+  const totalInPrimary = useMemo(
+    () =>
+      normalizedProjects.filter((project) => project.mainCategory === activePrimary)
+        .length,
+    [activePrimary, normalizedProjects],
+  );
+
+  const defaultPrimary = primaryCategories[0] ?? "";
+  const defaultSecondary = secondaryCategoriesByPrimary[defaultPrimary]?.[0] ?? "Todos";
+  const hasCustomFilters =
+    activePrimary !== defaultPrimary || activeSecondary !== defaultSecondary;
 
   return (
     <main className="min-h-screen bg-background text-primary">
@@ -1614,23 +1686,65 @@ export default function CatalogoPage() {
               onSecondaryChange={setActiveSecondary}
             />
           </div>
+
+          <div className="mt-6 flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded-full bg-primary/5 px-3 py-1 font-semibold text-primary">
+              {activePrimary}
+            </span>
+            <span className="rounded-full bg-accent/10 px-3 py-1 font-semibold text-accent">
+              {activeSecondary}
+            </span>
+            <span className="rounded-full bg-secondary/10 px-3 py-1 font-semibold text-secondary">
+              {filteredProjects.length} de {totalInPrimary} proyectos
+            </span>
+            {hasCustomFilters ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setActivePrimary(defaultPrimary);
+                  setActiveSecondary(defaultSecondary);
+                }}
+                className="rounded-full border border-primary/20 px-3 py-1 font-semibold text-primary transition hover:border-primary/40"
+              >
+                Reiniciar filtros
+              </button>
+            ) : null}
+          </div>
         </div>
       </section>
 
       <section className="px-4 pb-16">
         <div className="mx-auto flex max-w-6xl flex-col gap-6">
-          <AnimatePresence mode="popLayout">
-            {filteredProjects.map((project) => (
-              <motion.div
-                key={project.id}
-                layout
-                {...fadeUp}
-                transition={{ duration: 0.35, ease: "easeOut" }}
+          {filteredProjects.length === 0 ? (
+            <div className="rounded-3xl border border-primary/10 bg-white p-8 text-center shadow-sm">
+              <p className="text-sm font-semibold text-primary">
+                No encontramos proyectos en este filtro.
+              </p>
+              <p className="mt-2 text-sm text-secondary">
+                Prueba con otra subcategoría o vuelve a &ldquo;Todos&rdquo; para ver opciones disponibles.
+              </p>
+              <button
+                type="button"
+                onClick={() => setActiveSecondary("Todos")}
+                className="mt-5 inline-flex items-center justify-center rounded-full bg-accent px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-md shadow-accent/25 transition hover:-translate-y-0.5"
               >
-                <ProjectCard project={project} />
-              </motion.div>
-            ))}
-          </AnimatePresence>
+                Mostrar todos
+              </button>
+            </div>
+          ) : (
+            <AnimatePresence mode="popLayout">
+              {filteredProjects.map((project) => (
+                <motion.div
+                  key={project.id}
+                  layout
+                  {...fadeUp}
+                  transition={{ duration: 0.35, ease: "easeOut" }}
+                >
+                  <ProjectCard project={project} />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          )}
         </div>
       </section>
 

@@ -77,7 +77,7 @@ export default function EmpleadoDashboard() {
   const router = useRouter();
   const { user } = useAuthContext();
   const currentUserName = user?.nombre?.trim() || CURRENT_USER;
-  const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>(defaultTeamMembers);
+  const [teamMembers] = useState<{ id: string; name: string }[]>(() => loadTeamMembers());
   const [viewMode, setViewMode] = useState<"all" | "mine">("mine");
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isPublicEditorOpen, setIsPublicEditorOpen] = useState(false);
@@ -96,10 +96,6 @@ export default function EmpleadoDashboard() {
 
   useEscapeClose(isNewTaskModalOpen, () => setIsNewTaskModalOpen(false));
   useFocusTrap(isNewTaskModalOpen, newTaskModalRef);
-
-  useEffect(() => {
-    setTeamMembers(loadTeamMembers());
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -142,20 +138,22 @@ export default function EmpleadoDashboard() {
   );
   const tasksInactivos = useMemo(() => myTasksWithCode.filter(taskIsInactivo), [myTasksWithCode]);
 
-  const selectedPublicTask = useMemo(
-    () => myTasksWithCode.find((t) => t.id === selectedPublicTaskId) ?? null,
-    [myTasksWithCode, selectedPublicTaskId],
-  );
-
-  useEffect(() => {
+  const selectedPublicTaskIdSafe = useMemo(() => {
     if (myTasksWithCode.length === 0) {
-      setSelectedPublicTaskId(null);
-      return;
+      return null;
     }
+
     if (!selectedPublicTaskId || !myTasksWithCode.some((t) => t.id === selectedPublicTaskId)) {
-      setSelectedPublicTaskId(myTasksWithCode[0].id);
+      return myTasksWithCode[0].id;
     }
+
+    return selectedPublicTaskId;
   }, [myTasksWithCode, selectedPublicTaskId]);
+
+  const selectedPublicTask = useMemo(
+    () => myTasksWithCode.find((t) => t.id === selectedPublicTaskIdSafe) ?? null,
+    [myTasksWithCode, selectedPublicTaskIdSafe],
+  );
 
   const handleCreateTask = () => {
     const project = newTaskProject.trim();

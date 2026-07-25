@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
@@ -28,7 +28,6 @@ export default function SeguimientoPage() {
   const [hasAccess, setHasAccess] = useState(false);
   const [project, setProject] = useState<SeguimientoProject | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
-  const [filesWarning, setFilesWarning] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState<null | { name: string; src: string }>(null);
   const codigoInputRef = useRef<HTMLInputElement>(null);
   const modalRef = useRef<HTMLDivElement | null>(null);
@@ -47,16 +46,18 @@ export default function SeguimientoPage() {
     shouldFetchRemoteFiles,
   );
 
-  useEffect(() => {
-    if (!shouldFetchRemoteFiles || !remoteFilesError) {
-      setFilesWarning(null);
-      return;
-    }
-    setFilesWarning("No pudimos cargar archivos remotos; se muestran los archivos guardados localmente.");
-  }, [remoteFilesError, shouldFetchRemoteFiles]);
+  const filesWarning = shouldFetchRemoteFiles && remoteFilesError
+    ? "No pudimos cargar archivos remotos; se muestran los archivos guardados localmente."
+    : null;
 
-  useEffect(() => {
-    if (!shouldFetchRemoteFiles || !project || remoteFiles.length === 0) return;
+  const currentProject = useMemo(() => {
+    if (!project) {
+      return VOID_SEGUIMIENTO;
+    }
+
+    if (!shouldFetchRemoteFiles || remoteFiles.length === 0) {
+      return project;
+    }
 
     const mappedRemoteFiles = remoteFiles.map((f) => ({
       id: f._id,
@@ -67,16 +68,14 @@ export default function SeguimientoPage() {
 
     const currentSignature = JSON.stringify(project.archivos ?? []);
     const nextSignature = JSON.stringify(mappedRemoteFiles);
-    if (currentSignature === nextSignature) return;
+    if (currentSignature === nextSignature) {
+      return project;
+    }
 
-    setProject((prev) =>
-      prev
-        ? {
-            ...prev,
-            archivos: mappedRemoteFiles,
-          }
-        : prev,
-    );
+    return {
+      ...project,
+      archivos: mappedRemoteFiles,
+    };
   }, [project, remoteFiles, shouldFetchRemoteFiles]);
 
   const openImage = (name: string, src: string) => setSelectedImage({ name, src });

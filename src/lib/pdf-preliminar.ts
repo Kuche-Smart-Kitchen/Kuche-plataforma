@@ -301,7 +301,7 @@ function addEditorialProjectBlock(doc: jsPDF, data: PreliminarData, lev: Levanta
   const fin = financeFromPreliminar(data);
   const lineH = 13;
 
-  let y = CONTENT_TOP;
+  const y = CONTENT_TOP;
 
   const leftStack: { label: string; value: string }[] = [
     { label: "FECHA", value: fecha },

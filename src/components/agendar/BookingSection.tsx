@@ -1,37 +1,54 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import Captcha from "@/components/ui/Captcha";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 
+const WEEK_DAYS = ["L", "M", "M", "J", "V", "S", "D"];
+const MONTH_NAMES = [
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
+];
+const TIME_SLOTS = ["10:00", "12:00", "16:00"];
+
+function getTodayStart() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+function loadStoredAppointments(): Record<string, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const stored = window.localStorage.getItem("kuche_appointments");
+    if (!stored) return {};
+    const parsed = JSON.parse(stored) as Record<string, number>;
+    if (parsed && typeof parsed === "object") {
+      return parsed;
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return {};
+}
+
 export default function BookingSection() {
-  const weekDays = ["L", "M", "M", "J", "V", "S", "D"];
-  const monthNames = [
-    "Enero",
-    "Febrero",
-    "Marzo",
-    "Abril",
-    "Mayo",
-    "Junio",
-    "Julio",
-    "Agosto",
-    "Septiembre",
-    "Octubre",
-    "Noviembre",
-    "Diciembre",
-  ];
-  const timeSlots = ["10:00", "12:00", "16:00"];
-  const today = new Date();
-  const todayStart = useMemo(
-    () => new Date(today.getFullYear(), today.getMonth(), today.getDate()),
-    [today],
+  const todayStart = useMemo(() => getTodayStart(), []);
+  const [currentMonth, setCurrentMonth] = useState(() =>
+    new Date(todayStart.getFullYear(), todayStart.getMonth(), 1),
   );
-  const [currentMonth, setCurrentMonth] = useState(
-    new Date(today.getFullYear(), today.getMonth(), 1),
-  );
-  const [selectedDate, setSelectedDate] = useState<Date | null>(today);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(() => todayStart);
   const [selectedTime, setSelectedTime] = useState<string>("12:00");
   const [location, setLocation] = useState<"capital" | "otro">("capital");
   const [otherLocation, setOtherLocation] = useState("");
@@ -49,8 +66,8 @@ export default function BookingSection() {
     locationLabel: string;
     date: Date;
   } | null>(null);
-  const [appointmentsByDate, setAppointmentsByDate] = useState<Record<string, number>>(
-    {},
+  const [appointmentsByDate, setAppointmentsByDate] = useState<Record<string, number>>(() =>
+    loadStoredAppointments(),
   );
 
   const MAX_APPOINTMENTS_PER_DAY = 3;
@@ -61,20 +78,6 @@ export default function BookingSection() {
     const day = String(date.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
   };
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const stored = window.localStorage.getItem("kuche_appointments");
-      if (!stored) return;
-      const parsed = JSON.parse(stored) as Record<string, number>;
-      if (parsed && typeof parsed === "object") {
-        setAppointmentsByDate(parsed);
-      }
-    } catch {
-      // ignore parse errors
-    }
-  }, []);
 
   const registerAppointment = (date: Date) => {
     if (typeof window === "undefined") return;
@@ -97,8 +100,8 @@ export default function BookingSection() {
   useEscapeClose(isModalOpen, () => setIsModalOpen(false));
   useFocusTrap(isModalOpen, modalRef);
   const monthLabel = useMemo(() => {
-    return `${monthNames[currentMonth.getMonth()]} ${currentMonth.getFullYear()}`;
-  }, [currentMonth, monthNames]);
+    return `${MONTH_NAMES[currentMonth.getMonth()]} ${currentMonth.getFullYear()}`;
+  }, [currentMonth]);
   const calendarDays = useMemo(() => {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
@@ -210,7 +213,7 @@ export default function BookingSection() {
             </div>
 
             <div className="mt-4 grid grid-cols-7 gap-2 text-center text-[11px] font-semibold text-secondary">
-              {weekDays.map((day, index) => (
+              {WEEK_DAYS.map((day, index) => (
                 <div key={`${day}-${index}`}>{day}</div>
               ))}
             </div>
@@ -269,7 +272,7 @@ export default function BookingSection() {
               Horarios disponibles
             </p>
             <div className="mt-3 grid grid-cols-3 gap-3">
-              {timeSlots.map((time) => {
+              {TIME_SLOTS.map((time) => {
                 const isActive = time === selectedTime;
                 return (
                   <button

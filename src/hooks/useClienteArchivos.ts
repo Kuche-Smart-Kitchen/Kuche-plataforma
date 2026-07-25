@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { obtenerArchivosCliente, type ClienteArchivo } from "@/lib/axios/archivosClienteApi";
 
@@ -50,55 +50,62 @@ export const loadClienteArchivosCached = async (clienteId: string): Promise<Clie
 };
 
 export function useClienteArchivos(clienteId?: string | null, enabled = true): UseClienteArchivosResult {
-  const [archivos, setArchivos] = useState<ClienteArchivo[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const normalizedClienteId = clienteId?.trim() ?? "";
+
+  const [state, setState] = useState<UseClienteArchivosResult & { clienteId: string }>(() => {
+    const cached = normalizedClienteId ? clientFilesCache.get(normalizedClienteId) : undefined;
+    return {
+      clienteId: normalizedClienteId,
+      archivos: cached ?? [],
+      isLoading: Boolean(enabled && normalizedClienteId && !cached),
+      error: null,
+    };
+  });
+
+  const cachedArchivos = useMemo(
+    () => (normalizedClienteId ? clientFilesCache.get(normalizedClienteId) ?? null : null),
+    [normalizedClienteId],
+  );
 
   useEffect(() => {
-    const normalizedClienteId = clienteId?.trim() ?? "";
-
     if (!enabled || !normalizedClienteId) {
-      setArchivos([]);
-      setIsLoading(false);
-      setError(null);
-      return;
-    }
-
-    const cached = clientFilesCache.get(normalizedClienteId);
-    if (cached) {
-      setArchivos(cached);
-      setError(null);
-      setIsLoading(false);
       return;
     }
 
     let cancelled = false;
-    const load = loadClienteArchivosCached(normalizedClienteId);
 
-    setIsLoading(true);
-    setError(null);
-
-    void load
+    void loadClienteArchivosCached(normalizedClienteId)
       .then((files) => {
         if (cancelled) return;
-        clientFilesCache.set(normalizedClienteId, files);
-        setArchivos(files);
+        setState({
+          clienteId: normalizedClienteId,
+          archivos: files,
+          isLoading: false,
+          error: null,
+        });
       })
       .catch((loadError) => {
         if (cancelled) return;
-        setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar los archivos del cliente");
-        setArchivos([]);
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
+        setState({
+          clienteId: normalizedClienteId,
+          archivos: [],
+          isLoading: false,
+          error:
+            loadError instanceof Error ? loadError.message : "No se pudieron cargar los archivos del cliente",
+        });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [clienteId, enabled]);
+  }, [normalizedClienteId, enabled]);
 
-  return { archivos, isLoading, error };
+  const isActive = enabled && Boolean(normalizedClienteId);
+  const matchesCurrentClient = state.clienteId === normalizedClienteId;
+
+  return {
+    archivos: !isActive ? [] : cachedArchivos ?? (matchesCurrentClient ? state.archivos : []),
+    isLoading: !isActive ? false : cachedArchivos ? false : !matchesCurrentClient || state.isLoading,
+    error: !isActive ? null : matchesCurrentClient ? state.error : null,
+  };
 }

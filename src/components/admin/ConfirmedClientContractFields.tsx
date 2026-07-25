@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { CalendarRange, Package, Pencil, CalendarClock } from "lucide-react";
 import {
   kanbanStorageKey,
@@ -26,29 +26,13 @@ export function ConfirmedClientContractFields({ task, onUpdate }: Props) {
   const hasSavedContractDate = Boolean(task.contractDate?.trim());
   const hasSavedDeliveryDate = Boolean(task.estimatedDeliveryDate?.trim());
 
-  const [contractDate, setContractDate] = useState("");
-  const [editingContract, setEditingContract] = useState(!hasSavedContractDate);
+  const [contractDate, setContractDate] = useState(() => task.contractDate ?? "");
+  const [editingContract, setEditingContract] = useState(() => !hasSavedContractDate);
   const [savedContractFlash, setSavedContractFlash] = useState(false);
 
-  const [deliveryDate, setDeliveryDate] = useState("");
-  const [editingDelivery, setEditingDelivery] = useState(!hasSavedDeliveryDate);
+  const [deliveryDate, setDeliveryDate] = useState(() => task.estimatedDeliveryDate ?? "");
+  const [editingDelivery, setEditingDelivery] = useState(() => !hasSavedDeliveryDate);
   const [savedDeliveryFlash, setSavedDeliveryFlash] = useState(false);
-
-  useEffect(() => {
-    setContractDate(task.contractDate ?? "");
-  }, [task.id, task.contractDate]);
-
-  useEffect(() => {
-    setDeliveryDate(task.estimatedDeliveryDate ?? "");
-  }, [task.id, task.estimatedDeliveryDate]);
-
-  useEffect(() => {
-    setEditingContract(!task.contractDate?.trim());
-  }, [task.id]);
-
-  useEffect(() => {
-    setEditingDelivery(!task.estimatedDeliveryDate?.trim());
-  }, [task.id]);
 
   const projectLines = getConfirmedCardProjectLines(task);
   const aggWeeks = getAggregatedDeliveryWeeksFromTask(task);

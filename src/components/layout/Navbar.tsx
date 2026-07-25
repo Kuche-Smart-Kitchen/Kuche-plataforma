@@ -37,7 +37,10 @@ const miProyectoCtaClass = (outlineLight: boolean) =>
 
 export default function Navbar() {
   const pathname = usePathname();
-  const [scrolled, setScrolled] = useState(false);
+  const [scrolled, setScrolled] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.scrollY > 24;
+  });
   const [menuOpen, setMenuOpen] = useState(false);
 
   const isHomePage = pathname === "/";
@@ -48,14 +51,9 @@ export default function Navbar() {
   }, []);
 
   useEffect(() => {
-    updateScroll();
     window.addEventListener("scroll", updateScroll, { passive: true });
     return () => window.removeEventListener("scroll", updateScroll);
   }, [updateScroll]);
-
-  useEffect(() => {
-    setMenuOpen(false);
-  }, [pathname]);
 
   useEffect(() => {
     document.body.style.overflow = menuOpen ? "hidden" : "";

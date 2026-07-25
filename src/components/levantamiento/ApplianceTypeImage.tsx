@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import type { ItemCatalogo } from "@/lib/levantamiento-catalog";
 import { applianceLevantamientoImageCandidates } from "@/lib/levantamiento-catalog";
@@ -23,11 +23,6 @@ export default function ApplianceTypeImage({
   const candidates = useMemo(() => applianceLevantamientoImageCandidates(item), [item]);
   const [index, setIndex] = useState(0);
   const stopRef = useRef(false);
-
-  useEffect(() => {
-    setIndex(0);
-    stopRef.current = false;
-  }, [item.id]);
 
   const max = Math.max(0, candidates.length - 1);
   const safeIndex = Math.min(index, max);

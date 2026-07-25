@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import type { RefObject } from "react";
 
 /** Excluimos `input[type=file]`: suelen ir ocultos (`sr-only`); al cerrar el diálogo del SO el foco
  *  puede quedar ahí y el trap obliga a enfocarlos → scroll raro, modal “en blanco” o sensación de bloqueo. */
@@ -13,7 +14,7 @@ const focusableSelectors = [
 
 export const useFocusTrap = (
   isOpen: boolean,
-  containerRef: React.RefObject<HTMLElement | null>,
+  containerRef: RefObject<HTMLElement | null>,
 ) => {
   useEffect(() => {
     if (!isOpen) {
@@ -30,7 +31,7 @@ export const useFocusTrap = (
       // `preventScroll` evita el salto en pantallas donde el usuario ya estaba
       // scrolleando (como el tablero).
       try {
-        (el as any).focus?.({ preventScroll: true });
+        el.focus({ preventScroll: true });
       } catch {
         // Fallback: si el navegador no soporta preventScroll, al menos no rompemos.
         el.focus();

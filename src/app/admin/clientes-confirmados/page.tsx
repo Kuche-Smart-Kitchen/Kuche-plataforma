@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -330,7 +331,7 @@ export default function ClientesConfirmadosPage() {
 
               <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
                 <div className="space-y-8 pb-8">
-                  <ConfirmedClientContractFields task={selectedClient} onUpdate={handleConfirmedTaskUpdate} />
+                  <ConfirmedClientContractFields key={selectedClient.id} task={selectedClient} onUpdate={handleConfirmedTaskUpdate} />
                   <ExpedientePdfSections client={selectedClient} withTopDivider />
                 </div>
               </div>

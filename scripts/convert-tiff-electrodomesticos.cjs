@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 /**
  * Archivos .jpg que en realidad son TIFF no se ven en el navegador. Convierte a JPEG con jimp.
  */

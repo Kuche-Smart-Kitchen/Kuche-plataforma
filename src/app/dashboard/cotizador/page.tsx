@@ -394,22 +394,18 @@ function MaterialCatalogQtyControl({ itemId, qty, onSetQty, onAdjustDelta }: Mat
 }
 
 function FormalCotizacionBanner({ taskId }: { taskId: string }) {
-  const [projectName, setProjectName] = useState("");
-  useEffect(() => {
-    if (typeof window === "undefined") return;
+  const projectName = (() => {
+    if (typeof window === "undefined") return "Proyecto";
     const raw = window.localStorage.getItem(kanbanStorageKey);
-    if (!raw) {
-      setProjectName("Proyecto");
-      return;
-    }
+    if (!raw) return "Proyecto";
     try {
       const tasks = JSON.parse(raw) as KanbanTask[];
       const task = Array.isArray(tasks) ? tasks.find((t) => t.id === taskId) : undefined;
-      setProjectName(task?.project ?? "Proyecto");
+      return task?.project ?? "Proyecto";
     } catch {
-      setProjectName("Proyecto");
+      return "Proyecto";
     }
-  }, [taskId]);
+  })();
   return (
     <div className="rounded-3xl border border-emerald-200 bg-emerald-50/80 p-5 shadow-md backdrop-blur-md">
       <p className="text-xs uppercase tracking-[0.3em] text-emerald-700">Cotización formal</p>

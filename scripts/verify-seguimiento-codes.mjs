@@ -74,8 +74,13 @@ const hasAllExpected = (actual, expected) => expected.every((value) => actual.in
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const randomJitter = (maxMs = 250) => Math.floor(Math.random() * maxMs);
+
+const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
 const fetchLoginWithRetry = async (code) => {
-  const maxAttempts = 4;
+  const maxAttempts = 7;
+  const maxBackoffMs = 30_000;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const response = await fetch(`${API_BASE_URL}/api/seguimiento/login`, {
@@ -91,7 +96,12 @@ const fetchLoginWithRetry = async (code) => {
     }
 
     const retryAfter = Number.parseInt(response.headers.get("retry-after") || "", 10);
-    const backoffMs = Number.isFinite(retryAfter) ? retryAfter * 1000 : 800 * 2 ** (attempt - 1);
+    const baseBackoffMs = Number.isFinite(retryAfter)
+      ? retryAfter * 1000
+      : 1000 * 2 ** (attempt - 1);
+    const backoffMs = clamp(baseBackoffMs + randomJitter(), 1000, maxBackoffMs);
+
+    console.log(`  [retry] ${code} attempt ${attempt}/${maxAttempts} hit 429, waiting ${backoffMs}ms`);
     await wait(backoffMs);
   }
 

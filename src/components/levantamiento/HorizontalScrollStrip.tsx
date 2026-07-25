@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
   type ReactNode,
-  type Ref,
 } from "react";
 
 const arrowButtonClassDark =
@@ -20,8 +19,8 @@ export type HorizontalScrollStripProps = {
   children: ReactNode;
   /** Clases del contenedor con overflow-x (p. ej. fila flex del catálogo). Debe incluir `flex`, `overflow-x-auto`, `min-w-0`, `flex-1`. */
   scrollClassName: string;
-  /** Ref al nodo scrollable (p. ej. para «Ver todos» con scrollWidth). */
-  scrollContainerRef?: Ref<HTMLDivElement | null>;
+  /** Ref callback al nodo scrollable (p. ej. para «Ver todos» con scrollWidth). */
+  scrollContainerRef?: (el: HTMLDivElement | null) => void;
   className?: string;
   /** Flechas oscuras (carruseles zinc) o claras (showroom sobre fondo claro). */
   variant?: "dark" | "light";
@@ -49,12 +48,7 @@ export default function HorizontalScrollStrip({
   const setRefs = useCallback(
     (el: HTMLDivElement | null) => {
       innerRef.current = el;
-      if (!scrollContainerRef) return;
-      if (typeof scrollContainerRef === "function") {
-        scrollContainerRef(el);
-      } else {
-        scrollContainerRef.current = el;
-      }
+      scrollContainerRef?.(el);
     },
     [scrollContainerRef],
   );
@@ -80,11 +74,12 @@ export default function HorizontalScrollStrip({
   useEffect(() => {
     const el = innerRef.current;
     if (!el) return;
-    updateEdges();
+    const rafId = window.requestAnimationFrame(() => updateEdges());
     el.addEventListener("scroll", updateEdges, { passive: true });
     const ro = new ResizeObserver(() => updateEdges());
     ro.observe(el);
     return () => {
+      window.cancelAnimationFrame(rafId);
       el.removeEventListener("scroll", updateEdges);
       ro.disconnect();
     };

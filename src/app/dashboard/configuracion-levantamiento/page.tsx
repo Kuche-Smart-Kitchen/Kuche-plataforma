@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { RotateCcw, Save, Search, Trash2, X } from "lucide-react";
 import { DashboardBackButton } from "@/components/dashboard/DashboardBackButton";
 import { NumericInputEmptyZero } from "@/components/dashboard/NumericInputEmptyZero";
 import {
-  createDefaultLevantamientoConfig,
   getLevantamientoConfig,
   resetLevantamientoConfigToDefault,
   saveLevantamientoConfig,
@@ -66,12 +65,7 @@ function DecimalFractionInput({
 }: DecimalFractionInputProps) {
   const [draft, setDraft] = useState(() => fractionToDraftString(value));
   const [focused, setFocused] = useState(false);
-
-  useEffect(() => {
-    if (!focused) {
-      setDraft(fractionToDraftString(value));
-    }
-  }, [value, focused]);
+  const displayDraft = focused ? draft : fractionToDraftString(value);
 
   return (
     <input
@@ -82,7 +76,7 @@ function DecimalFractionInput({
       placeholder={placeholder}
       className={className}
       aria-label={ariaLabel}
-      value={draft}
+      value={displayDraft}
       onChange={(e) => setDraft(e.target.value)}
       onFocus={() => setFocused(true)}
       onBlur={() => {
@@ -95,8 +89,7 @@ function DecimalFractionInput({
 }
 
 export default function ConfiguracionLevantamientoPage() {
-  const [config, setConfig] = useState<LevantamientoConfig>(() => createDefaultLevantamientoConfig());
-  const [mounted, setMounted] = useState(false);
+  const [config, setConfig] = useState<LevantamientoConfig>(() => getLevantamientoConfig());
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "ok" | "error">("idle");
   const [newMat, setNewMat] = useState({
     nombre: "",
@@ -108,11 +101,6 @@ export default function ConfiguracionLevantamientoPage() {
   const [deletePending, setDeletePending] = useState<{ id: string; nombre: string } | null>(null);
   const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
   const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    setConfig(getLevantamientoConfig());
-  }, []);
 
   const sortedMateriales = useMemo(() => {
     const order = { cubierta: 0, frente: 1, herraje: 2 };
@@ -181,15 +169,6 @@ export default function ConfiguracionLevantamientoPage() {
     }));
     setNewMat((n) => ({ ...n, nombre: "", precioPorMetro: 0 }));
   };
-
-  if (!mounted) {
-    return (
-      <main className="min-h-screen bg-background text-primary">
-        <DashboardBackButton />
-        <p className="text-sm text-secondary">Cargando configuración…</p>
-      </main>
-    );
-  }
 
   return (
     <main className="min-h-screen bg-background text-primary">

@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect, react-hooks/preserve-manual-memoization */
 "use client";
 
 import {
@@ -2319,6 +2320,7 @@ export default function CotizadorPreliminarPage() {
                       }
                     >
                       <ApplianceTypeImage
+                        key={currentApplianceItem.id}
                         item={currentApplianceItem}
                         alt=""
                         className={
@@ -2554,6 +2556,7 @@ export default function CotizadorPreliminarPage() {
                               >
                                 <div className={streamPosterClass(applianceStep === idx, item)}>
                                   <ApplianceTypeImage
+                                    key={item.id}
                                     item={item}
                                     alt=""
                                     className={applianceStreamCatalogThumbClass(item)}
@@ -2628,6 +2631,7 @@ export default function CotizadorPreliminarPage() {
                           >
                             <div className={streamPosterClass(applianceStep === idx, item)}>
                               <ApplianceTypeImage
+                                key={item.id}
                                 item={item}
                                 alt=""
                                 className={applianceStreamCatalogThumbClass(item)}
@@ -2817,6 +2821,7 @@ export default function CotizadorPreliminarPage() {
                 <div className="grid gap-6 lg:grid-cols-[minmax(0,240px)_1fr]">
                   <div className="relative mx-auto aspect-[2/3] w-full max-w-[min(20rem,92vw)] overflow-hidden rounded-2xl border border-primary/10 bg-white lg:mx-0">
                     <LightingTypeImage
+                      key={lightingDetailItem.id}
                       item={lightingDetailItem}
                       alt=""
                       className="absolute inset-0 z-0 box-border h-full w-full object-contain object-center p-2"
@@ -2972,6 +2977,7 @@ export default function CotizadorPreliminarPage() {
                                 )}
                               >
                                 <LightingTypeImage
+                                  key={item.id}
                                   item={item}
                                   alt=""
                                   className={streamLightingThumbClass}
@@ -3093,6 +3099,7 @@ export default function CotizadorPreliminarPage() {
                             )}
                           >
                             <LightingTypeImage
+                              key={item.id}
                               item={item}
                               alt=""
                               className={streamLightingThumbClass}

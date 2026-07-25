@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { DateInput } from "@/components/ui/DateInput";
 import { DatetimeLocalInput } from "@/components/ui/DatetimeLocalInput";
 import {
@@ -22,18 +21,11 @@ type Props = {
  */
 export function DueDateInput({ value, onChange, className = "" }: Props) {
   const raw = value?.trim() ?? "";
-  const [includeTime, setIncludeTime] = useState(() => dueDateHasTime(value));
-
-  useEffect(() => {
-    const v = value?.trim() ?? "";
-    if (!v) return;
-    setIncludeTime(dueDateHasTime(value));
-  }, [value]);
+  const includeTime = dueDateHasTime(value);
 
   const datePart = raw.split("T")[0] ?? "";
 
   const toggleTime = (checked: boolean) => {
-    setIncludeTime(checked);
     if (!checked) {
       onChange(datePart ? datePart : undefined);
       return;

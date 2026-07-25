@@ -7,42 +7,13 @@ import { useRef, useState } from "react";
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
-
-type Hotspot = {
-  id: string;
-  label: string;
-  detail?: string;
-  top: string;
-  left: string;
-  imageSrc?: string;
-  imageAlt?: string;
-};
-
-type ProjectImage = {
-  src: string;
-  alt: string;
-  hotspots?: Hotspot[];
-  objectFit?: "cover" | "contain";
-};
-
-type ProjectDetail = {
-  label: string;
-  value: string;
-};
-
-export type Project = {
-  id: string;
-  title: string;
-  description: string;
-  category: string;
-  mainCategory: string;
-  subCategory: string;
-  details: ProjectDetail[];
-  images: ProjectImage[];
-};
+import {
+  type CatalogHotspot,
+  type CatalogProject,
+} from "@/lib/catalog-types";
 
 type ProjectCardProps = {
-  project: Project;
+  project: CatalogProject;
 };
 
 const pulseTransition = {
@@ -54,7 +25,7 @@ const pulseTransition = {
 export default function ProjectCard({ project }: ProjectCardProps) {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [activeHotspot, setActiveHotspot] = useState<string | null>(null);
-  const [selectedHotspot, setSelectedHotspot] = useState<Hotspot | null>(null);
+  const [selectedHotspot, setSelectedHotspot] = useState<CatalogHotspot | null>(null);
   const modalRef = useRef<HTMLDivElement | null>(null);
 
   useEscapeClose(Boolean(selectedHotspot), () => setSelectedHotspot(null));
@@ -77,7 +48,7 @@ export default function ProjectCard({ project }: ProjectCardProps) {
             sizes="(min-width: 1024px) 60vw, 100vw"
           />
 
-          {(currentImage.hotspots ?? []).map((spot) => {
+          {currentImage.hotspots.map((spot) => {
             const isActive = activeHotspot === spot.id;
             return (
               <div
@@ -200,11 +171,11 @@ export default function ProjectCard({ project }: ProjectCardProps) {
           >
             <div className="relative h-44 w-full bg-stone-100 sm:h-56">
               <Image
-                src={selectedHotspot.imageSrc ?? currentImage.src}
-                alt={selectedHotspot.imageAlt ?? currentImage.alt}
+                src={selectedHotspot.imageSrc}
+                alt={selectedHotspot.imageAlt}
                 fill
                 className={
-                  selectedHotspot.imageSrc || currentImage.objectFit === "contain"
+                  currentImage.objectFit === "contain"
                     ? "object-contain"
                     : "object-cover"
                 }
@@ -218,11 +189,9 @@ export default function ProjectCard({ project }: ProjectCardProps) {
               <h4 className="mt-3 text-xl font-semibold text-primary">
                 {selectedHotspot.label}
               </h4>
-              {selectedHotspot.detail ? (
-                <p className="mt-3 text-sm leading-relaxed text-secondary">
-                  {selectedHotspot.detail}
-                </p>
-              ) : null}
+              <p className="mt-3 text-sm leading-relaxed text-secondary">
+                {selectedHotspot.detail}
+              </p>
               <div className="mt-6 flex flex-wrap items-center gap-3">
                 <Link
                   href="/agendar"

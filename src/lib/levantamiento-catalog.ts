@@ -1948,7 +1948,7 @@ export function normalizeLevantamientoDetalle(raw: unknown): LevantamientoDetall
       : d.lightingOtro;
 
   const wallSlotCountRaw = r.wallSlotCount;
-  let wallMedidasModoLibre = r.wallMedidasModoLibre === true;
+  const wallMedidasModoLibre = r.wallMedidasModoLibre === true;
   let wallSlotCount: number;
   if (wallMedidasModoLibre) {
     wallSlotCount = 0;
