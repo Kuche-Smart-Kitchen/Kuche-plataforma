@@ -16,6 +16,8 @@ declare global {
   interface Window {
     turnstile?: {
       render: (container: HTMLElement, options: Record<string, unknown>) => string;
+      getResponse?: (container: HTMLElement) => string;
+      reset?: (container: HTMLElement) => void;
       remove?: (widgetId: string) => void;
     };
   }

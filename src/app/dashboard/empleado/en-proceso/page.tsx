@@ -8,6 +8,8 @@ import { getTaskCardSubtitle, kanbanStorageKey, stageStyles, type KanbanTask } f
 import { ClientDocuments } from "@/components/admin/ClientDocuments";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
+import { useAuthContext } from "@/contexts/AuthContext";
+import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { EMPLEADO_DASHBOARD_USER } from "@/lib/empleado-dashboard-user";
 
 const stageLabel: Record<string, string> = {
@@ -28,25 +30,44 @@ function getTasksInProgressForEmpleado(tasks: KanbanTask[], empleado: string): K
 }
 
 export default function EmpleadoClientesEnProcesoPage() {
+  const { user } = useAuthContext();
+  const currentEmployeeName = user?.nombre?.trim() || EMPLEADO_DASHBOARD_USER;
   const [tasks, setTasks] = useState<KanbanTask[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
   const [selectedClient, setSelectedClient] = useState<KanbanTask | null>(null);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const stored = window.localStorage.getItem(kanbanStorageKey);
-      const parsed = stored ? (JSON.parse(stored) as KanbanTask[]) : [];
-      setTasks(Array.isArray(parsed) ? parsed : []);
-    } catch {
-      setTasks([]);
-    }
-    setIsHydrated(true);
+    let cancelled = false;
+
+    const loadTasks = async () => {
+      if (typeof window === "undefined") return;
+      await syncKanbanTasksFromBackend();
+      try {
+        const stored = window.localStorage.getItem(kanbanStorageKey);
+        const parsed = stored ? (JSON.parse(stored) as KanbanTask[]) : [];
+        if (!cancelled) {
+          setTasks(Array.isArray(parsed) ? parsed : []);
+        }
+      } catch {
+        if (!cancelled) {
+          setTasks([]);
+        }
+      }
+      if (!cancelled) {
+        setIsHydrated(true);
+      }
+    };
+
+    void loadTasks();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const inProgress = useMemo(
-    () => getTasksInProgressForEmpleado(tasks, EMPLEADO_DASHBOARD_USER),
-    [tasks],
+    () => getTasksInProgressForEmpleado(tasks, currentEmployeeName),
+    [currentEmployeeName, tasks],
   );
 
   const columnCount = useClientCardColumns(3);

@@ -7,9 +7,11 @@ import { CheckCircle2, Plus } from "lucide-react";
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { DueDateInput } from "@/components/ui/DueDateInput";
 import { KanbanTablero } from "@/components/admin/KanbanTablero";
 import { PublicStatusEditorModal } from "@/components/admin/PublicStatusEditorModal";
+import { useAuthContext } from "@/contexts/AuthContext";
 import {
   kanbanColumns,
   kanbanStorageKey,
@@ -21,8 +23,8 @@ import {
 import { generatePublicProjectCode } from "@/lib/project-code";
 import { EMPLEADO_DASHBOARD_USER as CURRENT_USER } from "@/lib/empleado-dashboard-user";
 
-function isAssignedToCurrentUser(t: KanbanTask): boolean {
-  return (t.assignedTo ?? []).some((n) => n === CURRENT_USER);
+function isAssignedToCurrentUser(t: KanbanTask, currentUserName: string): boolean {
+  return (t.assignedTo ?? []).some((n) => n === currentUserName);
 }
 
 /** Alineado con “clientes en proceso”: fuera del tablero activo si ya está confirmado o descartado en contrato. */
@@ -73,6 +75,8 @@ function loadTeamMembers(): { id: string; name: string }[] {
 
 export default function EmpleadoDashboard() {
   const router = useRouter();
+  const { user } = useAuthContext();
+  const currentUserName = user?.nombre?.trim() || CURRENT_USER;
   const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>(defaultTeamMembers);
   const [viewMode, setViewMode] = useState<"all" | "mine">("mine");
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -98,20 +102,35 @@ export default function EmpleadoDashboard() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem(kanbanStorageKey);
-      const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-      setKanbanTasks(Array.isArray(parsed) ? (parsed as KanbanTask[]) : []);
-    } catch {
-      setKanbanTasks([]);
-    }
+    let cancelled = false;
+
+    const loadTasks = async () => {
+      if (typeof window === "undefined") return;
+      await syncKanbanTasksFromBackend();
+      try {
+        const raw = window.localStorage.getItem(kanbanStorageKey);
+        const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+        if (!cancelled) {
+          setKanbanTasks(Array.isArray(parsed) ? (parsed as KanbanTask[]) : []);
+        }
+      } catch {
+        if (!cancelled) {
+          setKanbanTasks([]);
+        }
+      }
+    };
+
+    void loadTasks();
+
+    return () => {
+      cancelled = true;
+    };
   }, [refreshTrigger]);
 
   /** Todas las tareas asignadas al empleado que tienen código (incluye confirmadas e inactivas). */
   const myTasksWithCode = useMemo(() => {
-    return kanbanTasks.filter((t) => Boolean(t.codigoProyecto?.trim()) && isAssignedToCurrentUser(t));
-  }, [kanbanTasks]);
+    return kanbanTasks.filter((t) => Boolean(t.codigoProyecto?.trim()) && isAssignedToCurrentUser(t, currentUserName));
+  }, [currentUserName, kanbanTasks]);
 
   const tasksProceso = useMemo(
     () => myTasksWithCode.filter(taskIsEnProcesoPipeline),
@@ -150,7 +169,7 @@ export default function EmpleadoDashboard() {
       title: project,
       stage: newTaskStage,
       status: "pendiente",
-      assignedTo: [CURRENT_USER],
+      assignedTo: [currentUserName],
       project,
       notes: "",
       files: [],
@@ -198,7 +217,7 @@ export default function EmpleadoDashboard() {
           <p className="text-xs uppercase tracking-[0.3em] text-secondary">Dashboard Empleado</p>
           <h1 className="mt-2 text-3xl font-semibold">Tablero general</h1>
           <p className="mt-2 text-sm text-secondary">
-            Hola {CURRENT_USER}, aquí está tu flujo de trabajo.
+            Hola {currentUserName}, aquí está tu flujo de trabajo.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -244,7 +263,7 @@ export default function EmpleadoDashboard() {
         className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-md"
       >
         <KanbanTablero
-          filterByEmployee={viewMode === "mine" ? CURRENT_USER : null}
+          filterByEmployee={viewMode === "mine" ? currentUserName : null}
           pipelineFilter={taskIsEnProcesoPipeline}
           refreshTrigger={refreshTrigger}
           teamMembers={teamMembers}
@@ -440,7 +459,7 @@ export default function EmpleadoDashboard() {
                 </button>
               </div>
               <p className="mt-2 text-sm text-secondary">
-                La tarea será asignada automáticamente a ti ({CURRENT_USER}).
+                La tarea será asignada automáticamente a ti ({currentUserName}).
               </p>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">

@@ -3,6 +3,7 @@ import { Manrope } from "next/font/google";
 import "./globals.css";
 import NumberInputWheelGuard from "@/components/layout/NumberInputWheelGuard";
 import Navbar from "@/components/layout/Navbar";
+import { AuthProvider } from "@/contexts/AuthContext";
 
 const manrope = Manrope({
   variable: "--font-manrope",
@@ -22,9 +23,11 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body className={`${manrope.variable} font-sans antialiased`}>
-        <NumberInputWheelGuard />
-        <Navbar />
-        {children}
+        <AuthProvider>
+          <NumberInputWheelGuard />
+          <Navbar />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

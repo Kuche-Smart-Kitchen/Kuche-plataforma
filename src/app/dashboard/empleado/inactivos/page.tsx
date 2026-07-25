@@ -14,6 +14,8 @@ import {
 import { ClientDocuments } from "@/components/admin/ClientDocuments";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
+import { useAuthContext } from "@/contexts/AuthContext";
+import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { EMPLEADO_DASHBOARD_USER } from "@/lib/empleado-dashboard-user";
 
 const formatDate = (timestamp: number | undefined): string => {
@@ -22,13 +24,13 @@ const formatDate = (timestamp: number | undefined): string => {
   return date.toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" });
 };
 
-function isAssignedToEmpleado(t: KanbanTask): boolean {
-  return (t.assignedTo ?? []).some((n) => n === EMPLEADO_DASHBOARD_USER);
+function isAssignedToEmpleado(t: KanbanTask, empleado: string): boolean {
+  return (t.assignedTo ?? []).some((n) => n === empleado);
 }
 
 /** Inactivos: seguimiento descartado en Kanban (`followUpStatus`), no el campo `status` de la tarea. */
-function isEmpleadoInactivo(t: KanbanTask): boolean {
-  return t.followUpStatus === "descartado" && isAssignedToEmpleado(t);
+function isEmpleadoInactivo(t: KanbanTask, empleado: string): boolean {
+  return t.followUpStatus === "descartado" && isAssignedToEmpleado(t, empleado);
 }
 
 const mergeTasks = (storedTasks: KanbanTask[]): KanbanTask[] => {
@@ -42,6 +44,8 @@ const mergeTasks = (storedTasks: KanbanTask[]): KanbanTask[] => {
 };
 
 export default function EmpleadoInactivosPage() {
+  const { user } = useAuthContext();
+  const currentEmployeeName = user?.nombre?.trim() || EMPLEADO_DASHBOARD_USER;
   const [clients, setClients] = useState<KanbanTask[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
   const [selectedClient, setSelectedClient] = useState<KanbanTask | null>(null);
@@ -52,29 +56,42 @@ export default function EmpleadoInactivosPage() {
   }, [clients, columnCount]);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(kanbanStorageKey);
-    let allTasks: KanbanTask[] = [];
+    let cancelled = false;
 
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as KanbanTask[];
-        allTasks = mergeTasks(parsed);
-        saveKanbanTasksToLocalStorage(allTasks);
-      } catch {
+    const loadClients = async () => {
+      await syncKanbanTasksFromBackend();
+      const stored = window.localStorage.getItem(kanbanStorageKey);
+      let allTasks: KanbanTask[] = [];
+
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored) as KanbanTask[];
+          allTasks = mergeTasks(parsed);
+          saveKanbanTasksToLocalStorage(allTasks);
+        } catch {
+          allTasks = initialKanbanTasks;
+        }
+      } else {
         allTasks = initialKanbanTasks;
+        saveKanbanTasksToLocalStorage(allTasks);
       }
-    } else {
-      allTasks = initialKanbanTasks;
-      saveKanbanTasksToLocalStorage(allTasks);
-    }
 
-    setClients(allTasks.filter(isEmpleadoInactivo));
-    setIsHydrated(true);
-  }, []);
+      if (!cancelled) {
+        setClients(allTasks.filter((task) => isEmpleadoInactivo(task, currentEmployeeName)));
+        setIsHydrated(true);
+      }
+    };
+
+    void loadClients();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentEmployeeName]);
 
   const handleReactivate = (clientId: string) => {
     const target = clients.find((c) => c.id === clientId);
-    if (!target || !isAssignedToEmpleado(target)) return;
+    if (!target || !isAssignedToEmpleado(target, currentEmployeeName)) return;
 
     const stored = window.localStorage.getItem(kanbanStorageKey);
     if (!stored) return;
@@ -82,7 +99,7 @@ export default function EmpleadoInactivosPage() {
       const tasks = JSON.parse(stored) as KanbanTask[];
       const updatedTasks = tasks.map((task) => {
         if (task.id !== clientId) return task;
-        if (!isAssignedToEmpleado(task)) return task;
+        if (!isAssignedToEmpleado(task, currentEmployeeName)) return task;
         return {
           ...task,
           followUpStatus: "pendiente" as const,
@@ -92,7 +109,7 @@ export default function EmpleadoInactivosPage() {
         };
       });
       saveKanbanTasksToLocalStorage(updatedTasks);
-      setClients(updatedTasks.filter(isEmpleadoInactivo));
+      setClients(updatedTasks.filter((task) => isEmpleadoInactivo(task, currentEmployeeName)));
       setSelectedClient(null);
     } catch {
       console.error("Error al reactivar cliente");

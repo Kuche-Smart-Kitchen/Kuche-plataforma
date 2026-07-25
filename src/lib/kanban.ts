@@ -61,11 +61,17 @@ export type CotizacionFormalData = PreliminarData & {
 
 export type KanbanTask = {
   id: string;
+  /** ID de entidad de origen cuando la tarjeta viene del backend (cita/tarea/proyecto). */
+  sourceId?: string;
+  /** Tipo de entidad original reportada por backend para resolver mutaciones específicas. */
+  sourceType?: string;
   title: string;
   stage: TaskStage;
   status: TaskStatus;
   /** Uno o más responsables (permite que 2+ empleados tengan la misma actividad). */
   assignedTo: string[];
+  /** IDs backend de los responsables cuando están disponibles. */
+  assignedToIds?: string[];
   project: string;
   notes?: string;
   files?: TaskFile[];

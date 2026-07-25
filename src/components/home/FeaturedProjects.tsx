@@ -5,7 +5,7 @@ import ProjectCard from "./ProjectCard";
 
 const projects = [
   {
-    title: "Atardecer",
+    title: "Proyecto Residencial Navarro",
     description: "Cocina luminosa con madera natural y diseño funcional.",
     images: [
       "/images/home/proyecto-destacado-1/cocina-1.jpg",
@@ -15,8 +15,8 @@ const projects = [
     ],
   },
   {
-    title: "Residencial con isla",
-    description: "Cocina luminosa con madera natural y diseño funcional.",
+    title: "Proyecto Loft Reforma",
+    description: "Isla central protagonista y herrajes premium integrados.",
     images: [
       "/images/home/proyecto-destacado-2/cocina-1.jpg",
       "/images/home/proyecto-destacado-2/render-uno.jpg",
@@ -25,7 +25,7 @@ const projects = [
     ],
   },
   {
-    title: "Estilo Moderno",
+    title: "Proyecto Casa Bruma",
     description: "Paleta neutra con toques de color y textura elegante.",
     images: [
       "/images/home/proyecto-destacado-3/cocina-1.jpg",

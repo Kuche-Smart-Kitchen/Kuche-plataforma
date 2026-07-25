@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   Calendar,
@@ -17,6 +17,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
+import { useAuthContext } from "@/contexts/AuthContext";
 
 const navigation = [
   { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
@@ -31,7 +32,7 @@ const navigation = [
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
+  const { logout } = useAuthContext();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -144,7 +145,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           type="button"
           onClick={() => {
             setIsMobileMenuOpen(false);
-            router.push("/login");
+            void logout();
           }}
           className="group relative mt-6 flex items-center gap-3 rounded-2xl px-4 py-2.5 text-sm font-semibold text-gray-600 transition hover:bg-gray-100"
         >

@@ -10,6 +10,7 @@ import { KanbanTablero } from "@/components/admin/KanbanTablero";
 import { PublicStatusEditorModal } from "@/components/admin/PublicStatusEditorModal";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import {
   kanbanColumns,
   kanbanStorageKey,
@@ -81,14 +82,29 @@ export default function OperacionesPage() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem(kanbanStorageKey);
-      const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-      setKanbanTasks(Array.isArray(parsed) ? (parsed as KanbanTask[]) : []);
-    } catch {
-      setKanbanTasks([]);
-    }
+    let cancelled = false;
+
+    const loadTasks = async () => {
+      if (typeof window === "undefined") return;
+      await syncKanbanTasksFromBackend();
+      try {
+        const raw = window.localStorage.getItem(kanbanStorageKey);
+        const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+        if (!cancelled) {
+          setKanbanTasks(Array.isArray(parsed) ? (parsed as KanbanTask[]) : []);
+        }
+      } catch {
+        if (!cancelled) {
+          setKanbanTasks([]);
+        }
+      }
+    };
+
+    void loadTasks();
+
+    return () => {
+      cancelled = true;
+    };
   }, [refreshTrigger]);
 
   const tasksWithProjectCode = useMemo(

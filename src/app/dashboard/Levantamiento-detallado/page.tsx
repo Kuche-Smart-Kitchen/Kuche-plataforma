@@ -34,8 +34,21 @@ import { CatalogProjectTypeField } from "@/components/catalogo/CatalogProjectTyp
 import {
   CATALOG_PROJECT_TYPES,
   isCocinasProjectTypeForConIsla,
-  normalizeLegacyProjectTypeToCatalog,
 } from "@/lib/catalog-project-types";
+import {
+  buildLevantamientoMetrics,
+  type LevantamientoScenarioId,
+} from "./logica_Levantamiento_y_cotizacion/calculos";
+import {
+  LEVANTAMIENTO_SCENARIO_OPTIONS,
+  resolveScenarioReferenceCateo,
+} from "./logica_Levantamiento_y_cotizacion/escenarios";
+import {
+  buildMaterialShowroomCatalog,
+  buildShowroomSelectionSummary,
+  type ShowroomMaterialOption as MaterialOption,
+} from "./logica_Levantamiento_y_cotizacion/showroomCatalog";
+import { getSectionAInitialValues } from "./logica_Levantamiento_y_cotizacion/sectionA";
 import {
   APPLIANCE_CATEGORIAS,
   APPLIANCE_ITEMS,
@@ -48,9 +61,6 @@ import {
   getApplianceCategoryProgress,
   getWallMeasureFieldDefs,
   computeLightingSelectedIds,
-  cotizacionIluminacionTotal,
-  cotizacionSpecialAccessoriesTotal,
-  cotizacionExtrasTotal,
   defaultLightingQty,
   getLightingEffectiveQty,
   isWallSlotKey,
@@ -91,10 +101,10 @@ import {
 } from "@/lib/seguimiento-project";
 import {
   createDefaultLevantamientoConfig,
-  DEFAULT_LEVANTAMIENTO_MATERIALES,
   getLevantamientoConfig,
   resolvePrecioPorMetroForShowroomSelection,
   type LevantamientoConfig,
+  DEFAULT_LEVANTAMIENTO_MATERIALES,
   type MaterialCategoria,
 } from "@/lib/config-levantamiento";
 import { DashboardBackButton } from "@/components/dashboard/DashboardBackButton";
@@ -164,12 +174,6 @@ function WallCountIcon({ count, className }: { count: number; className?: string
 
 /** Campos de «Otro tipo de muro» reutilizados para el modo libre (texto + ancho / alto / fondo en m). */
 const WALL_LIBRE_FIELD_DEFS = getWallMeasureFieldDefs("pared-otro");
-
-type MaterialOption = {
-  id: string;
-  name: string;
-  image: string;
-};
 
 type MaterialCategory = "cubiertas" | "frentes" | "herrajes";
 
@@ -497,49 +501,8 @@ const MaterialGrid = ({
   );
 };
 
-function buildMaterialShowroomCatalog(): {
-  cubiertas: MaterialOption[];
-  frentes: MaterialOption[];
-  herrajes: MaterialOption[];
-} {
-  const out: { cubiertas: MaterialOption[]; frentes: MaterialOption[]; herrajes: MaterialOption[] } = {
-    cubiertas: [],
-    frentes: [],
-    herrajes: [],
-  };
-  const key: Record<MaterialCategoria, "cubiertas" | "frentes" | "herrajes"> = {
-    cubierta: "cubiertas",
-    frente: "frentes",
-    herraje: "herrajes",
-  };
-  for (const m of DEFAULT_LEVANTAMIENTO_MATERIALES) {
-    out[key[m.categoria]].push({ id: m.id, name: m.nombre, image: "" });
-  }
-  return out;
-}
-
-const materialCatalog = buildMaterialShowroomCatalog();
-
-function computeShowroomFrentesCost(
-  largoValue: number,
-  selectedFrenteIds: string[],
-  mats: LevantamientoConfig["materiales"],
-): number {
-  const count = selectedFrenteIds.length;
-  if (count === 0 || largoValue <= 0) return 0;
-  const metrosPorFrente = largoValue / count;
-  return selectedFrenteIds.reduce((acc, fid) => {
-    const f = materialCatalog.frentes.find((item) => item.id === fid);
-    if (!f) return acc;
-    const precioM = resolvePrecioPorMetroForShowroomSelection(mats, "frente", {
-      id: f.id,
-      name: f.name,
-    });
-    return acc + metrosPorFrente * precioM;
-  }, 0);
-}
-
-type AutoScenarioId = "esencial" | "tendencia" | "premium";
+const materialCatalog = buildMaterialShowroomCatalog(DEFAULT_LEVANTAMIENTO_MATERIALES);
+type AutoScenarioId = LevantamientoScenarioId;
 
 export default function CotizadorPreliminarPage() {
   const router = useRouter();
@@ -974,11 +937,15 @@ export default function CotizadorPreliminarPage() {
           const task = tasks.find((t) => t.id === taskId);
           if (task) {
             setActiveCitaTask(task);
-            if (task.project) setClientName(task.project);
-            const lastPre = getPreliminarList(task).at(-1);
-            if (lastPre?.projectType?.trim()) {
-              setProjectType(normalizeLegacyProjectTypeToCatalog(lastPre.projectType));
-            }
+            const initialValues = getSectionAInitialValues(task);
+
+            if (initialValues.clientName) setClientName(initialValues.clientName);
+            if (initialValues.projectType) setProjectType(initialValues.projectType);
+            if (initialValues.location) setLocation(initialValues.location);
+            if (initialValues.largo) setLargo(initialValues.largo);
+            if (initialValues.alto) setAlto(initialValues.alto);
+            if (initialValues.deliveryWeeksMin) setDeliveryWeeksMin(initialValues.deliveryWeeksMin);
+            if (initialValues.deliveryWeeksMax) setDeliveryWeeksMax(initialValues.deliveryWeeksMax);
           }
         } catch {
           // ignore
@@ -1230,80 +1197,16 @@ export default function CotizadorPreliminarPage() {
   };
 
   const metrics = useMemo(() => {
-    const largoValue = Math.max(0, Number.parseFloat(largo) || 0);
-    const mats = levantamientoConfig.materiales;
-
-    const cubiertaOpt = materialCatalog.cubiertas.find((item) => item.id === selectedCubierta);
-    const herrajeOpt = materialCatalog.herrajes.find((item) => item.id === selectedHerraje);
-
-    const pickC = cubiertaOpt ? { id: cubiertaOpt.id, name: cubiertaOpt.name } : null;
-    const pickH = herrajeOpt ? { id: herrajeOpt.id, name: herrajeOpt.name } : null;
-
-    const precioCubiertaM = resolvePrecioPorMetroForShowroomSelection(mats, "cubierta", pickC);
-    const precioHerrajeM = resolvePrecioPorMetroForShowroomSelection(mats, "herraje", pickH);
-
-    const factorConfig = Math.min(
-      5,
-      Math.max(1, levantamientoConfig.factorHastaTecho ?? 1.25),
-    );
-    const factorActivo =
-      levantamiento.medidasGenerales?.hastaTecho === true ? factorConfig : 1;
-
-    const costoCubiertas = largoValue * precioCubiertaM;
-    const costoFrentes =
-      computeShowroomFrentesCost(largoValue, selectedFrenteIds, mats) * factorActivo;
-    const costoHerrajes = largoValue * precioHerrajeM * factorActivo;
-    const ep = levantamientoConfig.extrasPrecios;
-    const costoIluminacion = cotizacionIluminacionTotal(levantamiento, ep.iluminacion);
-    const costoAccesoriosEspeciales = cotizacionSpecialAccessoriesTotal(
+    return buildLevantamientoMetrics({
+      largo,
+      selectedCubierta,
+      selectedFrenteIds,
+      selectedHerraje,
+      materialCatalog,
+      levantamientoConfig,
       levantamiento,
-      ep.accesoriosEspeciales,
-    );
-    const costoExtras = cotizacionExtrasTotal(levantamiento, ep);
-
-    const nuevoSubtotal = costoCubiertas + costoFrentes + costoHerrajes + costoExtras;
-    const costoMateriales = costoCubiertas + costoFrentes + costoHerrajes;
-
-    const precioEscenarioLineal =
-      levantamientoConfig.scenarioPrices[selectedScenario] ?? 5000;
-    const costoReferenciaEscenario = largoValue * precioEscenarioLineal;
-
-    const iva = nuevoSubtotal * levantamientoConfig.ivaPercent;
-    const total = nuevoSubtotal + iva;
-    const m = levantamientoConfig.marginPercent;
-    const rangeMin = total * (1 - m);
-    const rangeMax = total * (1 + m);
-
-    const hastaTechoActivo = levantamiento.medidasGenerales?.hastaTecho === true;
-    const factorHastaTechoLegendText = hastaTechoActivo
-      ? `(Incluye factor hasta el techo: x${new Intl.NumberFormat("es-MX", {
-          minimumFractionDigits: 0,
-          maximumFractionDigits: 2,
-        }).format(factorConfig)})`
-      : null;
-
-    return {
-      largoValue,
-      /** Cateo: solo referencia visual; no entra al subtotal real. */
-      costoReferenciaEscenario,
-      /** @deprecated en UI; mantener alias para PDF/legado: mismo valor que costoReferenciaEscenario. */
-      costoBase: costoReferenciaEscenario,
-      costoCubiertas,
-      costoFrentes,
-      costoHerrajes,
-      costoMateriales,
-      costoIluminacion,
-      costoAccesoriosEspeciales,
-      costoExtras,
-      subtotal: nuevoSubtotal,
-      iva,
-      total,
-      rangeMin,
-      rangeMax,
-      rangeLabel: `${formatCurrency(rangeMin)} - ${formatCurrency(rangeMax)}`,
-      marginPercent: m,
-      factorHastaTechoLegendText,
-    };
+      selectedScenario,
+    });
   }, [
     largo,
     selectedCubierta,
@@ -1315,41 +1218,16 @@ export default function CotizadorPreliminarPage() {
   ]);
 
   const selectedSummary = useMemo(() => {
-    const cubierta = materialCatalog.cubiertas.find((item) => item.id === selectedCubierta);
-    const herraje = materialCatalog.herrajes.find((item) => item.id === selectedHerraje);
-    const frenteNames = selectedFrenteIds
-      .map((id) => materialCatalog.frentes.find((item) => item.id === id)?.name)
-      .filter(Boolean);
-    const largoValue = Number.parseFloat(largo) || 0;
-    return {
-      meters: largoValue,
-      label: [cubierta?.name, ...frenteNames, herraje?.name].filter(Boolean).join(" / "),
-    };
+    return buildShowroomSelectionSummary({
+      largo,
+      selectedCubierta,
+      selectedFrenteIds,
+      selectedHerraje,
+      materialCatalog,
+    });
   }, [largo, selectedCubierta, selectedFrenteIds, selectedHerraje]);
 
-  const scenarioOptions = useMemo(
-    () => [
-      {
-        id: "esencial",
-        title: "Estandar",
-        subtitle: "Funcional y accesible",
-        image: "/images/escenarios/estimacion-base.jpeg",
-      },
-      {
-        id: "tendencia",
-        title: "Tendencia",
-        subtitle: "Balance moderno",
-        image: "/images/escenarios/estimacion-tendencia.jpeg",
-      },
-      {
-        id: "premium",
-        title: "Premium",
-        subtitle: "Detalles superiores",
-        image: "/images/escenarios/estimacion-premium.jpeg",
-      },
-    ],
-    [],
-  );
+  const scenarioOptions = LEVANTAMIENTO_SCENARIO_OPTIONS;
 
   const scenarioRangeLabel = metrics.rangeLabel;
 
@@ -3585,17 +3463,17 @@ export default function CotizadorPreliminarPage() {
             </div>
             <div className="grid gap-6 lg:grid-cols-3">
               {scenarioOptions.map((scenario) => {
-                const largoCard = Math.max(0, Number.parseFloat(largo) || 0);
-                const precioLineal =
-                  levantamientoConfig.scenarioPrices[scenario.id as keyof LevantamientoConfig["scenarioPrices"]] ??
-                  0;
-                const referenciaCateo = largoCard * precioLineal;
+                const referenciaCateo = resolveScenarioReferenceCateo(
+                  scenario.id,
+                  largo,
+                  levantamientoConfig.scenarioPrices,
+                );
                 const isActive = selectedScenario === scenario.id;
                 return (
                   <button
                     key={scenario.id}
                     type="button"
-                    onClick={() => setSelectedScenario(scenario.id as AutoScenarioId)}
+                    onClick={() => setSelectedScenario(scenario.id)}
                     className={`group overflow-hidden rounded-3xl border text-left shadow-lg transition hover:-translate-y-1 ${
                       isActive
                         ? "border-[#8B1C1C] bg-white ring-4 ring-[#8B1C1C]"

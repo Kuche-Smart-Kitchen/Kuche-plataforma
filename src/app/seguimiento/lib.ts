@@ -16,6 +16,30 @@ export type SeguimientoArchivo = {
   indexedPdfKey?: string;
 };
 
+const asText = (value: unknown): string =>
+  typeof value === "string" ? value.trim() : "";
+
+const normalizeSeguimientoFile = (raw: unknown, index: number): SeguimientoArchivo | null => {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+
+  const name = asText(row.name) || asText(row.nombre);
+  const type = asText(row.type) || asText(row.tipo);
+  const src = asText(row.src) || asText(row.url);
+  const indexedPdfKey = asText(row.indexedPdfKey);
+  const id = asText(row.id) || asText(row._id) || `${name || "file"}-${index}`;
+
+  if (!name && !src && !indexedPdfKey) return null;
+
+  return {
+    id,
+    name: name || `Archivo ${index + 1}`,
+    type: type || "otro",
+    src: src || undefined,
+    indexedPdfKey: indexedPdfKey || undefined,
+  };
+};
+
 export function getPreliminarListFromProject(p: SeguimientoProject): PreliminarData[] {
   if (p.preliminarCotizaciones && p.preliminarCotizaciones.length > 0) return p.preliminarCotizaciones;
   return p.preliminarData ? [p.preliminarData] : [];
@@ -31,14 +55,16 @@ const normalizeText = (value: string) =>
 
 export function filterArchivosForCliente(archivos: unknown[] | undefined): SeguimientoArchivo[] {
   const all = archivos ?? [];
-  return all.filter((file) => {
-    const f = file as SeguimientoArchivo;
-    if (typeof f.indexedPdfKey === "string" && f.indexedPdfKey.startsWith("workshop-")) {
-      return false;
-    }
-    if (normalizeText(f.name).includes("hoja de taller")) return false;
-    return true;
-  }) as SeguimientoArchivo[];
+  return all
+    .map((file, index) => normalizeSeguimientoFile(file, index))
+    .filter((file): file is SeguimientoArchivo => Boolean(file))
+    .filter((file) => {
+      if (typeof file.indexedPdfKey === "string" && file.indexedPdfKey.startsWith("workshop-")) {
+        return false;
+      }
+      if (normalizeText(file.name).includes("hoja de taller")) return false;
+      return true;
+    });
 }
 
 export const formatCurrency = (value: number) =>

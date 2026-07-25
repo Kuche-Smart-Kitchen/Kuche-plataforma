@@ -1,12 +1,17 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { useClienteArchivos } from "@/hooks/useClienteArchivos";
+import { seguimientoApi } from "@/lib/axios";
 import { kanbanStorageKey, type KanbanTask } from "@/lib/kanban";
-import { resolveSeguimientoProjectByCode } from "@/lib/seguimiento-access";
+import {
+  normalizePublicProjectCodeInput,
+  resolveSeguimientoProjectByCode,
+} from "@/lib/seguimiento-access";
 import {
   mergeSeguimientoFromStorage,
   enrichSeguimientoParsedWithKanbanIfMissing,
@@ -23,6 +28,7 @@ export default function SeguimientoPage() {
   const [hasAccess, setHasAccess] = useState(false);
   const [project, setProject] = useState<SeguimientoProject | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
+  const [filesWarning, setFilesWarning] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState<null | { name: string; src: string }>(null);
   const codigoInputRef = useRef<HTMLInputElement>(null);
   const modalRef = useRef<HTMLDivElement | null>(null);
@@ -32,11 +38,51 @@ export default function SeguimientoPage() {
 
   const currentProject = project ?? VOID_SEGUIMIENTO;
   const isProspect = currentProject.isProspect;
+  const normalizedCodigo = useMemo(() => normalizePublicProjectCodeInput(codigo), [codigo]);
+  const backendLookupCode = useMemo(() => normalizedCodigo.replace(/^K-/, ""), [normalizedCodigo]);
+  const projectFilesCount = project?.archivos?.length ?? 0;
+  const shouldFetchRemoteFiles = Boolean(project) && hasAccess && projectFilesCount === 0;
+  const { archivos: remoteFiles, error: remoteFilesError } = useClienteArchivos(
+    backendLookupCode,
+    shouldFetchRemoteFiles,
+  );
+
+  useEffect(() => {
+    if (!shouldFetchRemoteFiles || !remoteFilesError) {
+      setFilesWarning(null);
+      return;
+    }
+    setFilesWarning("No pudimos cargar archivos remotos; se muestran los archivos guardados localmente.");
+  }, [remoteFilesError, shouldFetchRemoteFiles]);
+
+  useEffect(() => {
+    if (!shouldFetchRemoteFiles || !project || remoteFiles.length === 0) return;
+
+    const mappedRemoteFiles = remoteFiles.map((f) => ({
+      id: f._id,
+      name: f.nombre,
+      type: f.tipo,
+      src: f.url,
+    }));
+
+    const currentSignature = JSON.stringify(project.archivos ?? []);
+    const nextSignature = JSON.stringify(mappedRemoteFiles);
+    if (currentSignature === nextSignature) return;
+
+    setProject((prev) =>
+      prev
+        ? {
+            ...prev,
+            archivos: mappedRemoteFiles,
+          }
+        : prev,
+    );
+  }, [project, remoteFiles, shouldFetchRemoteFiles]);
 
   const openImage = (name: string, src: string) => setSelectedImage({ name, src });
 
   const handleAccessSubmit = useCallback(
-    (event: React.FormEvent<HTMLFormElement>) => {
+    async (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
 
       const fromForm = new FormData(event.currentTarget).get("codigo");
@@ -55,10 +101,33 @@ export default function SeguimientoPage() {
         return;
       }
 
-      const parsed = resolveSeguimientoProjectByCode(rawCode);
+      let parsed = resolveSeguimientoProjectByCode(rawCode);
+
       if (!parsed) {
-        setCodeError("No encontramos un proyecto con ese código.");
-        return;
+        const candidates = [
+          rawCode.trim().toUpperCase().replace(/\s+/g, ""),
+          normalizePublicProjectCodeInput(rawCode),
+          normalizePublicProjectCodeInput(rawCode).replace(/^K-/, ""),
+        ].filter(Boolean);
+
+        const uniqueCandidates = Array.from(new Set(candidates));
+
+        for (const candidate of uniqueCandidates) {
+          try {
+            const response = await seguimientoApi.autenticarSeguimientoCliente(candidate);
+            if (!response.success || !response.data?.project) continue;
+
+            parsed = response.data.project;
+            break;
+          } catch {
+            // Keep trying fallback code formats before reporting an error.
+          }
+        }
+
+        if (!parsed) {
+          setCodeError("No encontramos un proyecto con ese código.");
+          return;
+        }
       }
 
       let tasks: KanbanTask[] = [];
@@ -143,6 +212,11 @@ export default function SeguimientoPage() {
               transition={{ duration: 0.4 }}
               className="space-y-10"
             >
+              {filesWarning ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  {filesWarning}
+                </div>
+              ) : null}
               {isProspect ? (
                 <ProspectDashboard project={currentProject} onOpenImage={openImage} />
               ) : (

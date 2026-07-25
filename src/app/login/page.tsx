@@ -1,35 +1,50 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, Lock, User } from "lucide-react";
+import { useAuthContext } from "@/contexts/AuthContext";
+import { getLoginRedirectForUser } from "@/lib/role-routes";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState("");
+  const { isAuthenticated, loading, login, user } = useAuthContext();
+  const [correo, setCorreo] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [errorMessage, setErrorMessage] = useState("");
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  useEffect(() => {
+    if (!loading && isAuthenticated) {
+      router.replace(getLoginRedirectForUser(user));
+    }
+  }, [isAuthenticated, loading, router, user]);
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setStatus("loading");
+    setErrorMessage("");
 
-    window.setTimeout(() => {
-      const normalized = username.trim().toLowerCase();
-      if (normalized === "admin") {
-        router.push("/admin");
-        return;
-      }
-      if (normalized === "empleado") {
-        router.push("/dashboard/empleado");
-        return;
-      }
-      setStatus("error");
-    }, 700);
+    const result = await login(correo.trim(), password);
+    if (result.success && result.user) {
+      router.push(getLoginRedirectForUser(result.user));
+      return;
+    }
+
+    setStatus("error");
+    setErrorMessage(result.error || "No fue posible iniciar sesion.");
   };
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-background pt-28 text-primary md:pt-32">
+        <div className="mx-auto max-w-6xl px-4 py-10 text-sm text-secondary">Cargando acceso...</div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-background pt-28 text-primary md:pt-32">
@@ -50,9 +65,7 @@ export default function LoginPage() {
           <div className="absolute inset-0 bg-gradient-to-br from-black/70 via-black/50 to-black/60" />
           <div className="absolute inset-0 flex flex-col items-start justify-end p-10 text-white">
             <p className="text-xs uppercase tracking-[0.3em] text-white/70">Küche</p>
-            <h1 className="mt-3 text-3xl font-semibold">
-              Ecosistema Interno
-            </h1>
+            <h1 className="mt-3 text-3xl font-semibold">Ecosistema Interno</h1>
             <p className="mt-2 max-w-sm text-sm text-white/80">
               Diseño, producción y clientes conectados en un solo flujo premium.
             </p>
@@ -78,22 +91,18 @@ export default function LoginPage() {
                 Volver al sitio web (inicio)
               </Link>
               <h2 className="text-2xl font-semibold">Inicia sesión</h2>
-              {status === "error" ? (
-                <p className="mt-2 text-sm text-secondary">
-                  Credenciales inválidas. Usa admin o empleado.
-                </p>
-              ) : null}
+              {status === "error" ? <p className="mt-2 text-sm text-secondary">{errorMessage}</p> : null}
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <label className="block text-sm font-medium text-secondary">
-                Usuario
+                Correo
                 <div className="mt-2 flex items-center gap-2 rounded-2xl border border-primary/10 bg-white px-4 py-3">
                   <User className="h-4 w-4 text-secondary" />
                   <input
-                    value={username}
-                    onChange={(event) => setUsername(event.target.value)}
-                    placeholder="admin o empleado"
+                    value={correo}
+                    onChange={(event) => setCorreo(event.target.value)}
+                    placeholder="correo@empresa.com"
                     className="w-full bg-transparent text-sm text-primary outline-none placeholder:text-secondary/60"
                     autoComplete="username"
                   />
@@ -117,7 +126,7 @@ export default function LoginPage() {
 
               <button
                 type="submit"
-                disabled={status === "loading" || !username || !password}
+                disabled={status === "loading" || !correo || !password}
                 className="flex w-full items-center justify-center rounded-2xl bg-accent py-3 text-sm font-semibold text-white shadow-lg transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {status === "loading" ? "Validando..." : "Entrar"}
@@ -132,7 +141,7 @@ export default function LoginPage() {
                   exit={{ opacity: 0, y: 10 }}
                   className="mt-4 rounded-2xl border border-accent/30 bg-accent/10 px-4 py-3 text-xs text-accent"
                 >
-                  Revisa tu usuario. Esta demo solo acepta admin o empleado.
+                  Verifica tus credenciales y la disponibilidad del backend configurado en NEXT_PUBLIC_API_URL.
                 </motion.div>
               ) : null}
             </AnimatePresence>

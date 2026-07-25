@@ -23,6 +23,8 @@ import {
 import { ClientDocuments } from "@/components/admin/ClientDocuments";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
+import { useAuthContext } from "@/contexts/AuthContext";
+import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { EMPLEADO_DASHBOARD_USER } from "@/lib/empleado-dashboard-user";
 
 function formatIsoDateLong(iso: string): string {
@@ -50,15 +52,15 @@ function getCardDeliverySummary(task: KanbanTask): string | null {
   return `${fmt(from)} – ${fmt(to)}`;
 }
 
-function isAssignedToEmpleado(t: KanbanTask): boolean {
-  return (t.assignedTo ?? []).some((n) => n === EMPLEADO_DASHBOARD_USER);
+function isAssignedToEmpleado(t: KanbanTask, empleado: string): boolean {
+  return (t.assignedTo ?? []).some((n) => n === empleado);
 }
 
-function isEmpleadoConfirmado(t: KanbanTask): boolean {
+function isEmpleadoConfirmado(t: KanbanTask, empleado: string): boolean {
   return (
     t.stage === "contrato" &&
     t.followUpStatus === "confirmado" &&
-    isAssignedToEmpleado(t)
+    isAssignedToEmpleado(t, empleado)
   );
 }
 
@@ -73,6 +75,8 @@ const mergeTasks = (storedTasks: KanbanTask[]): KanbanTask[] => {
 };
 
 export default function EmpleadoConfirmadosPage() {
+  const { user } = useAuthContext();
+  const currentEmployeeName = user?.nombre?.trim() || EMPLEADO_DASHBOARD_USER;
   const [clients, setClients] = useState<KanbanTask[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
   const [selectedClient, setSelectedClient] = useState<KanbanTask | null>(null);
@@ -83,25 +87,38 @@ export default function EmpleadoConfirmadosPage() {
   }, [clients, columnCount]);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(kanbanStorageKey);
-    let allTasks: KanbanTask[] = [];
+    let cancelled = false;
 
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as KanbanTask[];
-        allTasks = mergeTasks(parsed);
-        saveKanbanTasksToLocalStorage(allTasks);
-      } catch {
+    const loadClients = async () => {
+      await syncKanbanTasksFromBackend();
+      const stored = window.localStorage.getItem(kanbanStorageKey);
+      let allTasks: KanbanTask[] = [];
+
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored) as KanbanTask[];
+          allTasks = mergeTasks(parsed);
+          saveKanbanTasksToLocalStorage(allTasks);
+        } catch {
+          allTasks = initialKanbanTasks;
+        }
+      } else {
         allTasks = initialKanbanTasks;
+        saveKanbanTasksToLocalStorage(allTasks);
       }
-    } else {
-      allTasks = initialKanbanTasks;
-      saveKanbanTasksToLocalStorage(allTasks);
-    }
 
-    setClients(allTasks.filter(isEmpleadoConfirmado));
-    setIsHydrated(true);
-  }, []);
+      if (!cancelled) {
+        setClients(allTasks.filter((task) => isEmpleadoConfirmado(task, currentEmployeeName)));
+        setIsHydrated(true);
+      }
+    };
+
+    void loadClients();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentEmployeeName]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;

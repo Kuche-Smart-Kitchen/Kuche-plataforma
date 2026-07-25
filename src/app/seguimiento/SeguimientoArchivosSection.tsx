@@ -17,6 +17,11 @@ type Props = {
   onOpenImage: (name: string, src: string) => void;
 };
 
+const isImageType = (type: string) => {
+  const normalized = type.trim().toLowerCase();
+  return ["jpg", "jpeg", "png", "webp", "gif", "image", "render"].includes(normalized);
+};
+
 export function SeguimientoArchivosSection({ files, onOpenImage }: Props) {
   return (
     <div className="mt-6 rounded-3xl border border-primary/10 bg-white p-6">
@@ -28,10 +33,11 @@ export function SeguimientoArchivosSection({ files, onOpenImage }: Props) {
           </p>
         ) : null}
         {files.map((f) => {
-          const primary = f.type === "pdf" ? getPdfButtonPrimaryLabelFromFileName(f.name) : "";
-          const secondary = f.type === "pdf" ? getPdfButtonSecondaryFromFileName(f.name) : "";
+          const normalizedType = f.type.trim().toLowerCase();
+          const primary = normalizedType === "pdf" ? getPdfButtonPrimaryLabelFromFileName(f.name) : "";
+          const secondary = normalizedType === "pdf" ? getPdfButtonSecondaryFromFileName(f.name) : "";
           const canOpenFile =
-            f.type === "pdf"
+            normalizedType === "pdf"
               ? Boolean(f.indexedPdfKey || f.src?.trim())
               : Boolean(f.src?.trim());
           return (
@@ -42,7 +48,7 @@ export function SeguimientoArchivosSection({ files, onOpenImage }: Props) {
               title={!canOpenFile ? "Archivo no adjunto aún" : undefined}
               className="inline-flex items-center gap-2 rounded-full border border-primary/10 px-4 py-2 text-xs font-semibold text-primary transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-primary/10 disabled:hover:text-primary"
               onClick={() => {
-                if (f.type === "pdf") {
+                if (normalizedType === "pdf") {
                   if (f.indexedPdfKey) {
                     openPdfFromIndexedKey(f.indexedPdfKey);
                     return;
@@ -59,7 +65,7 @@ export function SeguimientoArchivosSection({ files, onOpenImage }: Props) {
                   }
                   return;
                 }
-                if (f.type === "jpg" && f.src?.trim()) {
+                if (isImageType(normalizedType) && f.src?.trim()) {
                   void (async () => {
                     const r = await resolveSeguimientoMediaRefForUi(f.src!);
                     if ("missing" in r) {
@@ -71,8 +77,8 @@ export function SeguimientoArchivosSection({ files, onOpenImage }: Props) {
                 }
               }}
             >
-              {f.type === "pdf" ? <FileText className="h-4 w-4" /> : <ImageIcon className="h-4 w-4" />}
-              {f.type === "pdf" ? (
+              {normalizedType === "pdf" ? <FileText className="h-4 w-4" /> : <ImageIcon className="h-4 w-4" />}
+              {normalizedType === "pdf" ? (
                 <span className="flex flex-col items-start leading-4">
                   <span className="leading-4">{primary}</span>
                   {secondary ? (
