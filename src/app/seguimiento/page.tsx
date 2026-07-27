@@ -50,7 +50,7 @@ export default function SeguimientoPage() {
     ? "No pudimos cargar archivos remotos; se muestran los archivos guardados localmente."
     : null;
 
-  const currentProject = useMemo(() => {
+  useMemo(() => {
     if (!project) {
       return VOID_SEGUIMIENTO;
     }

@@ -2,8 +2,6 @@ import Hero from "@/components/home/Hero";
 import History from "@/components/home/History";
 import FeaturedProjects from "@/components/home/FeaturedProjects";
 import Experience3D from "@/components/home/Experience3D";
-import ExperienceSteps from "@/components/home/ExperienceSteps";
-import InstagramProfile from "@/components/home/InstagramProfile";
 import LeadForm from "@/components/home/LeadForm";
 import Testimonials from "@/components/home/Testimonials";
 import Location from "@/components/home/Location";
@@ -16,8 +14,6 @@ export default function Home() {
       <History />
       <FeaturedProjects />
       <Experience3D />
-      <ExperienceSteps />
-      <InstagramProfile />
       <Testimonials />
       <LeadForm />
       <Location />

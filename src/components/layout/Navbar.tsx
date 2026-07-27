@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { KUCHE_EMAIL, KUCHE_EMAIL_MAILTO_HREF } from "@/lib/kuche-contact";
 
@@ -37,23 +37,20 @@ const miProyectoCtaClass = (outlineLight: boolean) =>
 
 export default function Navbar() {
   const pathname = usePathname();
-  const [scrolled, setScrolled] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return window.scrollY > 24;
-  });
+  const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   const isHomePage = pathname === "/";
   const transparentNav = isHomePage && !scrolled;
 
-  const updateScroll = useCallback(() => {
-    setScrolled(window.scrollY > 24);
-  }, []);
-
   useEffect(() => {
-    window.addEventListener("scroll", updateScroll, { passive: true });
-    return () => window.removeEventListener("scroll", updateScroll);
-  }, [updateScroll]);
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 24);
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    handleScroll();
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   useEffect(() => {
     document.body.style.overflow = menuOpen ? "hidden" : "";
