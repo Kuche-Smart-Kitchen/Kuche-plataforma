@@ -36,7 +36,9 @@ export function ProspectDashboard({ project, onOpenImage }: Props) {
     <section className="space-y-6">
       <div>
         <p className="text-xs uppercase tracking-[0.3em] text-secondary">Seguimiento</p>
-        <h1 className="mt-2 text-3xl font-semibold">Proyecto Residencial {project.cliente}</h1>
+        <h1 className="mt-2 text-3xl font-semibold">
+          {project.nombre || project.titulo || project.cliente || project.codigo}
+        </h1>
       </div>
 
       <div className="grid items-start gap-4 md:grid-cols-1">

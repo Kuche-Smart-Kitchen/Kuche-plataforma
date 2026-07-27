@@ -185,6 +185,8 @@ export function isPagoRegistrado(p: SeguimientoPago): boolean {
 export type SeguimientoClienteProject = {
   codigo: string;
   cliente: string;
+  nombre?: string;
+  titulo?: string;
   isProspect: boolean;
   /** Copiados del Kanban para calcular `isProspect` de forma determinista. */
   kanbanStage?: string;
@@ -227,11 +229,15 @@ export function mergeSeguimientoFromStorage(parsed: Record<string, unknown>): Se
 
   const codigo = String(parsed.codigo ?? "").trim() || "—";
   const cliente = String(parsed.cliente ?? "Cliente").trim() || "Cliente";
+  const nombre = typeof parsed.nombre === "string" && parsed.nombre.trim() ? parsed.nombre.trim() : undefined;
+  const titulo = typeof parsed.titulo === "string" && parsed.titulo.trim() ? parsed.titulo.trim() : undefined;
 
   return {
     ...parsed,
     codigo,
     cliente,
+    nombre,
+    titulo,
     isProspect: resolveIsProspectFromParsed(parsed),
     inversion,
     fechaInicio:
