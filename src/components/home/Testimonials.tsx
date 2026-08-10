@@ -58,7 +58,7 @@ export default function Testimonials() {
                   className="rounded-3xl bg-white p-6 shadow-lg shadow-black/10"
                 >
                   <div className="flex items-center gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-neutral-600 font-semibold text-lg select-none">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent text-white font-semibold text-lg select-none">
                       {initial}
                     </div>
                     <div>
