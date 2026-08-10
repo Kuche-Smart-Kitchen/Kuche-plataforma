@@ -135,12 +135,6 @@ function resolveShowroomFrenteMetrosForCard(
   return largoLineal / (selectedCount + 1);
 }
 
-const parseMeasure = (raw: string | undefined): number | null => {
-  if (!raw) return null;
-  const v = Number.parseFloat(raw.replace(",", "."));
-  return Number.isFinite(v) ? v : null;
-};
-
 const WALL_COUNT_OPTIONS = [1, 2, 3, 4] as const;
 
 const wallCountSvgProps = {
@@ -2139,35 +2133,6 @@ export default function CotizadorPreliminarPage() {
                                             <span className="font-normal text-secondary/80"> (m)</span>
                                           )}
                                         </span>
-                                        {item.id === "pared-puerta" && field.key === "altura-techo" ? (
-                                          (() => {
-                                            const alt = parseMeasure(m["altura-techo"]);
-                                            const vano = parseMeasure(m["alto-vano"]);
-                                            if (alt === null || vano === null) return null;
-                                            const sobreVano = Math.max(0, alt - vano);
-                                            return (
-                                              <span className="mb-0.5 block text-[9px] font-semibold normal-case leading-snug text-secondary/90">
-                                                Sobre el vano (techo − alto vano):{" "}
-                                                <span className="font-bold text-primary">{sobreVano.toFixed(2)} m</span>
-                                              </span>
-                                            );
-                                          })()
-                                        ) : null}
-                                        {item.id === "pared-ventana" && field.key === "altura-techo" ? (
-                                          (() => {
-                                            const alt = parseMeasure(m["altura-techo"]);
-                                            const vano = parseMeasure(m["alto-vano"]);
-                                            const antepecho = parseMeasure(m["antepecho"]);
-                                            if (alt === null || vano === null || antepecho === null) return null;
-                                            const sobreVano = Math.max(0, alt - (antepecho + vano));
-                                            return (
-                                              <span className="mb-0.5 block text-[9px] font-semibold normal-case leading-snug text-secondary/90">
-                                                Sobre el vano (techo − (antepecho + alto vano)):{" "}
-                                                <span className="font-bold text-primary">{sobreVano.toFixed(2)} m</span>
-                                              </span>
-                                            );
-                                          })()
-                                        ) : null}
                                         {item.id === "pared-otro" && field.key === "descripcion" ? (
                                           <textarea
                                             value={m[field.key] ?? ""}
