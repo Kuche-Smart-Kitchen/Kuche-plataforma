@@ -30,14 +30,17 @@ const resolveBaseUrl = () => {
   if (!candidates.length) return "http://localhost:3001";
   if (candidates.length === 1) return candidates[0];
 
+  const localhostCandidates = candidates.filter(
+    (value) => value.includes("localhost") || value.includes("127.0.0.1") || value.includes("0.0.0.0"),
+  );
+
   if (process.env.NODE_ENV !== "production") {
-    const localCandidate = candidates.find(
-      (value) => value.includes("localhost") || value.includes("127.0.0.1"),
-    );
+    const localCandidate = localhostCandidates[0] ?? candidates[0];
     if (localCandidate) return localCandidate;
   }
 
-  return candidates[0];
+  const remoteCandidate = candidates.find((value) => !localhostCandidates.includes(value));
+  return remoteCandidate ?? candidates[0];
 };
 
 const BASE_URL = resolveBaseUrl();
