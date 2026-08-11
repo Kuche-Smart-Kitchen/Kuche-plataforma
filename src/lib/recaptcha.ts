@@ -1,3 +1,5 @@
+import { env } from "@/lib/env";
+
 declare global {
   interface Window {
     turnstile?: {
@@ -16,7 +18,7 @@ export const renderTurnstile = async (containerId: string): Promise<void> => {
       return;
     }
 
-    const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+    const siteKey = env.turnstileSiteKey;
     if (!siteKey) {
       console.error("NEXT_PUBLIC_TURNSTILE_SITE_KEY no esta configurada");
       return;

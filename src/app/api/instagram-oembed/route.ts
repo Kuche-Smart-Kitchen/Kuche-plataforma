@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
+import { env } from "@/lib/env";
 
 const DEFAULT_INSTAGRAM_URL =
   "https://www.instagram.com/cocinasinteligenteskuche?utm_source=ig_web_button_share_sheet&igsh=ZDNlZDc0MzIxNw==";
 
-const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION ?? "v22.0";
+const META_GRAPH_VERSION = env.metaGraphVersion;
 
 function getMetaAccessToken(): string | null {
-  const directToken = process.env.META_OEMBED_ACCESS_TOKEN?.trim();
+  const directToken = env.metaOEmbedAccessToken;
   if (directToken) return directToken;
 
-  const appId = process.env.META_APP_ID?.trim();
-  const appClientToken = process.env.META_APP_CLIENT_TOKEN?.trim();
+  const appId = env.metaAppId;
+  const appClientToken = env.metaAppClientToken;
 
   if (appId && appClientToken) {
     return `${appId}|${appClientToken}`;

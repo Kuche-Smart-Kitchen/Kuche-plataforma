@@ -1,5 +1,6 @@
 import axios, { AxiosError, type AxiosInstance, type InternalAxiosRequestConfig } from "axios";
 import { runtimeStore } from "@/lib/runtime-store";
+import { env } from "@/lib/env";
 
 type AxiosInternalFlags = {
   skipAuthToken?: boolean;
@@ -18,7 +19,7 @@ const safeSerialize = (value: unknown) => {
 };
 
 const resolveBaseUrl = () => {
-  const raw = (process.env.NEXT_PUBLIC_API_URL || "").trim();
+  const raw = env.apiUrl.trim();
   if (!raw) return "http://localhost:3001";
 
   // Allows local-first fallback such as: "http://localhost:3001,https://backend..."
@@ -34,7 +35,7 @@ const resolveBaseUrl = () => {
     (value) => value.includes("localhost") || value.includes("127.0.0.1") || value.includes("0.0.0.0"),
   );
 
-  if (process.env.NODE_ENV !== "production") {
+  if (env.nodeEnv !== "production") {
     const localCandidate = localhostCandidates[0] ?? candidates[0];
     if (localCandidate) return localCandidate;
   }

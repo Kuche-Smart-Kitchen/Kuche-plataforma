@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { loadTurnstileScript } from "@/lib/load-turnstile-script";
+import { env } from "@/lib/env";
 
 type CaptchaProps = {
   onVerify: (token: string) => void;
@@ -10,7 +11,7 @@ type CaptchaProps = {
   className?: string;
 };
 
-const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+const getSiteKey = () => env.turnstileSiteKey;
 
 declare global {
   interface Window {
@@ -31,6 +32,7 @@ export default function Captcha({
 }: CaptchaProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | null>(null);
+  const siteKey = getSiteKey();
 
   useEffect(() => {
     if (!siteKey) return;
