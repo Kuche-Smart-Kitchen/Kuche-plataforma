@@ -29,17 +29,29 @@ const isUnauthorized = (error: unknown) =>
   error instanceof AxiosError && error.response?.status === 401;
 
 const postSeguimientoLogin = async (payload: SeguimientoLoginPayload) => {
-  const response = await axiosInstance.post<ApiResponse<SeguimientoLoginResponse>>(
-    "/api/seguimiento/login",
-    payload,
-    ({
-      skipAuthToken: true,
-      skipAuthRedirect: true,
-      withCredentials: false,
-    } as never),
-  );
+  const endpoints = ["/api/seguimiento/login", "/api/seguimiento/auth", "/api/seguimiento/access"];
 
-  return normalizeSeguimientoResponse<SeguimientoLoginResponse>(response.data);
+  let lastError: unknown;
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await axiosInstance.post<ApiResponse<SeguimientoLoginResponse>>(
+        endpoint,
+        payload,
+        ({
+          skipAuthToken: true,
+          skipAuthRedirect: true,
+          withCredentials: false,
+        } as never),
+      );
+
+      return normalizeSeguimientoResponse<SeguimientoLoginResponse>(response.data);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError;
 };
 
 export const autenticarSeguimientoCliente = async (

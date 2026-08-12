@@ -1,6 +1,9 @@
 import axiosInstance, { type ApiResponse } from "./axiosConfig";
 import { runtimeStore } from "@/lib/runtime-store";
 
+const loginEndpoints = ["/api/auth/login", "/api/login", "/api/auth/signin", "/api/auth/sign-in"];
+const currentUserEndpoints = ["/api/auth/me", "/api/me", "/api/auth/profile", "/api/user/me"];
+
 export interface LoginCredentials {
   correo: string;
   password: string;
@@ -59,38 +62,67 @@ const normalizeUser = (user: User): User => ({
   id: user.id ?? user._id,
 });
 
-const buildAuthSuccessResponse = (raw: LoginBackendResponse): ApiResponse<AuthResponse> => {
+const buildAuthSuccessResponse = (
+  raw: LoginBackendResponse,
+  fallbackEmail?: string,
+): ApiResponse<AuthResponse> => {
   const token = raw.data?.token ?? raw.data?.accessToken ?? raw.data?.access_token ?? raw.token ?? raw.accessToken ?? raw.access_token;
   const user = raw.data?.user ? normalizeUser(raw.data.user) : raw.user ? normalizeUser(raw.user) : null;
 
-  if (raw.success === false || !token || !user) {
+  if (raw.success === false || !token) {
     return {
       success: false,
       message: raw.message || "Respuesta de autenticacion incompleta",
     };
   }
 
+  const finalUser = user ?? {
+    nombre: fallbackEmail?.split("@")[0] || "Usuario",
+    correo: fallbackEmail || "",
+    rol: "empleado" as const,
+  };
+
   return {
     success: true,
     message: raw.message,
     data: {
       token,
-      user,
+      user: normalizeUser(finalUser),
     },
   };
 };
 
 export const login = async (credentials: LoginCredentials): Promise<ApiResponse<AuthResponse>> => {
-  const response = await axiosInstance.post<LoginBackendResponse>("/api/auth/login", credentials);
-  const normalized = buildAuthSuccessResponse(response.data);
+  const payloadCandidates = [
+    { correo: credentials.correo, password: credentials.password },
+    { email: credentials.correo, password: credentials.password },
+    { username: credentials.correo, password: credentials.password },
+    { correo: credentials.correo, contrasena: credentials.password },
+    { email: credentials.correo, contrasena: credentials.password },
+  ];
 
-  if (normalized.success) {
-    const { token, user } = normalized.data;
-    runtimeStore.setItem("authToken", token);
-    runtimeStore.setItem("user", JSON.stringify(user));
+  let lastError: unknown;
+
+  for (const endpoint of loginEndpoints) {
+    for (const payload of payloadCandidates) {
+      try {
+        const response = await axiosInstance.post<LoginBackendResponse>(endpoint, payload);
+        const normalized = buildAuthSuccessResponse(response.data, credentials.correo);
+
+        if (normalized.success) {
+          const { token, user } = normalized.data;
+          runtimeStore.setItem("authToken", token);
+          runtimeStore.setItem("user", JSON.stringify(user));
+        }
+
+        return normalized;
+      } catch (error) {
+        lastError = error;
+      }
+    }
   }
 
-  return normalized;
+  throw lastError instanceof Error ? lastError : new Error("No se pudo iniciar sesion");
 };
 
 export const register = async (data: RegisterData): Promise<ApiResponse<AuthResponse>> => {
@@ -116,28 +148,37 @@ export const logout = async (): Promise<void> => {
 };
 
 export const getCurrentUser = async (): Promise<ApiResponse<User>> => {
-  const response = await axiosInstance.get<CurrentUserBackendResponse>("/api/auth/me");
-  const raw = response.data;
-  const userPayload = raw && typeof raw === "object" && "data" in raw ? raw.data : raw;
-  const user = userPayload && typeof userPayload === "object" && "user" in userPayload && userPayload.user
-    ? normalizeUser(userPayload.user)
-    : userPayload && typeof userPayload === "object" && ("_id" in userPayload || "id" in userPayload || "correo" in userPayload)
-      ? normalizeUser(userPayload as User)
-      : null;
+  let lastError: unknown;
 
-  if (!raw?.success || !user) {
-    return {
-      success: false,
-      message: raw?.message || "No fue posible obtener el usuario actual",
-    };
+  for (const endpoint of currentUserEndpoints) {
+    try {
+      const response = await axiosInstance.get<CurrentUserBackendResponse>(endpoint);
+      const raw = response.data;
+      const userPayload = raw && typeof raw === "object" && "data" in raw ? raw.data : raw;
+      const user = userPayload && typeof userPayload === "object" && "user" in userPayload && userPayload.user
+        ? normalizeUser(userPayload.user)
+        : userPayload && typeof userPayload === "object" && ("_id" in userPayload || "id" in userPayload || "correo" in userPayload)
+          ? normalizeUser(userPayload as User)
+          : null;
+
+      if (raw?.success !== false && user) {
+        runtimeStore.setItem("user", JSON.stringify(user));
+        return {
+          success: true,
+          message: "Usuario actual obtenido",
+          data: user,
+        };
+      }
+
+      lastError = new Error(raw?.message || "No fue posible obtener el usuario actual");
+    } catch (error) {
+      lastError = error;
+    }
   }
 
-  runtimeStore.setItem("user", JSON.stringify(user));
-
   return {
-    success: true,
-    message: "Usuario actual obtenido",
-    data: user,
+    success: false,
+    message: lastError instanceof Error ? lastError.message : "No fue posible obtener el usuario actual",
   };
 };
 
