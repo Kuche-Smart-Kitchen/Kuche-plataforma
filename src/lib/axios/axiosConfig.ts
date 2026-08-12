@@ -19,6 +19,10 @@ const safeSerialize = (value: unknown) => {
 };
 
 const resolveBaseUrl = () => {
+  if (typeof window !== "undefined") {
+    return "/api/proxy";
+  }
+
   const raw = env.apiUrl.trim();
   if (!raw) return "http://localhost:3001";
 

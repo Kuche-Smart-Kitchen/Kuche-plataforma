@@ -30,11 +30,16 @@ export interface AuthResponse {
 }
 
 type LoginBackendResponse = {
-  success: boolean;
+  success?: boolean;
   message?: string;
   token?: string;
+  accessToken?: string;
+  access_token?: string;
+  user?: User;
   data?: {
     token?: string;
+    accessToken?: string;
+    access_token?: string;
     user?: User;
   };
 };
@@ -42,9 +47,10 @@ type LoginBackendResponse = {
 type CurrentUserBackendResponse =
   | ApiResponse<User>
   | {
-      success: boolean;
+      success?: boolean;
       message?: string;
-      data?: User;
+      data?: User | { user?: User };
+      user?: User;
     };
 
 const normalizeUser = (user: User): User => ({
@@ -54,10 +60,10 @@ const normalizeUser = (user: User): User => ({
 });
 
 const buildAuthSuccessResponse = (raw: LoginBackendResponse): ApiResponse<AuthResponse> => {
-  const token = raw.data?.token ?? raw.token;
-  const user = raw.data?.user ? normalizeUser(raw.data.user) : null;
+  const token = raw.data?.token ?? raw.data?.accessToken ?? raw.data?.access_token ?? raw.token ?? raw.accessToken ?? raw.access_token;
+  const user = raw.data?.user ? normalizeUser(raw.data.user) : raw.user ? normalizeUser(raw.user) : null;
 
-  if (!raw.success || !token || !user) {
+  if (raw.success === false || !token || !user) {
     return {
       success: false,
       message: raw.message || "Respuesta de autenticacion incompleta",
@@ -112,15 +118,20 @@ export const logout = async (): Promise<void> => {
 export const getCurrentUser = async (): Promise<ApiResponse<User>> => {
   const response = await axiosInstance.get<CurrentUserBackendResponse>("/api/auth/me");
   const raw = response.data;
+  const userPayload = raw && typeof raw === "object" && "data" in raw ? raw.data : raw;
+  const user = userPayload && typeof userPayload === "object" && "user" in userPayload && userPayload.user
+    ? normalizeUser(userPayload.user)
+    : userPayload && typeof userPayload === "object" && ("_id" in userPayload || "id" in userPayload || "correo" in userPayload)
+      ? normalizeUser(userPayload as User)
+      : null;
 
-  if (!raw.success || !raw.data) {
+  if (!raw?.success || !user) {
     return {
       success: false,
-      message: raw.message || "No fue posible obtener el usuario actual",
+      message: raw?.message || "No fue posible obtener el usuario actual",
     };
   }
 
-  const user = normalizeUser(raw.data);
   runtimeStore.setItem("user", JSON.stringify(user));
 
   return {

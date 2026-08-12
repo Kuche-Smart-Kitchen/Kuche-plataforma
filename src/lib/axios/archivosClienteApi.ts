@@ -31,8 +31,12 @@ const normalizeArchivosData = (data: unknown): ClienteArchivo[] => {
 
   if (data && typeof data === "object") {
     const record = data as Record<string, unknown>;
-    if (Array.isArray(record.archivos)) {
-      return record.archivos as ClienteArchivo[];
+    const candidates = [record.archivos, record.files, record.result, record.results, record.data];
+
+    for (const candidate of candidates) {
+      if (Array.isArray(candidate)) {
+        return candidate as ClienteArchivo[];
+      }
     }
   }
 
@@ -62,12 +66,24 @@ export const obtenerArchivosCliente = async (
     ? `/api/archivos/cliente/${encodeURIComponent(normalizedId)}/tipo/${encodeURIComponent(tipo)}`
     : `/api/archivos/cliente/${encodeURIComponent(normalizedId)}`;
 
-  const response = await axiosInstance.get<ApiResponse<ClienteArchivo[]>>(url, publicRequestConfig as never);
-  const payload = response.data;
-  if (!payload.success) return payload;
+  try {
+    const response = await axiosInstance.get<ApiResponse<ClienteArchivo[]>>(url, publicRequestConfig as never);
+    const payload = response.data;
+    const normalizedData = normalizeArchivosData((payload as { data?: unknown }).data ?? payload);
 
-  return {
-    ...payload,
-    data: normalizeArchivosData(payload.data),
-  };
+    if (!payload.success) {
+      return payload as ApiResponse<ClienteArchivo[]>;
+    }
+
+    return {
+      success: true,
+      message: payload.message || "Archivos cargados",
+      data: normalizedData,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "No se pudieron cargar los archivos del cliente",
+    };
+  }
 };

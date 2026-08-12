@@ -4,6 +4,7 @@ import "./globals.css";
 import NumberInputWheelGuard from "@/components/layout/NumberInputWheelGuard";
 import Navbar from "@/components/layout/Navbar";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { runtimeConfigWarnings } from "@/lib/runtime-config-guard";
 
 const manrope = Manrope({
   variable: "--font-manrope",
@@ -20,6 +21,10 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  if (typeof window === "undefined" && runtimeConfigWarnings.length > 0) {
+    console.warn("[runtime-config]", runtimeConfigWarnings);
+  }
+
   return (
     <html lang="es">
       <body className={`${manrope.variable} font-sans antialiased`}>

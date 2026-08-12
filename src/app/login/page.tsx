@@ -141,7 +141,7 @@ export default function LoginPage() {
                   exit={{ opacity: 0, y: 10 }}
                   className="mt-4 rounded-2xl border border-accent/30 bg-accent/10 px-4 py-3 text-xs text-accent"
                 >
-                  Verifica tus credenciales y la disponibilidad del backend configurado en NEXT_PUBLIC_API_URL.
+                  Verifica tus credenciales y la disponibilidad del backend configurado en NEXT_PUBLIC_API_URL o BACKEND_API_URL. Si estás en Vercel, confirma que la variable exista y que el backend acepte el proxy interno.
                 </motion.div>
               ) : null}
             </AnimatePresence>

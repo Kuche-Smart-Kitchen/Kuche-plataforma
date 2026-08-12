@@ -27,6 +27,7 @@ const readEnv = (key: string): string => {
 
 export const env = {
   apiUrl: readEnv("NEXT_PUBLIC_API_URL"),
+  backendApiUrl: readEnv("BACKEND_API_URL") || readEnv("NEXT_PUBLIC_API_URL"),
   fileUploadEndpoint: readEnv("NEXT_PUBLIC_FILE_UPLOAD_ENDPOINT"),
   turnstileSiteKey: readEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY"),
   showroomAddress: readEnv("NEXT_PUBLIC_SHOWROOM_ADDRESS"),

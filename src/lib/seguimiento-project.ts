@@ -87,6 +87,7 @@ export function enrichSeguimientoParsedWithKanbanIfMissing(
     ...parsed,
     kanbanStage: task.stage,
     kanbanFollowUpStatus: task.followUpStatus ?? "pendiente",
+    isProspect: task.followUpStatus === "confirmado" ? false : Boolean(parsed.isProspect),
   };
 }
 
