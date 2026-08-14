@@ -30,7 +30,10 @@ import {
   seguimientoProjectStoragePrefix,
   type KanbanTask,
   type PreliminarData,
+  type TaskStage,
+  type TaskStatus,
 } from "@/lib/kanban";
+import { syncCitaFinishWithBackend } from "@/lib/admin-workflow";
 import { CatalogProjectTypeField } from "@/components/catalogo/CatalogProjectTypeField";
 import {
   CATALOG_PROJECT_TYPES,
@@ -998,6 +1001,7 @@ export default function CotizadorPreliminarPage() {
 
   const savePreliminarAndGetNextTasks = (options?: {
     seguimientoPdf?: { key: string; fileLabel: string };
+    completeCita?: boolean;
   }): { codigoProyecto: string | undefined; updatedTasks: KanbanTask[] } | null => {
     if (!activeCitaTaskId || !activeCitaTask) return null;
     const err = validatePreliminarSections();
@@ -1007,6 +1011,7 @@ export default function CotizadorPreliminarPage() {
     }
     const newPreliminar = buildPreliminarDataFromForm();
     const stored = window.localStorage.getItem(kanbanStorageKey);
+    const completeCita = options?.completeCita ?? false;
 
     let tasks: KanbanTask[];
     try {
@@ -1031,9 +1036,16 @@ export default function CotizadorPreliminarPage() {
         codigoProyecto,
         preliminarCotizaciones,
         preliminarData: newPreliminar,
-        citaFinished: true,
-        stage: task.stage,
-        status: task.status,
+        ...(completeCita
+          ? {
+              citaStarted: true,
+              citaFinished: true,
+              stage: "disenos" as TaskStage,
+              status: "pendiente" as TaskStatus,
+            }
+          : {
+              citaStarted: task.citaStarted ?? true,
+            }),
       };
     });
 
@@ -1063,7 +1075,7 @@ export default function CotizadorPreliminarPage() {
         ...existingParsed,
         codigo: codigoProyecto,
         cliente: activeCitaTask.project ?? clientName ?? "Cliente",
-        kanbanStage: taskAfter?.stage ?? activeCitaTask.stage,
+        kanbanStage: completeCita ? "disenos" : (taskAfter?.stage ?? activeCitaTask.stage),
         kanbanFollowUpStatus: taskAfter?.followUpStatus ?? activeCitaTask.followUpStatus ?? "pendiente",
         preliminarCotizaciones,
         inversion: estimatedInversion,
@@ -1127,14 +1139,14 @@ export default function CotizadorPreliminarPage() {
     const fileLabel = `Levantamiento detallado — ${newPreliminar.projectType}.pdf`;
     const result = savePreliminarAndGetNextTasks({
       seguimientoPdf: { key: preliminarPdfKey, fileLabel },
+      completeCita: true,
     });
     if (!result) return;
-    const updatedTasksWithStage = result.updatedTasks.map((task) =>
-      task.id === activeCitaTaskId
-        ? { ...task, stage: "disenos" as const, status: "pendiente" as const }
-        : task,
-    );
-    saveKanbanTasksToLocalStorage(updatedTasksWithStage);
+    saveKanbanTasksToLocalStorage(result.updatedTasks);
+    const taskAfter = result.updatedTasks.find((t) => t.id === activeCitaTaskId);
+    if (taskAfter) {
+      await syncCitaFinishWithBackend(taskAfter);
+    }
     window.localStorage.removeItem(activeCitaTaskStorageKey);
     const returnUrl = window.localStorage.getItem(citaReturnUrlStorageKey);
     window.localStorage.removeItem(citaReturnUrlStorageKey);
