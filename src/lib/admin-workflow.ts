@@ -13,8 +13,8 @@ import {
 } from "@/lib/axios/kanbanApi";
 import { actualizarTarea, asignarTrabajadoresTarea, cambiarEtapa } from "@/lib/axios/tareasApi";
 import {
-  kanbanStorageKey,
   saveKanbanTasksToLocalStorage,
+  getTasksFromLocalStorage,
   type FollowUpStatus,
   type KanbanTask,
   type TaskFile,
@@ -138,18 +138,7 @@ const getAssignedIds = (raw: Record<string, unknown>): string[] => {
   return [];
 };
 
-const readLocalKanbanTasks = (): KanbanTask[] => {
-  if (typeof window === "undefined") return [];
-  const stored = window.localStorage.getItem(kanbanStorageKey);
-  if (!stored) return [];
-
-  try {
-    const parsed = JSON.parse(stored) as unknown;
-    return Array.isArray(parsed) ? (parsed as KanbanTask[]) : [];
-  } catch {
-    return [];
-  }
-};
+const readLocalKanbanTasks = (): KanbanTask[] => getTasksFromLocalStorage();
 
 const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
   const raw = (toRecord(item) ?? {}) as Record<string, unknown>;

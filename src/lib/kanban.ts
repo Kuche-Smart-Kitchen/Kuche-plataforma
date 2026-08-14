@@ -333,3 +333,52 @@ export function saveKanbanTasksToLocalStorage(tasks: KanbanTask[]): boolean {
   }
   return false;
 }
+
+export const kanbanTasksUpdatedEventName = "kuche:kanban-tasks-updated";
+
+/** Lee tareas crudas desde localStorage (sin normalizar). */
+export function getTasksFromLocalStorage(): KanbanTask[] {
+  if (typeof window === "undefined") return [];
+  const stored = window.localStorage.getItem(kanbanStorageKey);
+  if (!stored) return [];
+
+  try {
+    const parsed = JSON.parse(stored) as unknown;
+    return Array.isArray(parsed) ? (parsed as KanbanTask[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export type KanbanTaskMatchCriteria = {
+  targetId: string;
+  projectCode?: string;
+  clientName?: string;
+};
+
+/** Coincidencia flexible para actualizar tarjetas tras levantamiento/cita. */
+export function taskMatchesKanbanUpdate(task: KanbanTask, criteria: KanbanTaskMatchCriteria): boolean {
+  const targetId = criteria.targetId.trim();
+  const projectCode = criteria.projectCode?.trim() ?? "";
+  const clientName = criteria.clientName?.trim() ?? "";
+
+  if (!targetId && !projectCode && !clientName) return false;
+  if (targetId && task.id === targetId) return true;
+  if (targetId && task.sourceId === targetId) return true;
+  if (projectCode && task.codigoProyecto === projectCode) return true;
+  if (clientName && task.project.trim() === clientName) return true;
+  return false;
+}
+
+/** Persiste y notifica a otros componentes/tabs del tablero (CustomEvent + storage). */
+export function notifyKanbanTasksUpdated(tasks: KanbanTask[]): boolean {
+  const ok = saveKanbanTasksToLocalStorage(tasks);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent(kanbanTasksUpdatedEventName, {
+        detail: { tasks },
+      }),
+    );
+  }
+  return ok;
+}

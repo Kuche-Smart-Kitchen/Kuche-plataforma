@@ -1,6 +1,6 @@
  "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
@@ -30,6 +30,8 @@ import { syncSeguimientoEstadoFromKanbanConfirm } from "@/lib/seguimiento-projec
 import {
   kanbanColumns,
   kanbanStorageKey,
+  kanbanTasksUpdatedEventName,
+  getTasksFromLocalStorage,
   initialKanbanTasks,
   saveKanbanTasksToLocalStorage,
   activeCitaTaskStorageKey,
@@ -294,6 +296,25 @@ const autoAdvanceCompletedTasks = (tasks: KanbanTask[]): KanbanTask[] => {
   return changed ? next : tasks;
 };
 
+const hydrateKanbanTasksFromLocalStorage = (rawTasks?: KanbanTask[]): KanbanTask[] => {
+  const stored = rawTasks ?? getTasksFromLocalStorage();
+  if (!Array.isArray(stored) || stored.length === 0) return initialKanbanTasks;
+  const normalized = stored.map((task) => normalizeTask(task));
+  const merged = mergeTasks(normalized);
+  return autoAdvanceCompletedTasks(merged);
+};
+
+const applyHydratedTasksToState = (
+  rawTasks: KanbanTask[],
+  setKanbanTasks: Dispatch<SetStateAction<KanbanTask[]>>,
+  skipNextWriteRef: MutableRefObject<boolean>,
+): KanbanTask[] => {
+  const advanced = hydrateKanbanTasksFromLocalStorage(rawTasks);
+  skipNextWriteRef.current = true;
+  setKanbanTasks(advanced);
+  return advanced;
+};
+
 export type KanbanTableroProps = {
   /** Filtrar por nombre de empleado. null = ver todo, string = solo ese empleado. */
   filterByEmployee?: string | null;
@@ -322,7 +343,10 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const [viewMode, setViewMode] = useState<"all" | "mine">("all");
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [uploadTaskId, setUploadTaskId] = useState<string | null>(null);
-  const [kanbanTasks, setKanbanTasks] = useState<KanbanTask[]>(initialKanbanTasks);
+  const [kanbanTasks, setKanbanTasks] = useState<KanbanTask[]>(() => {
+    if (typeof window === "undefined") return initialKanbanTasks;
+    return hydrateKanbanTasksFromLocalStorage();
+  });
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dragOverColumnId, setDragOverColumnId] = useState<TaskStage | null>(null);
   const [sortBy, setSortBy] = useState<"default" | "priority" | "date">("default");
@@ -336,6 +360,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const [cotizacionEntregadaTaskId, setCotizacionEntregadaTaskId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const skipNextWriteRef = useRef(false);
+  const isLoadedRef = useRef(false);
   const activeTaskRef = useRef<HTMLElement | null>(null);
   const panelScrollRef = useRef<HTMLElement | null>(null);
   const uploadTaskRef = useRef<HTMLDivElement | null>(null);
@@ -385,47 +410,44 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+
+    const localSnapshot = getTasksFromLocalStorage();
+    if (localSnapshot.length > 0) {
+      applyHydratedTasksToState(localSnapshot, setKanbanTasks, skipNextWriteRef);
+    }
+    isLoadedRef.current = true;
+
     const syncFromStorage = async () => {
       await syncKanbanTasksFromBackend();
       const stored = window.localStorage.getItem(kanbanStorageKey);
       if (!stored) {
-        const merged = mergeTasks(initialKanbanTasks);
-        const advanced = autoAdvanceCompletedTasks(merged);
-        skipNextWriteRef.current = true;
-        setKanbanTasks(advanced);
-        const okInit = saveKanbanTasksToLocalStorage(advanced);
-        setKanbanPersistError(
-          okInit
-            ? null
-            : "No se pudo guardar el tablero: almacenamiento lleno. Libera espacio del navegador o reduce tareas/archivos.",
-        );
+        if (localSnapshot.length === 0) {
+          skipNextWriteRef.current = true;
+          setKanbanTasks(initialKanbanTasks);
+        }
         return;
       }
       try {
         const parsed = JSON.parse(stored) as KanbanTask[];
         if (!Array.isArray(parsed) || parsed.length === 0) {
-          skipNextWriteRef.current = true;
-          setKanbanTasks([]);
-          const okEmpty = saveKanbanTasksToLocalStorage([]);
-          setKanbanPersistError(
-            okEmpty
-              ? null
-              : "No se pudo guardar el tablero: almacenamiento lleno. Libera espacio del navegador o reduce tareas/archivos.",
-          );
+          if (localSnapshot.length === 0) {
+            skipNextWriteRef.current = true;
+            setKanbanTasks(initialKanbanTasks);
+          }
           return;
         }
-        const normalized = parsed.map((task) => normalizeTask(task));
-        const merged = mergeTasks(normalized);
-        const advanced = autoAdvanceCompletedTasks(merged);
-        skipNextWriteRef.current = true;
-        setKanbanTasks(advanced);
-        if (advanced !== merged) {
-          const okAdv = saveKanbanTasksToLocalStorage(advanced);
-          setKanbanPersistError(
-            okAdv
-              ? null
-              : "No se pudo guardar el tablero: almacenamiento lleno. Libera espacio del navegador o reduce tareas/archivos.",
-          );
+        const advanced = applyHydratedTasksToState(parsed, setKanbanTasks, skipNextWriteRef);
+        if (advanced.length > 0) {
+          const normalized = parsed.map((task) => normalizeTask(task));
+          const merged = mergeTasks(normalized);
+          if (advanced !== merged) {
+            const okAdv = saveKanbanTasksToLocalStorage(advanced);
+            setKanbanPersistError(
+              okAdv
+                ? null
+                : "No se pudo guardar el tablero: almacenamiento lleno. Libera espacio del navegador o reduce tareas/archivos.",
+            );
+          }
         }
       } catch {
         // ignore malformed storage
@@ -477,6 +499,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!isLoadedRef.current) return;
     if (skipNextWriteRef.current) {
       skipNextWriteRef.current = false;
       return;
@@ -491,29 +514,29 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const handleKanbanUpdated = (event: Event) => {
+      const custom = event as CustomEvent<{ tasks?: KanbanTask[] }>;
+      const tasks = custom.detail?.tasks ?? getTasksFromLocalStorage();
+      if (!Array.isArray(tasks) || tasks.length === 0) return;
+      applyHydratedTasksToState(tasks, setKanbanTasks, skipNextWriteRef);
+    };
     const handleStorage = (event: StorageEvent) => {
       if (event.key !== kanbanStorageKey || !event.newValue) return;
       try {
         const parsed = JSON.parse(event.newValue) as KanbanTask[];
         if (Array.isArray(parsed)) {
-          const merged = mergeTasks(parsed.map((task) => normalizeTask(task)));
-          const advanced = autoAdvanceCompletedTasks(merged);
-          setKanbanTasks(advanced);
-          if (advanced !== merged) {
-            const okSt = saveKanbanTasksToLocalStorage(advanced);
-            setKanbanPersistError(
-              okSt
-                ? null
-                : "No se pudo guardar el tablero: almacenamiento lleno. Libera espacio del navegador o reduce tareas/archivos.",
-            );
-          }
+          applyHydratedTasksToState(parsed, setKanbanTasks, skipNextWriteRef);
         }
       } catch {
         // ignore malformed storage
       }
     };
+    window.addEventListener(kanbanTasksUpdatedEventName, handleKanbanUpdated);
     window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener(kanbanTasksUpdatedEventName, handleKanbanUpdated);
+      window.removeEventListener("storage", handleStorage);
+    };
   }, []);
 
   useEffect(() => {
