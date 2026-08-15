@@ -407,6 +407,68 @@ function normalizeProjectCodeForMatch(code: string): string {
   return code.trim().toUpperCase().replace(/^K-?/, "");
 }
 
+export function kanbanTaskMergeKey(task: KanbanTask): string {
+  const code = task.codigoProyecto?.trim();
+  if (code) return `code:${normalizeProjectCodeForMatch(code)}`;
+  const sourceId = task.sourceId?.trim();
+  if (sourceId) return `src:${sourceId}`;
+  return `id:${task.id}`;
+}
+
+const STAGE_RANK: Record<TaskStage, number> = {
+  citas: 0,
+  disenos: 1,
+  cotizacion: 2,
+  contrato: 3,
+};
+
+/** Combina tarjetas locales con datos del backend sin perder trabajo offline. */
+export function mergeKanbanTaskLists(local: KanbanTask[], incoming: KanbanTask[]): KanbanTask[] {
+  const merged = new Map<string, KanbanTask>();
+
+  for (const task of local) {
+    merged.set(kanbanTaskMergeKey(task), task);
+  }
+
+  for (const task of incoming) {
+    const key = kanbanTaskMergeKey(task);
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, task);
+      continue;
+    }
+
+    const stage =
+      STAGE_RANK[existing.stage] >= STAGE_RANK[task.stage] ? existing.stage : task.stage;
+
+    merged.set(key, {
+      ...task,
+      ...existing,
+      sourceId: task.sourceId ?? existing.sourceId,
+      sourceType: task.sourceType ?? existing.sourceType,
+      assignedToIds: task.assignedToIds?.length ? task.assignedToIds : existing.assignedToIds,
+      stage,
+      preliminarData: existing.preliminarData ?? task.preliminarData,
+      preliminarCotizaciones: existing.preliminarCotizaciones?.length
+        ? existing.preliminarCotizaciones
+        : task.preliminarCotizaciones,
+      cotizacionFormalData: existing.cotizacionFormalData ?? task.cotizacionFormalData,
+      cotizacionesFormales: existing.cotizacionesFormales?.length
+        ? existing.cotizacionesFormales
+        : task.cotizacionesFormales,
+      citaStarted: Boolean(existing.citaStarted || task.citaStarted),
+      citaFinished: Boolean(existing.citaFinished || task.citaFinished),
+      codigoProyecto: existing.codigoProyecto ?? task.codigoProyecto,
+      location: existing.location?.trim() ? existing.location : task.location,
+      followUpStatus: existing.followUpStatus ?? task.followUpStatus,
+      designApprovedByAdmin: existing.designApprovedByAdmin || task.designApprovedByAdmin,
+      designApprovedByClient: existing.designApprovedByClient || task.designApprovedByClient,
+    });
+  }
+
+  return Array.from(merged.values());
+}
+
 function taskMatchesSeguimientoProject(task: KanbanTask, codigo: string, cliente: string): boolean {
   const normalizedCode = normalizeProjectCodeForMatch(codigo);
   const taskCode = normalizeProjectCodeForMatch(String(task.codigoProyecto ?? ""));
@@ -689,15 +751,21 @@ export function taskMatchesKanbanUpdate(task: KanbanTask, criteria: KanbanTaskMa
   if (!targetId && !projectCode && !clientName) return false;
   if (targetId && task.id === targetId) return true;
   if (targetId && task.sourceId === targetId) return true;
-  if (projectCode && task.codigoProyecto === projectCode) return true;
-  if (clientName && task.project.trim() === clientName) return true;
+  if (projectCode && task.codigoProyecto) {
+    if (task.codigoProyecto === projectCode) return true;
+    if (normalizeProjectCodeForMatch(task.codigoProyecto) === normalizeProjectCodeForMatch(projectCode)) {
+      return true;
+    }
+  }
+  if (clientName && task.project.trim().toLowerCase() === clientName.toLowerCase()) return true;
+  if (clientName && task.title.trim().toLowerCase() === clientName.toLowerCase()) return true;
   return false;
 }
 
 /** Persiste y notifica a otros componentes/tabs del tablero (CustomEvent + storage). */
 export function notifyKanbanTasksUpdated(tasks: KanbanTask[]): boolean {
   const ok = saveKanbanTasksToLocalStorage(tasks);
-  if (typeof window !== "undefined") {
+  if (ok && typeof window !== "undefined") {
     window.dispatchEvent(
       new CustomEvent(kanbanTasksUpdatedEventName, {
         detail: { tasks },

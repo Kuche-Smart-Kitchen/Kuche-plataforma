@@ -996,7 +996,7 @@ export default function CotizadorPreliminarPage() {
   const savePreliminarAndGetNextTasks = (options?: {
     seguimientoPdf?: { key: string; fileLabel: string };
     completeCita?: boolean;
-  }): { codigoProyecto: string | undefined; updatedTasks: KanbanTask[] } | null => {
+  }): { codigoProyecto: string | undefined; updatedTasks: KanbanTask[]; saved: boolean } | null => {
     if (!activeCitaTaskId || !activeCitaTask) return null;
     const err = validatePreliminarSections();
     if (err) {
@@ -1042,13 +1042,7 @@ export default function CotizadorPreliminarPage() {
       };
     });
 
-    try {
-      notifyKanbanTasksUpdated(updatedTasks);
-    } catch {
-      // Si por alguna razón no podemos escribir en localStorage (cuota, modo incógnito, etc.),
-      // evitamos bloquear el flujo de la cita. Los datos de esta sesión podrían no persistir,
-      // pero el usuario puede continuar trabajando.
-    }
+    let projectSaved = true;
 
     if (codigoProyecto) {
       const projectKey = `${seguimientoProjectStoragePrefix}${codigoProyecto}`;
@@ -1099,11 +1093,13 @@ export default function CotizadorPreliminarPage() {
       try {
         window.localStorage.setItem(projectKey, JSON.stringify(seguimientoProject));
       } catch {
-        // Mismo criterio: no bloqueamos el flujo si esta escritura falla.
+        projectSaved = false;
       }
     }
 
-    return { codigoProyecto, updatedTasks };
+    const kanbanSaved = notifyKanbanTasksUpdated(updatedTasks);
+
+    return { codigoProyecto, updatedTasks, saved: projectSaved && kanbanSaved };
   };
 
   const handleFinishCita = async () => {
@@ -1136,7 +1132,12 @@ export default function CotizadorPreliminarPage() {
       completeCita: true,
     });
     if (!result) return;
-    notifyKanbanTasksUpdated(result.updatedTasks);
+    if (!result.saved) {
+      setFinishError(
+        "No se pudo guardar el tablero o el proyecto. Libera espacio del navegador e intenta de nuevo.",
+      );
+      return;
+    }
     const taskAfter = result.updatedTasks.find((t) =>
       taskMatchesKanbanUpdate(t, {
         targetId: activeCitaTaskId,

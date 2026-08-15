@@ -6,8 +6,7 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, XCircle, User, Calendar, RotateCcw, X } from "lucide-react";
 import {
-  initialKanbanTasks,
-  kanbanStorageKey,
+  getTasksFromLocalStorage,
   getTaskCardSubtitle,
   saveKanbanTasksToLocalStorage,
   type KanbanTask,
@@ -22,15 +21,6 @@ const formatDate = (timestamp: number | undefined): string => {
   return date.toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" });
 };
 
-const mergeTasks = (storedTasks: KanbanTask[]): KanbanTask[] => {
-  const map = new Map(storedTasks.map((task) => [task.id, task]));
-  initialKanbanTasks.forEach((task) => {
-    if (!map.has(task.id)) {
-      map.set(task.id, task);
-    }
-  });
-  return Array.from(map.values());
-};
 
 export default function ClientesDescartadosPage() {
   const [clients, setClients] = useState<KanbanTask[]>([]);
@@ -43,33 +33,16 @@ export default function ClientesDescartadosPage() {
   }, [clients, columnCount]);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(kanbanStorageKey);
-    let allTasks: KanbanTask[] = [];
-
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as KanbanTask[];
-        allTasks = mergeTasks(parsed);
-        saveKanbanTasksToLocalStorage(allTasks);
-      } catch {
-        allTasks = initialKanbanTasks;
-      }
-    } else {
-      allTasks = initialKanbanTasks;
-      saveKanbanTasksToLocalStorage(allTasks);
-    }
-
+    const allTasks = getTasksFromLocalStorage();
     const discarded = allTasks.filter((task) => task.followUpStatus === "descartado");
     setClients(discarded);
     setIsHydrated(true);
   }, []);
 
   const handleReactivate = (clientId: string) => {
-    const stored = window.localStorage.getItem(kanbanStorageKey);
-    if (stored) {
-      try {
-        const tasks = JSON.parse(stored) as KanbanTask[];
-        const updatedTasks = tasks.map((task) => {
+    try {
+      const tasks = getTasksFromLocalStorage();
+      const updatedTasks = tasks.map((task) => {
           if (task.id === clientId) {
             return {
               ...task,
@@ -84,9 +57,8 @@ export default function ClientesDescartadosPage() {
         saveKanbanTasksToLocalStorage(updatedTasks);
         setClients(updatedTasks.filter((t) => t.followUpStatus === "descartado"));
         setSelectedClient(null);
-      } catch {
-        console.error("Error al reactivar cliente");
-      }
+    } catch {
+      console.error("Error al reactivar cliente");
     }
   };
 

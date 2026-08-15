@@ -11,10 +11,9 @@ import { KanbanTablero } from "@/components/admin/KanbanTablero";
 import { PublicStatusEditorModal } from "@/components/admin/PublicStatusEditorModal";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
-import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import {
   kanbanColumns,
-  kanbanStorageKey,
+  getTasksFromLocalStorage,
   saveKanbanTasksToLocalStorage,
   type KanbanTask,
   type TaskPriority,
@@ -83,29 +82,8 @@ export default function OperacionesPage() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const loadTasks = async () => {
-      if (typeof window === "undefined") return;
-      await syncKanbanTasksFromBackend();
-      try {
-        const raw = window.localStorage.getItem(kanbanStorageKey);
-        const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-        if (!cancelled) {
-          setKanbanTasks(Array.isArray(parsed) ? (parsed as KanbanTask[]) : []);
-        }
-      } catch {
-        if (!cancelled) {
-          setKanbanTasks([]);
-        }
-      }
-    };
-
-    void loadTasks();
-
-    return () => {
-      cancelled = true;
-    };
+    if (typeof window === "undefined") return;
+    setKanbanTasks(getTasksFromLocalStorage());
   }, [refreshTrigger]);
 
   const tasksWithProjectCode = useMemo(
@@ -167,10 +145,12 @@ export default function OperacionesPage() {
       codigoProyecto: generatePublicProjectCode(),
     };
     try {
-      const stored = window.localStorage.getItem(kanbanStorageKey);
-      const current: KanbanTask[] = stored ? JSON.parse(stored) : [];
-      const next = Array.isArray(current) ? [...current, newTask] : [newTask];
-      saveKanbanTasksToLocalStorage(next);
+      const current = getTasksFromLocalStorage();
+      const next = [...current, newTask];
+      if (!saveKanbanTasksToLocalStorage(next)) {
+        setAssignError("No se pudo guardar la tarea.");
+        return;
+      }
       setRefreshTrigger((t) => t + 1);
       setIsAssignModalOpen(false);
       setNewTaskProject("");

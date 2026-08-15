@@ -13,6 +13,8 @@ import {
 } from "@/lib/axios/kanbanApi";
 import { actualizarTarea, asignarTrabajadoresTarea, cambiarEtapa } from "@/lib/axios/tareasApi";
 import {
+  getTasksFromLocalStorage,
+  mergeKanbanTaskLists,
   saveKanbanTasksToLocalStorage,
   type FollowUpStatus,
   type KanbanTask,
@@ -234,13 +236,15 @@ export async function syncKanbanTasksFromBackend(): Promise<KanbanTask[] | null>
   if (!authApi.isAuthenticated()) return null;
 
   try {
-    const tasks = await fetchBackendKanbanTasks();
-    if (!tasks || tasks.length === 0) {
+    const backendTasks = await fetchBackendKanbanTasks();
+    if (!backendTasks || backendTasks.length === 0) {
       return null;
     }
 
-    saveKanbanTasksToLocalStorage(tasks);
-    return tasks;
+    const localTasks = getTasksFromLocalStorage();
+    const merged = mergeKanbanTaskLists(localTasks, backendTasks);
+    saveKanbanTasksToLocalStorage(merged);
+    return merged;
   } catch (error) {
     console.warn("No se pudo sincronizar el kanban desde backend; se mantiene fallback local.", error);
     return null;

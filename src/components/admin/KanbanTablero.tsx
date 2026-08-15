@@ -441,16 +441,18 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     if (typeof window === "undefined") return;
 
     const consolidated = getTasksFromLocalStorage();
-    if (consolidated.length > 0) {
-      hydrateAndApplyTasks(consolidated, true);
-    }
+    hydrateAndApplyTasks(consolidated, consolidated.length > 0);
 
     const syncFromStorage = async () => {
-      await syncKanbanTasksFromBackend();
-      const refreshed = getTasksFromLocalStorage();
-      if (refreshed.length > 0) {
-        hydrateAndApplyTasks(refreshed, true);
+      const localBeforeSync = getTasksFromLocalStorage();
+      if (localBeforeSync.length > 0) {
+        hydrateAndApplyTasks(localBeforeSync, false);
       }
+
+      await syncKanbanTasksFromBackend();
+
+      const refreshed = getTasksFromLocalStorage();
+      hydrateAndApplyTasks(refreshed, refreshed.length > 0);
     };
 
     void syncFromStorage();
