@@ -36,14 +36,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       return { success: false, error: response.message || "Error al iniciar sesion" };
     } catch (error: unknown) {
-      const errorMessage =
+      if (
         typeof error === "object" &&
         error !== null &&
         "response" in error &&
-        typeof (error as { response?: { data?: { message?: string } } }).response?.data?.message === "string"
-          ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
-          : "Error al conectar con el servidor";
-      return { success: false, error: errorMessage };
+        typeof (error as { response?: { status?: number; data?: { message?: string; hint?: string } } })
+          .response === "object"
+      ) {
+        const axiosError = error as {
+          response?: { status?: number; data?: { message?: string; hint?: string } };
+        };
+        const status = axiosError.response?.status;
+        const backendMessage = axiosError.response?.data?.message?.trim();
+        const hint = axiosError.response?.data?.hint?.trim();
+
+        if (backendMessage) {
+          return {
+            success: false,
+            error: hint ? `${backendMessage}. ${hint}` : backendMessage,
+          };
+        }
+
+        if (status === 502 || status === 503) {
+          return {
+            success: false,
+            error:
+              "El backend no respondió. Revisa NEXT_PUBLIC_API_URL en Vercel (debe ser una sola URL del backend).",
+          };
+        }
+      }
+
+      if (error instanceof Error && error.message.includes("No se pudo iniciar sesion")) {
+        return {
+          success: false,
+          error: "Credenciales incorrectas o usuario no registrado en el backend.",
+        };
+      }
+
+      return { success: false, error: "Error al conectar con el servidor. Comprueba /api/health/backend" };
     }
   };
 

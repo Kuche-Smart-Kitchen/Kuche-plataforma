@@ -25,9 +25,40 @@ const readEnv = (key: string): string => {
   return "";
 };
 
+/** Resuelve una sola URL de backend (sin listas separadas por coma). */
+export function resolveBackendApiUrl(): string {
+  const raw = readEnv("BACKEND_API_URL") || readEnv("NEXT_PUBLIC_API_URL");
+  if (!raw) return "";
+
+  const candidates = raw
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (!candidates.length) return "";
+  if (candidates.length === 1) return candidates[0];
+
+  const localhostCandidates = candidates.filter(
+    (value) =>
+      value.includes("localhost") ||
+      value.includes("127.0.0.1") ||
+      value.includes("0.0.0.0"),
+  );
+
+  const nodeEnv = readEnv("NODE_ENV") || "development";
+  const isProduction = nodeEnv === "production" || readEnv("VERCEL") === "1";
+
+  if (isProduction) {
+    const remoteCandidate = candidates.find((value) => !localhostCandidates.includes(value));
+    return remoteCandidate ?? candidates[candidates.length - 1];
+  }
+
+  return localhostCandidates[0] ?? candidates[0];
+}
+
 export const env = {
   apiUrl: readEnv("NEXT_PUBLIC_API_URL"),
-  backendApiUrl: readEnv("BACKEND_API_URL") || readEnv("NEXT_PUBLIC_API_URL"),
+  backendApiUrl: resolveBackendApiUrl(),
   fileUploadEndpoint: readEnv("NEXT_PUBLIC_FILE_UPLOAD_ENDPOINT"),
   turnstileSiteKey: readEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY"),
   showroomAddress: readEnv("NEXT_PUBLIC_SHOWROOM_ADDRESS"),

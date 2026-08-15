@@ -1,6 +1,6 @@
 import axios, { AxiosError, type AxiosInstance, type InternalAxiosRequestConfig } from "axios";
 import { runtimeStore } from "@/lib/runtime-store";
-import { env } from "@/lib/env";
+import { env, resolveBackendApiUrl } from "@/lib/env";
 
 type AxiosInternalFlags = {
   skipAuthToken?: boolean;
@@ -23,10 +23,12 @@ const resolveBaseUrl = () => {
     return "/api/proxy";
   }
 
+  const resolved = resolveBackendApiUrl();
+  if (resolved) return resolved;
+
   const raw = env.apiUrl.trim();
   if (!raw) return "http://localhost:3001";
 
-  // Allows local-first fallback such as: "http://localhost:3001,https://backend..."
   const candidates = raw
     .split(",")
     .map((value) => value.trim())
