@@ -313,6 +313,12 @@ function syncSeguimientoKanbanSnapshotForTasks(tasks: KanbanTask[]): void {
 
 export function saveKanbanTasksToLocalStorage(tasks: KanbanTask[]): boolean {
   if (typeof window === "undefined") return false;
+  if (tasks.length === 0 && hasRecoverableKanbanData()) {
+    console.warn(
+      "saveKanbanTasksToLocalStorage: se bloqueó guardar un tablero vacío porque aún hay tarjetas recuperables en localStorage.",
+    );
+    return false;
+  }
   const attempts: (() => KanbanTask[])[] = [
     () => stripKanbanTasksForStorage(tasks),
     () => stripAllFormalPdfDataUrl(tasks),
@@ -336,8 +342,9 @@ export function saveKanbanTasksToLocalStorage(tasks: KanbanTask[]): boolean {
 
 export const kanbanTasksUpdatedEventName = "kuche:kanban-tasks-updated";
 
-/** Lee tareas crudas desde localStorage (sin normalizar). */
-export function getTasksFromLocalStorage(): KanbanTask[] {
+const VALID_TASK_STAGES = new Set<TaskStage>(kanbanColumns.map((col) => col.id));
+
+function readRawKanbanTasksFromStorage(): KanbanTask[] {
   if (typeof window === "undefined") return [];
   const stored = window.localStorage.getItem(kanbanStorageKey);
   if (!stored) return [];
@@ -348,6 +355,186 @@ export function getTasksFromLocalStorage(): KanbanTask[] {
   } catch {
     return [];
   }
+}
+
+function normalizeTaskStageFromProject(raw: unknown): TaskStage {
+  const normalized = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (normalized === "citas") return "citas";
+  if (normalized === "disenos" || normalized === "diseños") return "disenos";
+  if (normalized === "cotizacion" || normalized === "cotización") return "cotizacion";
+  if (normalized === "contrato" || normalized === "seguimiento") return "contrato";
+  return "citas";
+}
+
+function normalizeProjectCode(raw: unknown, fallback: string): string {
+  const value = String(raw ?? fallback).trim();
+  if (!value) return fallback.trim();
+  if (value.toUpperCase().startsWith("K-")) return value.toUpperCase();
+  if (value.toUpperCase().startsWith("K")) return `K-${value.slice(1).toUpperCase()}`;
+  return `K-${value.toUpperCase()}`;
+}
+
+function normalizeFollowUpFromProject(raw: unknown): FollowUpStatus {
+  const normalized = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (normalized === "confirmado") return "confirmado";
+  if (normalized === "descartado" || normalized === "inactivo") return "descartado";
+  return "pendiente";
+}
+
+function listSeguimientoProjectRecords(): { key: string; parsed: Record<string, unknown> }[] {
+  if (typeof window === "undefined") return [];
+  const records: { key: string; parsed: Record<string, unknown> }[] = [];
+
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+    if (!key?.startsWith(seguimientoProjectStoragePrefix)) continue;
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (parsed && typeof parsed === "object") {
+        records.push({ key, parsed });
+      }
+    } catch {
+      // ignore malformed project records
+    }
+  }
+
+  return records;
+}
+
+function normalizeProjectCodeForMatch(code: string): string {
+  return code.trim().toUpperCase().replace(/^K-?/, "");
+}
+
+function taskMatchesSeguimientoProject(task: KanbanTask, codigo: string, cliente: string): boolean {
+  const normalizedCode = normalizeProjectCodeForMatch(codigo);
+  const taskCode = normalizeProjectCodeForMatch(String(task.codigoProyecto ?? ""));
+  if (normalizedCode && taskCode && normalizedCode === taskCode) return true;
+  if (task.id === `project-${codigo}` || task.id === codigo) return true;
+  if (cliente && task.project.trim().toLowerCase() === cliente.trim().toLowerCase()) return true;
+  return false;
+}
+
+function kanbanTaskFromSeguimientoProject(
+  storageKey: string,
+  parsed: Record<string, unknown>,
+): KanbanTask | null {
+  const suffix = storageKey.slice(seguimientoProjectStoragePrefix.length);
+  const codigo = normalizeProjectCode(parsed.codigo, suffix);
+  if (!codigo) return null;
+
+  const cliente = String(parsed.cliente ?? parsed.nombre ?? parsed.titulo ?? "Cliente").trim() || "Cliente";
+  const kanbanStageRaw = parsed.kanbanStage;
+  let stage = normalizeTaskStageFromProject(kanbanStageRaw);
+  const followUpStatus = normalizeFollowUpFromProject(parsed.kanbanFollowUpStatus);
+
+  const preliminarCotizaciones = Array.isArray(parsed.preliminarCotizaciones)
+    ? (parsed.preliminarCotizaciones as PreliminarData[])
+    : undefined;
+  const cotizacionesFormales = Array.isArray(parsed.cotizacionesFormales)
+    ? (parsed.cotizacionesFormales as CotizacionFormalData[])
+    : undefined;
+
+  const hasCompletedCitaSnapshot =
+    kanbanStageRaw === "disenos" ||
+    stage === "disenos" ||
+    stage === "cotizacion" ||
+    stage === "contrato" ||
+    Boolean(preliminarCotizaciones?.length || parsed.preliminarData);
+
+  const citaStarted = hasCompletedCitaSnapshot || stage !== "citas";
+  const citaFinished = hasCompletedCitaSnapshot || stage !== "citas";
+
+  if (kanbanStageRaw === "disenos" || (citaStarted && citaFinished && stage === "citas")) {
+    stage = "disenos";
+  }
+
+  const status: TaskStatus =
+    stage === "contrato" && (followUpStatus === "confirmado" || followUpStatus === "descartado")
+      ? "completada"
+      : stage === "disenos" && citaStarted && citaFinished
+        ? "pendiente"
+        : "pendiente";
+
+  return {
+    id: `project-${codigo}`,
+    title: cliente,
+    project: cliente,
+    stage,
+    status,
+    assignedTo: ["Sin asignar"],
+    codigoProyecto: codigo,
+    location:
+      typeof parsed.ubicacion === "string"
+        ? parsed.ubicacion
+        : typeof parsed.location === "string"
+          ? parsed.location
+          : undefined,
+    mapsUrl: typeof parsed.mapsUrl === "string" ? parsed.mapsUrl : undefined,
+    notes: typeof parsed.notas === "string" ? parsed.notas : undefined,
+    followUpStatus: stage === "contrato" ? followUpStatus : undefined,
+    citaStarted,
+    citaFinished,
+    preliminarCotizaciones,
+    preliminarData:
+      preliminarCotizaciones?.[0] ??
+      (parsed.preliminarData && typeof parsed.preliminarData === "object"
+        ? (parsed.preliminarData as PreliminarData)
+        : undefined),
+    cotizacionesFormales,
+    cotizacionFormalData:
+      cotizacionesFormales?.[0] ??
+      (parsed.cotizacionFormalData && typeof parsed.cotizacionFormalData === "object"
+        ? (parsed.cotizacionFormalData as CotizacionFormalData)
+        : undefined),
+    createdAt:
+      typeof parsed.createdAt === "number" && Number.isFinite(parsed.createdAt)
+        ? parsed.createdAt
+        : Date.now(),
+  };
+}
+
+function rebuildMissingTasksFromProjects(existing: KanbanTask[]): KanbanTask[] {
+  const merged = [...existing];
+
+  for (const { key, parsed } of listSeguimientoProjectRecords()) {
+    const codigo = normalizeProjectCode(
+      parsed.codigo,
+      key.slice(seguimientoProjectStoragePrefix.length),
+    );
+    const cliente = String(parsed.cliente ?? parsed.nombre ?? "").trim();
+    const alreadyExists = merged.some((task) => taskMatchesSeguimientoProject(task, codigo, cliente));
+    if (alreadyExists) continue;
+
+    const rebuilt = kanbanTaskFromSeguimientoProject(key, parsed);
+    if (rebuilt) merged.push(rebuilt);
+  }
+
+  return merged;
+}
+
+function hasRecoverableKanbanData(): boolean {
+  if (readRawKanbanTasksFromStorage().length > 0) return true;
+  return listSeguimientoProjectRecords().length > 0;
+}
+
+/** Lee tareas desde localStorage y reconstruye las faltantes desde `kuche_project_*`. */
+export function getTasksFromLocalStorage(): KanbanTask[] {
+  if (typeof window === "undefined") return [];
+
+  const raw = readRawKanbanTasksFromStorage();
+  const merged = rebuildMissingTasksFromProjects(raw);
+
+  if (merged.length > raw.length && merged.length > 0) {
+    saveKanbanTasksToLocalStorage(merged);
+  }
+
+  return merged;
+}
+
+export function isValidTaskStage(value: unknown): value is TaskStage {
+  return typeof value === "string" && VALID_TASK_STAGES.has(value as TaskStage);
 }
 
 export type KanbanTaskMatchCriteria = {

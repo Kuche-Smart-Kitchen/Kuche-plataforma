@@ -134,11 +134,26 @@ const normalizeTask = (task: Partial<KanbanTask> & Record<string, unknown>): Kan
         : legacyType === "todo"
           ? "cotizacion"
           : undefined;
-  const stage =
+  const kanbanStageFromRecord =
+    typeof task.kanbanStage === "string" ? task.kanbanStage : undefined;
+
+  let stage: TaskStage =
     typeof task.stage === "string" && kanbanColumns.some((col) => col.id === task.stage)
       ? (task.stage as TaskStage)
       : legacyStage ?? "citas";
-  const status = task.status === "completada" ? "completada" : "pendiente";
+
+  const citaStarted = Boolean(task.citaStarted) || kanbanStageFromRecord === "disenos";
+  const citaFinished = Boolean(task.citaFinished) || kanbanStageFromRecord === "disenos";
+
+  if (kanbanStageFromRecord === "disenos" || (citaStarted && citaFinished && stage === "citas")) {
+    stage = "disenos";
+  }
+
+  let status: TaskStatus = task.status === "completada" ? "completada" : "pendiente";
+  if (stage === "disenos" && (kanbanStageFromRecord === "disenos" || (citaStarted && citaFinished))) {
+    status = "pendiente";
+  }
+
   const rawAssigned = task.assignedTo ?? task.employee;
   const assignedTo: string[] = Array.isArray(rawAssigned)
     ? rawAssigned.filter((s): s is string => typeof s === "string")
@@ -213,8 +228,8 @@ const normalizeTask = (task: Partial<KanbanTask> & Record<string, unknown>): Kan
     cotizacionFormalData,
     preliminarCotizaciones,
     cotizacionesFormales,
-    citaStarted: Boolean(task.citaStarted),
-    citaFinished: Boolean(task.citaFinished),
+    citaStarted,
+    citaFinished,
     designApprovedByAdmin: Boolean(task.designApprovedByAdmin),
     designApprovedByClient: Boolean(task.designApprovedByClient),
     codigoProyecto: typeof task.codigoProyecto === "string" ? task.codigoProyecto : undefined,
@@ -274,7 +289,7 @@ const repairTaskStatusAfterEarlyFollowUp = (task: KanbanTask): KanbanTask => {
 };
 
 /** Mueve a la siguiente columna las tareas que ya completaron su flujo en la etapa actual. */
-const autoAdvanceCompletedTasks = (tasks: KanbanTask[]): KanbanTask[] => {
+const autoAdvanceCompletedTasks = (tasks: KanbanTask[]): { tasks: KanbanTask[]; changed: boolean } => {
   let changed = false;
   const next = tasks.map((task) => {
     if (task.stage === "citas" && task.citaStarted && task.citaFinished) {
@@ -293,26 +308,31 @@ const autoAdvanceCompletedTasks = (tasks: KanbanTask[]): KanbanTask[] => {
     }
     return task;
   });
-  return changed ? next : tasks;
+  return { tasks: changed ? next : tasks, changed };
 };
 
-const hydrateKanbanTasksFromLocalStorage = (rawTasks?: KanbanTask[]): KanbanTask[] => {
+const hydrateKanbanTasksFromLocalStorage = (
+  rawTasks?: KanbanTask[],
+): { tasks: KanbanTask[]; shouldPersist: boolean } => {
   const stored = rawTasks ?? getTasksFromLocalStorage();
-  if (!Array.isArray(stored) || stored.length === 0) return initialKanbanTasks;
+  if (!Array.isArray(stored) || stored.length === 0) {
+    return { tasks: initialKanbanTasks, shouldPersist: false };
+  }
   const normalized = stored.map((task) => normalizeTask(task));
   const merged = mergeTasks(normalized);
-  return autoAdvanceCompletedTasks(merged);
+  const { tasks, changed } = autoAdvanceCompletedTasks(merged);
+  return { tasks, shouldPersist: changed };
 };
 
 const applyHydratedTasksToState = (
   rawTasks: KanbanTask[],
   setKanbanTasks: Dispatch<SetStateAction<KanbanTask[]>>,
   skipNextWriteRef: MutableRefObject<boolean>,
-): KanbanTask[] => {
-  const advanced = hydrateKanbanTasksFromLocalStorage(rawTasks);
+): { tasks: KanbanTask[]; shouldPersist: boolean } => {
+  const { tasks, shouldPersist } = hydrateKanbanTasksFromLocalStorage(rawTasks);
   skipNextWriteRef.current = true;
-  setKanbanTasks(advanced);
-  return advanced;
+  setKanbanTasks(tasks);
+  return { tasks, shouldPersist };
 };
 
 export type KanbanTableroProps = {
@@ -345,7 +365,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const [uploadTaskId, setUploadTaskId] = useState<string | null>(null);
   const [kanbanTasks, setKanbanTasks] = useState<KanbanTask[]>(() => {
     if (typeof window === "undefined") return initialKanbanTasks;
-    return hydrateKanbanTasksFromLocalStorage();
+    return hydrateKanbanTasksFromLocalStorage().tasks;
   });
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dragOverColumnId, setDragOverColumnId] = useState<TaskStage | null>(null);
@@ -413,7 +433,14 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
     const localSnapshot = getTasksFromLocalStorage();
     if (localSnapshot.length > 0) {
-      applyHydratedTasksToState(localSnapshot, setKanbanTasks, skipNextWriteRef);
+      const { tasks, shouldPersist } = applyHydratedTasksToState(
+        localSnapshot,
+        setKanbanTasks,
+        skipNextWriteRef,
+      );
+      if (shouldPersist && tasks.length > 0) {
+        saveKanbanTasksToLocalStorage(tasks);
+      }
     }
     isLoadedRef.current = true;
 
@@ -436,18 +463,14 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
           }
           return;
         }
-        const advanced = applyHydratedTasksToState(parsed, setKanbanTasks, skipNextWriteRef);
-        if (advanced.length > 0) {
-          const normalized = parsed.map((task) => normalizeTask(task));
-          const merged = mergeTasks(normalized);
-          if (advanced !== merged) {
-            const okAdv = saveKanbanTasksToLocalStorage(advanced);
-            setKanbanPersistError(
-              okAdv
-                ? null
-                : "No se pudo guardar el tablero: almacenamiento lleno. Libera espacio del navegador o reduce tareas/archivos.",
-            );
-          }
+        const { tasks, shouldPersist } = applyHydratedTasksToState(parsed, setKanbanTasks, skipNextWriteRef);
+        if (shouldPersist && tasks.length > 0) {
+          const okAdv = saveKanbanTasksToLocalStorage(tasks);
+          setKanbanPersistError(
+            okAdv
+              ? null
+              : "No se pudo guardar el tablero: almacenamiento lleno. Libera espacio del navegador o reduce tareas/archivos.",
+          );
         }
       } catch {
         // ignore malformed storage
@@ -478,13 +501,11 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     try {
       const parsed = JSON.parse(stored) as KanbanTask[];
       if (Array.isArray(parsed) && parsed.length) {
-        const normalized = parsed.map((task) => normalizeTask(task));
-        const merged = mergeTasks(normalized);
-        const advanced = autoAdvanceCompletedTasks(merged);
+        const { tasks, shouldPersist } = hydrateKanbanTasksFromLocalStorage(parsed);
         skipNextWriteRef.current = true;
-        setKanbanTasks(advanced);
-        if (advanced !== merged) {
-          const okRef = saveKanbanTasksToLocalStorage(advanced);
+        setKanbanTasks(tasks);
+        if (shouldPersist && tasks.length > 0) {
+          const okRef = saveKanbanTasksToLocalStorage(tasks);
           setKanbanPersistError(
             okRef
               ? null
@@ -504,6 +525,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       skipNextWriteRef.current = false;
       return;
     }
+    if (kanbanTasks.length === 0 && getTasksFromLocalStorage().length > 0) return;
     const ok = saveKanbanTasksToLocalStorage(kanbanTasks);
     setKanbanPersistError(
       ok
@@ -568,8 +590,8 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
     const runAutoAdvance = () => {
       setKanbanTasks((prev) => {
-        const advanced = autoAdvanceCompletedTasks(prev);
-        return advanced !== prev ? advanced : prev;
+        const { tasks, changed } = autoAdvanceCompletedTasks(prev);
+        return changed ? tasks : prev;
       });
     };
 
