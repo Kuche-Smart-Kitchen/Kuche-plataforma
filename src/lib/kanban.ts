@@ -467,7 +467,9 @@ function kanbanTaskFromSeguimientoProject(
   const codigo = normalizeProjectCode(parsed.codigo, suffix);
   if (!codigo) return null;
 
-  const cliente = String(parsed.cliente ?? parsed.nombre ?? parsed.titulo ?? "Cliente").trim() || "Cliente";
+  const cliente =
+    String(parsed.cliente ?? parsed.nombreCliente ?? parsed.nombre ?? parsed.titulo ?? "Cliente").trim() ||
+    "Cliente";
   const preliminarData = extractPreliminarData(parsed);
   const preliminarCotizaciones = Array.isArray(parsed.preliminarCotizaciones)
     ? (parsed.preliminarCotizaciones as PreliminarData[])
@@ -475,7 +477,7 @@ function kanbanTaskFromSeguimientoProject(
       ? [preliminarData]
       : undefined;
   const stage = resolveStageFromProject(parsed);
-  const citaFlags = resolveCitaFlagsFromProject(parsed, stage);
+  const hasLevantamiento = projectHasCompletedLevantamiento(parsed);
 
   return {
     id: `task-${codigo}`,
@@ -483,17 +485,19 @@ function kanbanTaskFromSeguimientoProject(
     project: cliente,
     stage,
     status: "pendiente",
-    assignedTo: ["Sin asignar"],
+    assignedTo: ["Valeria", "Sin asignar"],
+    priority: "media",
     codigoProyecto: codigo,
     location:
       typeof parsed.ubicacion === "string"
         ? parsed.ubicacion
         : typeof parsed.location === "string"
           ? parsed.location
-          : undefined,
+          : "",
     mapsUrl: typeof parsed.mapsUrl === "string" ? parsed.mapsUrl : undefined,
     notes: typeof parsed.notas === "string" ? parsed.notas : undefined,
-    ...citaFlags,
+    citaStarted: true,
+    citaFinished: hasLevantamiento,
     preliminarData,
     preliminarCotizaciones,
     createdAt:
@@ -510,8 +514,8 @@ function syncExistingTaskWithProject(task: KanbanTask, parsed: Record<string, un
   let next: KanbanTask = {
     ...task,
     codigoProyecto: task.codigoProyecto ?? normalizeProjectCode(parsed.codigo, task.codigoProyecto ?? ""),
-    project: task.project || String(parsed.cliente ?? "Cliente").trim() || "Cliente",
-    title: task.title || String(parsed.cliente ?? "Cliente").trim() || "Cliente",
+    project: task.project || String(parsed.cliente ?? parsed.nombreCliente ?? "Cliente").trim() || "Cliente",
+    title: task.title || String(parsed.cliente ?? parsed.nombreCliente ?? "Cliente").trim() || "Cliente",
   };
 
   if (!next.preliminarData && preliminarData) {
@@ -564,29 +568,6 @@ function syncExistingTaskWithProject(task: KanbanTask, parsed: Record<string, un
   return next;
 }
 
-function consolidateKanbanTasksWithProjects(existing: KanbanTask[]): KanbanTask[] {
-  const merged = existing.map((task) => ({ ...task }));
-
-  for (const { key, parsed } of listSeguimientoProjectRecords()) {
-    const codigo = normalizeProjectCode(
-      parsed.codigo,
-      key.slice(seguimientoProjectStoragePrefix.length),
-    );
-    const cliente = String(parsed.cliente ?? parsed.nombre ?? "").trim();
-    const index = merged.findIndex((task) => taskMatchesSeguimientoProject(task, codigo, cliente));
-
-    if (index === -1) {
-      const rebuilt = kanbanTaskFromSeguimientoProject(key, parsed);
-      if (rebuilt) merged.push(rebuilt);
-      continue;
-    }
-
-    merged[index] = syncExistingTaskWithProject(merged[index], parsed);
-  }
-
-  return merged;
-}
-
 function hasRecoverableKanbanData(): boolean {
   if (readRawKanbanTasksFromStorage().length > 0) return true;
   return listSeguimientoProjectRecords().length > 0;
@@ -601,7 +582,7 @@ function isKanbanListIncomplete(raw: KanbanTask[], consolidated: KanbanTask[]): 
       parsed.codigo,
       key.slice(seguimientoProjectStoragePrefix.length),
     );
-    const cliente = String(parsed.cliente ?? parsed.nombre ?? "").trim();
+    const cliente = String(parsed.cliente ?? parsed.nombreCliente ?? parsed.nombre ?? "").trim();
     const matched = raw.some((task) => taskMatchesSeguimientoProject(task, codigo, cliente));
     if (!matched) return true;
   }
@@ -613,9 +594,47 @@ function isKanbanListIncomplete(raw: KanbanTask[], consolidated: KanbanTask[]): 
 export function getTasksFromLocalStorage(): KanbanTask[] {
   if (typeof window === "undefined") return [];
 
-  const raw = readRawKanbanTasksFromStorage();
-  const consolidated = consolidateKanbanTasksWithProjects(raw);
-  if (isKanbanListIncomplete(raw, consolidated)) {
+  let baseTasks: KanbanTask[] = [];
+  try {
+    const storedRaw = window.localStorage.getItem(kanbanStorageKey);
+    const parsed = JSON.parse(storedRaw || "[]") as unknown;
+    if (Array.isArray(parsed)) baseTasks = parsed as KanbanTask[];
+  } catch {
+    baseTasks = [];
+  }
+
+  const syncedBase = baseTasks.map((task) => {
+    for (const { key, parsed } of listSeguimientoProjectRecords()) {
+      const codigo = normalizeProjectCode(
+        parsed.codigo,
+        key.slice(seguimientoProjectStoragePrefix.length),
+      );
+      const cliente = String(parsed.cliente ?? parsed.nombreCliente ?? parsed.nombre ?? "").trim();
+      if (taskMatchesSeguimientoProject(task, codigo, cliente)) {
+        return syncExistingTaskWithProject(task, parsed);
+      }
+    }
+    return task;
+  });
+
+  const projectTasks: KanbanTask[] = [];
+  for (const { key, parsed } of listSeguimientoProjectRecords()) {
+    const codigo = normalizeProjectCode(
+      parsed.codigo,
+      key.slice(seguimientoProjectStoragePrefix.length),
+    );
+    const cliente =
+      String(parsed.cliente ?? parsed.nombreCliente ?? parsed.nombre ?? "Cliente").trim() || "Cliente";
+
+    const exists = syncedBase.some((task) => taskMatchesSeguimientoProject(task, codigo, cliente));
+    if (exists) continue;
+
+    const rebuilt = kanbanTaskFromSeguimientoProject(key, parsed);
+    if (rebuilt) projectTasks.push(rebuilt);
+  }
+
+  const consolidated = [...syncedBase, ...projectTasks];
+  if (isKanbanListIncomplete(baseTasks, consolidated)) {
     saveKanbanTasksToLocalStorage(consolidated);
   }
   return consolidated;

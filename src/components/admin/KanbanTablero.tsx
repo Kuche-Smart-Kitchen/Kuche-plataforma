@@ -441,12 +441,16 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     if (typeof window === "undefined") return;
 
     const consolidated = getTasksFromLocalStorage();
-    hydrateAndApplyTasks(consolidated, true);
+    if (consolidated.length > 0) {
+      hydrateAndApplyTasks(consolidated, true);
+    }
 
     const syncFromStorage = async () => {
       await syncKanbanTasksFromBackend();
       const refreshed = getTasksFromLocalStorage();
-      hydrateAndApplyTasks(refreshed, true);
+      if (refreshed.length > 0) {
+        hydrateAndApplyTasks(refreshed, true);
+      }
     };
 
     void syncFromStorage();
