@@ -1,10 +1,10 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import {
-  ArrowUpRight,
+  ArrowRight,
   Calendar,
   CalendarX,
   CheckCircle2,
@@ -14,14 +14,7 @@ import {
   XCircle,
 } from "lucide-react";
 
-type TaskLike = {
-  status?: string;
-  column?: string;
-  type?: string;
-  title?: string;
-  client?: string;
-  followUpStatus?: string;
-};
+import { dueDateToSortTimestamp } from "@/lib/kanban-due-datetime";
 
 type AppointmentLike = {
   status?: string;
@@ -32,23 +25,33 @@ type AppointmentLike = {
   client?: string;
 };
 
-const safeParseArray = <T,>(value: string | null): T[] => {
-  if (!value) return [];
+type CitaLike = {
+  nombreCliente?: string;
+  fechaAgendada?: string;
+  estado?: string;
+  ingenieroAsignado?: string | string[] | { nombre?: string } | Array<string | { nombre?: string }> | null;
+};
+
+const getStoredArray = <T,>(key: string): T[] => {
+  if (typeof window === "undefined") return [];
   try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : [];
+    const stored = window.localStorage.getItem(key);
+    if (!stored) return [];
+    const parsed = JSON.parse(stored);
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
   } catch {
     return [];
   }
 };
 
-const getFirstStorageArray = <T,>(keys: string[]): T[] => {
-  if (typeof window === "undefined") return [];
-  for (const key of keys) {
-    const parsed = safeParseArray<T>(window.localStorage.getItem(key));
-    if (parsed.length > 0) return parsed;
-  }
-  return [];
+const getStoredMateriales = (): unknown[] => getStoredArray<unknown>("kuche.catalogo.precios.v1");
+
+const obtenerTodasLasCitas = (): { success: boolean; data: CitaLike[] } => {
+  const data = getStoredArray<CitaLike>("kuche_agenda_events");
+  return {
+    success: data.length > 0 || typeof window !== "undefined",
+    data,
+  };
 };
 
 const formatDateLabel = (date: Date) => {
@@ -63,72 +66,120 @@ const formatDateLabel = (date: Date) => {
 
 const getGreeting = (date: Date) => {
   const hour = date.getHours();
-  if (hour < 12) return "Buenos días";
-  if (hour < 19) return "Buenas tardes";
+  if (hour < 12) {
+    return "Buenos días";
+  }
+  if (hour < 19) {
+    return "Buenas tardes";
+  }
   return "Buenas noches";
 };
 
-type AttentionRow = {
-  id: string;
-  label: string;
-  href: string;
-  status: "Pendiente" | "En revisión";
+const formatTime = (isoString: string) => {
+  try {
+    return new Intl.DateTimeFormat("es-MX", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(isoString));
+  } catch {
+    return "--:--";
+  }
 };
 
+const estadoToType: Record<string, string> = {
+  programada: "Levantamiento / Medidas",
+  en_proceso: "Cotización en sitio",
+  completada: "Presentación de diseño",
+  cancelada: "Cancelada",
+};
+
+const isTaskConfirmed = (task: { followUpStatus?: string }) => (task.followUpStatus ?? "").toLowerCase() === "confirmado";
+const isTaskDiscarded = (task: { followUpStatus?: string }) => (task.followUpStatus ?? "").toLowerCase() === "descartado";
+
+type DashboardTask = {
+  id: string;
+  title: string;
+  project: string;
+  stage: string;
+  status: string;
+  assignedTo?: string[];
+  dueDate?: string;
+  visitScheduledAt?: string;
+  createdAt: number;
+  followUpStatus?: string;
+  designApprovedByAdmin?: boolean;
+  designApprovedByClient?: boolean;
+};
+
+type CalendarEntry = {
+  id: string;
+  key: string;
+  title: string;
+  subtitle: string;
+  timeLabel: string;
+  tone: string;
+  sortTimestamp: number;
+};
+
+function citaToAppointment(cita: CitaLike): AppointmentLike {
+  const assigned = Array.isArray(cita.ingenieroAsignado)
+    ? cita.ingenieroAsignado
+        .map((item) => (typeof item === "string" ? item : item.nombre))
+        .filter((value) => Boolean(value))
+        .join(", ")
+    : typeof cita.ingenieroAsignado === "object" && cita.ingenieroAsignado !== null
+      ? cita.ingenieroAsignado.nombre
+      : typeof cita.ingenieroAsignado === "string"
+        ? cita.ingenieroAsignado
+        : null;
+
+  return {
+    client: cita.nombreCliente,
+    date: cita.fechaAgendada ? cita.fechaAgendada.slice(0, 10) : undefined,
+    time: cita.fechaAgendada ? formatTime(cita.fechaAgendada) : "--:--",
+    type: cita.estado ? (estadoToType[cita.estado] ?? "Visita") : "Visita",
+    status: cita.estado === "programada" || cita.estado === "en_proceso" ? "Pendiente" : cita.estado,
+    assignedTo: assigned,
+  };
+}
+
 export default function AdminPage() {
-  const [tasks, setTasks] = useState<TaskLike[]>([]);
-  const [kanbanTasks, setKanbanTasks] = useState<TaskLike[]>([]);
+  const [tasks, setTasks] = useState<DashboardTask[]>([]);
   const [appointments, setAppointments] = useState<AppointmentLike[]>([]);
-  const [catalogItems, setCatalogItems] = useState<unknown[]>([]);
+  const [totalMaterials, setTotalMaterials] = useState(0);
+  const [confirmedClients, setConfirmedClients] = useState(0);
+  const [discardedClients, setDiscardedClients] = useState(0);
+  const [staleFollowUpCount, setStaleFollowUpCount] = useState(0);
   const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
-    const loadDashboardStorage = () => {
-      // Operaciones y seguimiento (nuevo + legado)
-      const kanbanRows = getFirstStorageArray<TaskLike>([
-        "kuche-kanban-tasks",
-        "kuche_kanban_tasks",
-      ]);
-      // Agenda de admin (nuevo + legado booking público)
-      const agendaRows = getFirstStorageArray<AppointmentLike>([
-        "kuche_agenda_events",
-        "kuche_appointments",
-      ]);
-      // Catálogo de precios (nuevo + legado)
-      const catalogRows = getFirstStorageArray<unknown>([
-        "kuche.catalogo.precios.v1",
-        "kuche_catalogo_precios",
-        "kuche.catalogoKuche.v1",
-      ]);
+    const load = () => {
+      const citasRes = obtenerTodasLasCitas();
+      if (citasRes?.success) {
+        setAppointments(citasRes.data.map(citaToAppointment));
+      }
 
-      // `tasks` y `kanbanTasks` se alimentan del mismo origen de board
-      setTasks(kanbanRows);
-      setKanbanTasks(kanbanRows);
-      setAppointments(agendaRows);
-      setCatalogItems(catalogRows);
+      const materiales = getStoredMateriales();
+      setTotalMaterials(materiales.length);
+
+      const storedTasks = getStoredArray<DashboardTask>("kuche-kanban-tasks");
+      const workflowTasks = storedTasks;
+      setTasks(workflowTasks);
+      setConfirmedClients(workflowTasks.filter(isTaskConfirmed).length);
+      setDiscardedClients(workflowTasks.filter(isTaskDiscarded).length);
+      setStaleFollowUpCount(0);
+      setIsHydrated(true);
     };
 
-    loadDashboardStorage();
-    setIsHydrated(true);
-
-    // Mantiene el dashboard en sync si cambian módulos/ventanas.
-    const onStorage = () => loadDashboardStorage();
-    const onFocus = () => loadDashboardStorage();
-    window.addEventListener("storage", onStorage);
-    window.addEventListener("focus", onFocus);
-    return () => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("focus", onFocus);
-    };
+    load();
   }, []);
 
   const activeTasks = useMemo(
     () =>
       tasks.filter((task) => {
-        const rawStatus = task.status ?? task.column ?? "";
-        const status = String(rawStatus).trim().toLowerCase();
-        // Compatibilidad: datos nuevos (`completada`) y legados (`completado`)
-        return status !== "completada" && status !== "completado";
+        const status = task.status ?? "";
+        return status !== "completada";
       }).length,
     [tasks],
   );
@@ -136,8 +187,8 @@ export default function AdminPage() {
   const designsPending = useMemo(
     () =>
       tasks.filter((task) => {
-        const status = task.status ?? task.column ?? "";
-        return status === "Revisión" || status === "En Diseño";
+        const status = task.status ?? "";
+        return task.stage === "disenos" && status === "pendiente";
       }).length,
     [tasks],
   );
@@ -151,269 +202,388 @@ export default function AdminPage() {
     [appointments],
   );
 
-  const totalMaterials = useMemo(() => catalogItems.length, [catalogItems]);
-
-  const confirmedClients = useMemo(
-    () => kanbanTasks.filter((task) => task.followUpStatus === "confirmado").length,
-    [kanbanTasks],
-  );
-
-  const discardedClients = useMemo(
-    () => kanbanTasks.filter((task) => task.followUpStatus === "descartado").length,
-    [kanbanTasks],
-  );
-  const clientsInProcess = useMemo(
-    () =>
-      kanbanTasks.filter((task) => {
-        const status = (task.followUpStatus ?? "").toLowerCase();
-        return status !== "confirmado" && status !== "descartado";
-      }).length,
-    [kanbanTasks],
-  );
-
   const today = useMemo(() => new Date(), []);
-  const todayKey = useMemo(() => today.toISOString().slice(0, 10), [today]);
+  const currentMonth = useMemo(() => new Date(today.getFullYear(), today.getMonth(), 1), [today]);
   const greeting = useMemo(() => getGreeting(today), [today]);
   const dateLabel = useMemo(() => formatDateLabel(today), [today]);
-
-  const typeDotStyles: Record<string, string> = {
-    "Levantamiento / Medidas": "bg-sky-500",
-    "Cotización en sitio": "bg-emerald-500",
-    "Presentación de diseño": "bg-purple-500",
-  };
-
+  const todayKey = useMemo(() => today.toISOString().slice(0, 10), [today]);
   const todayAppointments = useMemo(
     () => appointments.filter((appointment) => appointment.date === todayKey),
     [appointments, todayKey],
   );
 
-  const attentionItems = useMemo((): AttentionRow[] => {
+  const weekDays = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+
+  const daysInMonth = useMemo(() => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    return Array.from({ length: lastDay }, (_, index) => new Date(year, month, index + 1));
+  }, [currentMonth]);
+
+  const calendarCells = useMemo(() => {
+    const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+    const startOffset = (firstDay.getDay() + 6) % 7;
+    const totalCells = startOffset + daysInMonth.length;
+    const trailing = (7 - (totalCells % 7)) % 7;
+    return [
+      ...Array.from({ length: startOffset }, () => null),
+      ...daysInMonth,
+      ...Array.from({ length: trailing }, () => null),
+    ];
+  }, [currentMonth, daysInMonth]);
+
+  const calendarEntries = useMemo(() => {
+    const appointmentEntries = appointments.map((appointment) => {
+      const sortTimestamp = dueDateToSortTimestamp(appointment.date, Date.now());
+      return {
+        id: `agenda-${appointment.client ?? "sin-cliente"}-${appointment.date ?? "sin-fecha"}-${appointment.time ?? "sin-hora"}`,
+        key: appointment.date ?? "sin-fecha",
+        title: appointment.client ?? "Cliente sin nombre",
+        subtitle: appointment.type ?? "Visita",
+        timeLabel: appointment.time ?? "--:--",
+        tone:
+          appointment.type === "Cotización en sitio"
+            ? "bg-emerald-100 text-emerald-700"
+            : appointment.type === "Presentación de diseño"
+              ? "bg-fuchsia-100 text-fuchsia-700"
+              : "bg-sky-100 text-sky-700",
+        sortTimestamp,
+      }; 
+    });
+
+    const taskEntries = tasks
+      .filter((task) => task.status !== "completada")
+      .map((task) => {
+        const rawDate = task.visitScheduledAt || task.dueDate;
+        if (!rawDate) return null;
+
+        const sortTimestamp = dueDateToSortTimestamp(rawDate, task.createdAt ?? Date.now());
+        return {
+          id: `task-${task.id}`,
+          key: rawDate.slice(0, 10),
+          title: task.project || task.title || "Tarea",
+          subtitle: task.title || task.stage || "Pendiente",
+          timeLabel: rawDate.includes("T")
+            ? new Intl.DateTimeFormat("es-MX", {
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+              }).format(new Date(sortTimestamp))
+            : "--:--",
+          tone:
+            task.stage === "disenos"
+              ? "bg-fuchsia-100 text-fuchsia-700"
+              : task.stage === "cotizacion"
+                ? "bg-amber-100 text-amber-700"
+                : task.stage === "contrato"
+                  ? "bg-emerald-100 text-emerald-700"
+                  : "bg-sky-100 text-sky-700",
+          sortTimestamp,
+        };
+      })
+      .filter((entry) => entry !== null);
+
+    return [...appointmentEntries, ...taskEntries]
+      .filter((entry) => {
+        const entryDate = new Date(entry.sortTimestamp);
+        return entryDate.getFullYear() === currentMonth.getFullYear() && entryDate.getMonth() === currentMonth.getMonth();
+      })
+      .sort((a, b) => a.sortTimestamp - b.sortTimestamp);
+  }, [appointments, currentMonth, tasks]);
+
+  const calendarEntriesByDay = useMemo(() => {
+    const grouped = new Map<string, CalendarEntry[]>();
+    for (const entry of calendarEntries) {
+      const current = grouped.get(entry.key) ?? [];
+      current.push(entry);
+      grouped.set(entry.key, current);
+    }
+    return grouped;
+  }, [calendarEntries]);
+
+  const calendarMarkedDays = useMemo(() => new Set(calendarEntriesByDay.keys()), [calendarEntriesByDay]);
+
+  const attentionItems = useMemo(() => {
     const pendingAgenda = appointments
       .filter((appointment) => appointment.status === "Pendiente" || !appointment.assignedTo)
-      .map((appointment) => ({
-        id: `agenda-${appointment.client ?? "sin-cliente"}-${appointment.time ?? ""}`,
+      .map((appointment, index) => ({
+        id: `agenda-${appointment.client ?? "sin-cliente"}-${appointment.date ?? "sin-fecha"}-${appointment.time ?? "sin-hora"}-${appointment.assignedTo ?? "sin-asignar"}-${index}`,
         label: `Cita sin asignar: ${appointment.client ?? "Cliente sin nombre"}`,
         href: "/admin/agenda",
-        status: "Pendiente" as const,
       }));
 
     const reviewDesigns = tasks
       .filter((task) => {
-        const status = task.status ?? task.column ?? "";
-        return task.type?.toLowerCase() === "diseño" && status === "Revisión";
+        const status = task.status ?? "";
+        return task.stage === "disenos" && status === "pendiente";
       })
-      .map((task) => ({
-        id: `design-${task.title ?? "sin-titulo"}`,
+      .map((task, index) => ({
+        id: `design-${task.title ?? "sin-titulo"}-${task.status ?? "sin-estado"}-${index}`,
         label: `Diseño listo para aprobar: ${task.title ?? "Proyecto sin título"}`,
         href: "/admin/disenos",
-        status: "En revisión" as const,
       }));
 
-    return [...pendingAgenda, ...reviewDesigns];
-  }, [appointments, tasks]);
+    const staleFollowUp = staleFollowUpCount > 0
+      ? [
+          {
+            id: "seguimiento-stale",
+            label: `${staleFollowUpCount} proyecto(s) sin cambios por más de 3 días`,
+            href: "/admin/clientes-en-proceso",
+          },
+        ]
+      : [];
 
-  const agendaRows = todayAppointments;
-  const attentionRows = attentionItems;
+    return [...pendingAgenda, ...reviewDesigns, ...staleFollowUp].slice(0, 8);
+  }, [appointments, staleFollowUpCount, tasks]);
 
-  const cards = [
+  const overviewCards = [
     {
-      title: "Tareas del tablero",
+      title: "Tareas activas",
       value: isHydrated ? activeTasks.toString() : "—",
       href: "/admin/operaciones",
       icon: LayoutDashboard,
-      accent: "bg-stone-100 text-stone-700",
+      accent: "from-slate-900 to-slate-700",
+      tone: "bg-slate-100 text-slate-700",
     },
     {
       title: "Diseños por aprobar",
       value: isHydrated ? designsPending.toString() : "—",
       href: "/admin/disenos",
       icon: Palette,
-      accent: "bg-violet-100 text-violet-700",
+      accent: "from-[#8B1C1C] to-[#6F1616]",
+      tone: "bg-[#F6E7E7] text-[#8B1C1C]",
     },
     {
       title: "Citas pendientes",
       value: isHydrated ? pendingAppointments.toString() : "—",
       href: "/admin/agenda",
       icon: Calendar,
-      accent: "bg-[#8B1C1C]/10 text-[#8B1C1C]",
+      accent: "from-[#8B1C1C] to-[#A33B3B]",
+      tone: "bg-[#F8EEEE] text-[#8B1C1C]",
       attention: pendingAppointments > 0,
     },
     {
-      title: "En proceso",
-      value: isHydrated ? clientsInProcess.toString() : "—",
-      href: "/admin/operaciones",
+      title: "Materiales registrados",
+      value: isHydrated ? totalMaterials.toString() : "—",
+      href: "/admin/precios",
       icon: Tags,
-      accent: "bg-[#8B1C1C]/10 text-[#8B1C1C]",
+      accent: "from-slate-700 to-slate-500",
+      tone: "bg-slate-100 text-slate-700",
     },
     {
-      title: "Confirmados",
+      title: "Clientes confirmados",
       value: isHydrated ? confirmedClients.toString() : "—",
       href: "/admin/clientes-confirmados",
       icon: CheckCircle2,
-      accent: "bg-green-100 text-green-700",
+      accent: "from-[#7A7A7A] to-[#4F4F4F]",
+      tone: "bg-slate-100 text-slate-800",
     },
     {
-      title: "Inactivos",
+      title: "Proyectos inactivos",
       value: isHydrated ? discardedClients.toString() : "—",
-      href: "/admin/clientes-descartados",
+      href: "/admin/proyectos-inactivos",
       icon: XCircle,
-      accent: "bg-stone-200 text-stone-700",
+      accent: "from-slate-700 to-slate-500",
+      tone: "bg-slate-100 text-slate-700",
     },
   ];
 
-  /* Métricas analíticas (solo lectura; mismos datos que cards / appointments) */
-  const totalClientesEmbudo = confirmedClients + discardedClients;
-  const conversionPorcentaje =
-    isHydrated && totalClientesEmbudo > 0
-      ? Math.round((confirmedClients / totalClientesEmbudo) * 1000) / 10
-      : 0;
-  const conversionBarPct = Math.min(100, Math.max(0, conversionPorcentaje));
-
-  const citasHoyCount = todayAppointments.length;
-  const totalCitasSistema = appointments.length;
-  const citaHoySobreAgendaPct =
-    isHydrated && totalCitasSistema > 0
-      ? Math.min(100, Math.round((citasHoyCount / totalCitasSistema) * 1000) / 10)
-      : 0;
-  const citaPendienteSobreAgendaPct =
-    isHydrated && totalCitasSistema > 0
-      ? Math.min(100, Math.round((pendingAppointments / totalCitasSistema) * 1000) / 10)
-      : 0;
-  const barHoyAncho = Math.min(100, Math.max(0, citaHoySobreAgendaPct));
-  const barPendienteAncho = Math.min(100, Math.max(0, citaPendienteSobreAgendaPct));
-
   return (
-    <main className="min-h-screen bg-[#F8F1EE]">
-      <div className="bg-gradient-to-r from-[#8B1C1C] to-[#6A1515] px-0 pb-24 pt-6 text-white md:px-2 md:pb-32 md:pt-10">
-        <h1 className="text-3xl font-semibold">{greeting}, Admin</h1>
-        <p className="mt-1 text-sm tracking-wide text-white/80">{dateLabel}</p>
+    <div className="relative isolate min-h-[calc(100vh-5rem)] overflow-hidden rounded-[2rem] bg-slate-50 px-0 py-0 text-slate-900">
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+        <div className="absolute -left-24 top-0 h-80 w-80 rounded-full bg-rose-200/40 blur-3xl" />
+        <div className="absolute right-0 top-20 h-96 w-96 rounded-full bg-amber-200/30 blur-3xl" />
+        <div className="absolute bottom-0 left-1/3 h-80 w-80 rounded-full bg-sky-200/30 blur-3xl" />
       </div>
 
-      <section className="-mt-16 mb-12 grid grid-cols-1 gap-6 px-0 md:-mt-20 md:grid-cols-2 md:px-2 lg:grid-cols-3">
-        {cards.map((card) => {
-          const Icon = card.icon;
-          const parsedValue = Number.parseFloat(card.value);
-          const numericValue = Number.isFinite(parsedValue) ? parsedValue : 0;
-          const barWidth = isHydrated
-            ? card.title === "Confirmados"
-              ? conversionBarPct
-              : card.title === "Citas pendientes"
-                ? barPendienteAncho
-                : card.title === "Inactivos"
-                  ? Math.min(100, Math.max(8, 100 - conversionBarPct))
-                  : Math.min(100, Math.max(12, numericValue * 10))
-            : 0;
-
-          return (
-            <Link
-              key={card.title}
-              href={card.href}
-              className="rounded-2xl border border-stone-100 bg-white p-6 shadow-[0_8px_30px_rgba(139,28,28,0.08)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_34px_rgba(139,28,28,0.1)]"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs font-semibold uppercase tracking-widest text-stone-500">{card.title}</p>
-                <Icon className="h-4 w-4 text-[#8B1C1C]/60" />
-              </div>
-              <p className="mt-3 text-4xl font-bold text-stone-900">{card.value}</p>
-              <div className="mt-4 h-1.5 w-full rounded-full bg-stone-100">
-                <div
-                  className="h-full rounded-full bg-[#8B1C1C] transition-[width] duration-500"
-                  style={{ width: isHydrated ? `${barWidth}%` : "0%" }}
-                />
-              </div>
-            </Link>
-          );
-        })}
-      </section>
-
-      <section className="grid grid-cols-1 gap-8 px-8 pb-10 lg:grid-cols-12">
-        <article className="lg:col-span-8 rounded-3xl border border-stone-100 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex items-end justify-between">
-            <h2 className="text-xl font-bold text-[#8B1C1C]">Agenda de Hoy</h2>
-            <p className="text-xs text-stone-500">
-              {isHydrated ? `${agendaRows.length} cita(s)` : "Cargando..."}
-            </p>
+      <div className="space-y-7">
+        <motion.section
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45 }}
+          className="overflow-hidden rounded-[1.85rem] border border-white/70 bg-gradient-to-br from-[#8B1C1C] via-[#741717] to-[#561212] p-5 shadow-[0_24px_80px_-40px_rgba(15,23,42,0.4)] backdrop-blur-md md:p-6"
+        >
+          <div className="flex flex-col gap-4 text-white">
+            <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
+              {greeting}, Admin.
+            </h1>
+            <div className="flex flex-wrap items-center gap-3 text-sm text-white/88">
+              <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 font-medium">
+                {dateLabel}
+              </span>
+              <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 font-medium">
+                {todayAppointments.length.toString().padStart(2, "")} pendientes hoy
+              </span>
+            </div>
           </div>
+        </motion.section>
 
-          {agendaRows.length > 0 ? (
-            <div className="divide-y divide-stone-50">
-              <div className="grid grid-cols-[90px_1.2fr_1fr_1fr] gap-4 border-b border-stone-100 pb-2 text-xs font-semibold uppercase tracking-wider text-stone-500">
-                <p>Hora</p>
-                <p>Cliente</p>
-                <p>Tipo</p>
-                <p>Estado</p>
-              </div>
-              {agendaRows.map((appointment, index) => {
-                const initials = (appointment.client ?? "SN")
-                  .split(" ")
-                  .filter(Boolean)
-                  .slice(0, 2)
-                  .map((part) => part[0]?.toUpperCase() ?? "")
-                  .join("");
-                return (
-                  <div
-                    key={`${appointment.client ?? "cita"}-${appointment.time ?? ""}-${index}`}
-                    className="grid grid-cols-[90px_1.2fr_1fr_1fr] items-center gap-4 py-4 text-sm"
-                  >
-                    <p className="font-mono text-stone-700">{appointment.time ?? "--:--"}</p>
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#8B1C1C]/10 text-[11px] font-semibold text-[#8B1C1C]">
-                        {initials || "SN"}
-                      </span>
-                      <p className="truncate font-medium text-stone-900">{appointment.client ?? "Cliente sin nombre"}</p>
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-6">
+          {overviewCards.map((card, index) => {
+            const Icon = card.icon;
+            return (
+              <motion.div
+                key={card.title}
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, delay: index * 0.04 }}
+              >
+                <Link
+                  href={card.href}
+                  className={`group relative block overflow-hidden rounded-[1.15rem] border border-slate-200/80 bg-white/92 p-3.5 shadow-[0_10px_28px_-24px_rgba(15,23,42,0.24)] backdrop-blur-md transition-transform duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-[0_14px_34px_-20px_rgba(15,23,42,0.26)] ${
+                    card.attention ? "ring-1 ring-[#8B1C1C]/20" : ""
+                  }`}
+                >
+                  <div className={`absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r ${card.accent}`} />
+                  {card.attention ? (
+                    <span className="absolute right-3 top-3 flex h-2 w-2">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#8B1C1C] opacity-75" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-[#8B1C1C]" />
+                    </span>
+                  ) : null}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+                        {card.title}
+                      </p>
+                      <p className="mt-2 text-[1.9rem] font-semibold tracking-tight text-slate-950">
+                        {card.value}
+                      </p>
                     </div>
-                    <p className="text-stone-600">{appointment.type ?? "Visita"}</p>
-                    <p className="text-stone-600">{appointment.status ?? "Pendiente"}</p>
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-200/70 ${card.tone}`}>
+                      <Icon className="h-4 w-4" />
+                    </span>
                   </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="flex min-h-[180px] flex-col items-center justify-center text-center">
-              <CalendarX className="h-10 w-10 text-stone-300" />
-              <p className="mt-2 text-sm text-stone-400">No hay visitas programadas para hoy.</p>
-            </div>
-          )}
-        </article>
+                  <div className="mt-3 flex items-center justify-between gap-3 text-[10px] font-medium text-slate-500">
+                    <span className="truncate">Entrar al módulo</span>
+                    <ArrowRight className="h-3.5 w-3.5 shrink-0 transition group-hover:translate-x-1" />
+                  </div>
+                </Link>
+              </motion.div>
+            );
+          })}
+        </div>
 
-        <article className="lg:col-span-4 rounded-3xl border border-stone-100 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex items-end justify-between">
-            <h2 className="text-xl font-bold text-[#8B1C1C]">Requiere Atención</h2>
-            <p className="text-xs text-stone-500">
-              {isHydrated ? `${attentionRows.length} item(s)` : "Cargando..."}
-            </p>
-          </div>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <motion.section
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.08 }}
+            className="rounded-[1.75rem] border border-white/80 bg-white/85 p-6 shadow-[0_18px_55px_-35px_rgba(15,23,42,0.3)] backdrop-blur-md"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+                  Agenda del mes
+                </p>
+                <h3 className="mt-2 text-xl font-semibold text-slate-950 capitalize">
+                  {currentMonth.toLocaleDateString("es-MX", { month: "long", year: "numeric" })}
+                </h3>
+              </div>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-500">
+                {calendarMarkedDays.size} marcados
+              </span>
+            </div>
+            {calendarCells.length > 0 ? (
+              <div className="mt-4">
+                <div className="grid grid-cols-7 gap-1.5 px-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  {weekDays.map((day) => (
+                    <div key={day} className="px-1 py-1 text-center">
+                      {day}
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 grid grid-cols-7 grid-rows-[repeat(6,minmax(74px,1fr))] gap-1.5">
+                  {calendarCells.map((date, index) => {
+                    if (!date) {
+                      return <div key={`empty-${index}`} className="rounded-2xl border border-transparent bg-transparent" />;
+                    }
 
-          {attentionRows.length > 0 ? (
-            <div className="divide-y divide-stone-50">
-              {attentionRows.map((item) => (
-                <div key={item.id} className="py-4 first:pt-0 last:pb-0">
-                  <div className="flex items-start gap-3">
-                    <span className="mt-1.5 h-2 w-2 rounded-full bg-[#8B1C1C]/75" />
+                    const dateKey = date.toISOString().slice(0, 10);
+                    const hasMark = calendarMarkedDays.has(dateKey);
+                    const isToday = dateKey === today.toISOString().slice(0, 10);
+
+                    return (
+                      <Link
+                        key={dateKey}
+                        href={`/admin/agenda?date=${dateKey}`}
+                        className={`group overflow-hidden rounded-2xl border p-2 text-left transition-colors ${
+                          hasMark ? "border-[#8B1C1C]/20 bg-[#8B1C1C]/5 hover:bg-[#8B1C1C]/10" : "border-gray-100 bg-white hover:bg-slate-50"
+                        }`}
+                        aria-label={`Abrir agenda del ${date.toLocaleDateString("es-MX", {
+                          day: "2-digit",
+                          month: "long",
+                          year: "numeric",
+                        })}`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className={`text-xs font-bold ${isToday ? "text-[#8B1C1C]" : "text-slate-600"}`}>
+                            {date.getDate()}
+                          </div>
+                          {hasMark ? <span className="mt-0.5 h-2.5 w-2.5 rounded-full bg-[#8B1C1C] shadow-sm" /> : null}
+                        </div>
+                        <div className="mt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-300 group-hover:text-slate-400">
+                          Ver agenda
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-6 flex items-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-4 text-sm text-slate-500">
+                <CalendarX className="h-5 w-5 text-slate-400" />
+                No hay eventos marcados para este mes.
+              </div>
+            )}
+          </motion.section>
+
+          <motion.section
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.12 }}
+            className="rounded-[1.75rem] border border-rose-100 bg-gradient-to-br from-white via-rose-50/60 to-amber-50/50 p-6 shadow-[0_18px_55px_-35px_rgba(15,23,42,0.3)] backdrop-blur-md"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-rose-700/70">
+                  Requiere tu atención
+                </p>
+                <h3 className="mt-2 text-xl font-semibold text-slate-950">Pendientes críticos</h3>
+              </div>
+              <span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 shadow-sm">
+                {attentionItems.length} hallazgos
+              </span>
+            </div>
+            <div className="mt-6 space-y-3">
+              {attentionItems.length > 0 ? (
+                attentionItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="group flex items-center justify-between gap-4 rounded-2xl border border-white/80 bg-white/90 p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                  >
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-stone-900">{item.label}</p>
-                      <p className="mt-1 text-xs text-[#8B1C1C]">{item.status}</p>
+                      <p className="text-sm font-semibold text-slate-800">{item.label}</p>
+                      <p className="mt-1 text-xs text-slate-500">Abre el módulo correspondiente para resolverlo.</p>
                     </div>
                     <Link
                       href={item.href}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#8B1C1C]/70 transition hover:bg-[#8B1C1C]/10 hover:text-[#8B1C1C]"
-                      aria-label="Abrir detalle"
-                      title="Abrir detalle"
+                      className="shrink-0 rounded-full bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white transition group-hover:bg-rose-700"
                     >
-                      <ArrowUpRight className="h-4 w-4" />
+                      Ir a resolver
                     </Link>
                   </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-4 text-sm text-slate-500">
+                  Todo está bajo control por ahora.
                 </div>
-              ))}
+              )}
             </div>
-          ) : (
-            <div className="flex min-h-[180px] flex-col items-center justify-center text-center">
-              <CheckCircle2 className="h-10 w-10 text-stone-300" />
-              <p className="mt-2 text-sm text-stone-400">Todo está bajo control por ahora.</p>
-            </div>
-          )}
-        </article>
-      </section>
-    </main>
+          </motion.section>
+        </div>
+      </div>
+    </div>
   );
 }
