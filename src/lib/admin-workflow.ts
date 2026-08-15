@@ -14,6 +14,7 @@ import {
 import { actualizarTarea, asignarTrabajadoresTarea, cambiarEtapa } from "@/lib/axios/tareasApi";
 import {
   saveKanbanTasksToLocalStorage,
+  getTasksFromLocalStorage,
   type FollowUpStatus,
   type KanbanTask,
   type TaskFile,
@@ -137,11 +138,22 @@ const getAssignedIds = (raw: Record<string, unknown>): string[] => {
   return [];
 };
 
+const readLocalKanbanTasks = (): KanbanTask[] => getTasksFromLocalStorage();
+
 const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
   const raw = (toRecord(item) ?? {}) as Record<string, unknown>;
   const cita = toRecord(raw.cita);
   const cliente = toRecord(raw.cliente) ?? toRecord(cita?.cliente);
-  const stage = normalizeStage(raw.etapa ?? item.etapa);
+  const rawEstado = toStringValue(raw.estado ?? item.estado)?.toLowerCase();
+  let stage = normalizeStage(raw.etapa ?? item.etapa);
+  const citaFinished = toBooleanValue(raw.citaFinished) ?? rawEstado === "completada";
+  const citaStarted =
+    toBooleanValue(raw.citaStarted) ?? (rawEstado === "en_proceso" || rawEstado === "completada");
+
+  if (stage === "citas" && (citaFinished || rawEstado === "completada")) {
+    stage = "disenos";
+  }
+
   const assignedTo = getAssignedNames(raw);
   const clientName =
     toStringValue(cliente?.nombre) ??
@@ -187,12 +199,8 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     createdAt: toTimestamp(raw.createdAt),
     followUpEnteredAt: toTimestamp(raw.followUpEnteredAt),
     followUpStatus: normalizeFollowUpStatus(raw.followUpStatus),
-    citaStarted:
-      toBooleanValue(raw.citaStarted) ??
-      (toStringValue(raw.estado)?.toLowerCase() === "en_proceso" ||
-        toStringValue(raw.estado)?.toLowerCase() === "completada"),
-    citaFinished:
-      toBooleanValue(raw.citaFinished) ?? (toStringValue(raw.estado)?.toLowerCase() === "completada"),
+    citaStarted,
+    citaFinished,
     designApprovedByAdmin: toBooleanValue(raw.designApprovedByAdmin),
     designApprovedByClient: toBooleanValue(raw.designApprovedByClient),
     codigoProyecto:
@@ -228,17 +236,19 @@ export async function syncKanbanTasksFromBackend(): Promise<KanbanTask[] | null>
   if (typeof window === "undefined") return null;
   if (!authApi.isAuthenticated()) return null;
 
+  const localTasks = readLocalKanbanTasks();
+
   try {
     const tasks = await fetchBackendKanbanTasks();
     if (tasks.length === 0) {
-      return null;
+      return localTasks.length > 0 ? localTasks : null;
     }
 
     saveKanbanTasksToLocalStorage(tasks);
     return tasks;
   } catch (error) {
     console.warn("No se pudo sincronizar el kanban desde backend; se mantiene fallback local.", error);
-    return null;
+    return localTasks.length > 0 ? localTasks : null;
   }
 }
 
@@ -316,10 +326,14 @@ export async function syncCitaStartWithBackend(task: KanbanTask): Promise<boolea
 export async function syncCitaFinishWithBackend(task: KanbanTask): Promise<boolean> {
   const sourceType = (task.sourceType ?? "").toLowerCase();
   const citaId = task.sourceId?.trim();
+  const taskId = task.id?.trim();
   if (sourceType !== "cita" || !citaId) return false;
 
   try {
     await finalizarCita(citaId);
+    if (taskId) {
+      await syncTaskStageWithBackend({ ...task, stage: "disenos" }, "disenos");
+    }
     return true;
   } catch (error) {
     console.warn("No se pudo sincronizar finalizacion de cita en backend", { citaId, error });

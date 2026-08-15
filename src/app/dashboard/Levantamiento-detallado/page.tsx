@@ -26,11 +26,16 @@ import {
   kanbanStorageKey,
   citaReturnUrlStorageKey,
   getPreliminarList,
-  saveKanbanTasksToLocalStorage,
+  getTasksFromLocalStorage,
+  notifyKanbanTasksUpdated,
+  taskMatchesKanbanUpdate,
   seguimientoProjectStoragePrefix,
   type KanbanTask,
   type PreliminarData,
+  type TaskStage,
+  type TaskStatus,
 } from "@/lib/kanban";
+import { syncCitaFinishWithBackend } from "@/lib/admin-workflow";
 import { CatalogProjectTypeField } from "@/components/catalogo/CatalogProjectTypeField";
 import {
   CATALOG_PROJECT_TYPES,
@@ -998,6 +1003,7 @@ export default function CotizadorPreliminarPage() {
 
   const savePreliminarAndGetNextTasks = (options?: {
     seguimientoPdf?: { key: string; fileLabel: string };
+    completeCita?: boolean;
   }): { codigoProyecto: string | undefined; updatedTasks: KanbanTask[] } | null => {
     if (!activeCitaTaskId || !activeCitaTask) return null;
     const err = validatePreliminarSections();
@@ -1007,22 +1013,26 @@ export default function CotizadorPreliminarPage() {
     }
     const newPreliminar = buildPreliminarDataFromForm();
     const stored = window.localStorage.getItem(kanbanStorageKey);
+    const completeCita = options?.completeCita ?? false;
+    const matchCriteria = {
+      targetId: activeCitaTaskId,
+      projectCode: activeCitaTask.codigoProyecto,
+      clientName: activeCitaTask.project ?? clientName,
+    };
 
     let tasks: KanbanTask[];
     try {
-      tasks = stored ? (JSON.parse(stored) as KanbanTask[]) : [];
+      tasks = stored ? (JSON.parse(stored) as KanbanTask[]) : getTasksFromLocalStorage();
     } catch {
-      // Si el JSON está corrupto, al menos conservamos la tarea activa en un arreglo nuevo.
-      tasks = [];
+      tasks = getTasksFromLocalStorage();
     }
 
-    // Aseguramos que la tarea activa exista en la lista a actualizar.
-    const hasActiveTask = tasks.some((t) => t.id === activeCitaTaskId);
+    const hasActiveTask = tasks.some((t) => taskMatchesKanbanUpdate(t, matchCriteria));
     const baseTasks = hasActiveTask ? tasks : [...tasks, activeCitaTask];
 
     let codigoProyecto: string | undefined;
     const updatedTasks = baseTasks.map((task) => {
-      if (task.id !== activeCitaTaskId) return task;
+      if (!taskMatchesKanbanUpdate(task, matchCriteria)) return task;
       const existingList = getPreliminarList(task);
       const preliminarCotizaciones = [...existingList, newPreliminar];
       codigoProyecto = task.codigoProyecto ?? generatePublicProjectCode();
@@ -1031,14 +1041,21 @@ export default function CotizadorPreliminarPage() {
         codigoProyecto,
         preliminarCotizaciones,
         preliminarData: newPreliminar,
-        citaFinished: true,
-        stage: task.stage,
-        status: task.status,
+        ...(completeCita
+          ? {
+              citaStarted: true,
+              citaFinished: true,
+              stage: "disenos" as TaskStage,
+              status: "pendiente" as TaskStatus,
+            }
+          : {
+              citaStarted: task.citaStarted ?? true,
+            }),
       };
     });
 
     try {
-      saveKanbanTasksToLocalStorage(updatedTasks);
+      notifyKanbanTasksUpdated(updatedTasks);
     } catch {
       // Si por alguna razón no podemos escribir en localStorage (cuota, modo incógnito, etc.),
       // evitamos bloquear el flujo de la cita. Los datos de esta sesión podrían no persistir,
@@ -1054,16 +1071,15 @@ export default function CotizadorPreliminarPage() {
       } catch {
         // ignore
       }
-      const preliminarCotizaciones = getPreliminarList(
-        updatedTasks.find((t) => t.id === activeCitaTaskId) ?? activeCitaTask,
-      );
+      const taskAfter =
+        updatedTasks.find((t) => taskMatchesKanbanUpdate(t, matchCriteria)) ?? activeCitaTask;
+      const preliminarCotizaciones = getPreliminarList(taskAfter);
       const estimatedInversion = Math.round(metrics.total);
-      const taskAfter = updatedTasks.find((t) => t.id === activeCitaTaskId);
       const seguimientoProject: Record<string, unknown> = {
         ...existingParsed,
         codigo: codigoProyecto,
         cliente: activeCitaTask.project ?? clientName ?? "Cliente",
-        kanbanStage: taskAfter?.stage ?? activeCitaTask.stage,
+        kanbanStage: completeCita ? "disenos" : (taskAfter?.stage ?? activeCitaTask.stage),
         kanbanFollowUpStatus: taskAfter?.followUpStatus ?? activeCitaTask.followUpStatus ?? "pendiente",
         preliminarCotizaciones,
         inversion: estimatedInversion,
@@ -1127,14 +1143,20 @@ export default function CotizadorPreliminarPage() {
     const fileLabel = `Levantamiento detallado — ${newPreliminar.projectType}.pdf`;
     const result = savePreliminarAndGetNextTasks({
       seguimientoPdf: { key: preliminarPdfKey, fileLabel },
+      completeCita: true,
     });
     if (!result) return;
-    const updatedTasksWithStage = result.updatedTasks.map((task) =>
-      task.id === activeCitaTaskId
-        ? { ...task, stage: "disenos" as const, status: "pendiente" as const }
-        : task,
+    notifyKanbanTasksUpdated(result.updatedTasks);
+    const taskAfter = result.updatedTasks.find((t) =>
+      taskMatchesKanbanUpdate(t, {
+        targetId: activeCitaTaskId,
+        projectCode: result.codigoProyecto,
+        clientName: activeCitaTask.project ?? clientName,
+      }),
     );
-    saveKanbanTasksToLocalStorage(updatedTasksWithStage);
+    if (taskAfter) {
+      await syncCitaFinishWithBackend(taskAfter);
+    }
     window.localStorage.removeItem(activeCitaTaskStorageKey);
     const returnUrl = window.localStorage.getItem(citaReturnUrlStorageKey);
     window.localStorage.removeItem(citaReturnUrlStorageKey);
