@@ -34,6 +34,7 @@ import {
   getTasksFromLocalStorage,
   initialKanbanTasks,
   saveKanbanTasksToLocalStorage,
+  syncSeguimientoProjectKanbanStage,
   activeCitaTaskStorageKey,
   citaReturnUrlStorageKey,
   activeCotizacionFormalTaskStorageKey,
@@ -432,48 +433,31 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     if (typeof window === "undefined") return;
 
     const localSnapshot = getTasksFromLocalStorage();
-    if (localSnapshot.length > 0) {
-      const { tasks, shouldPersist } = applyHydratedTasksToState(
-        localSnapshot,
-        setKanbanTasks,
-        skipNextWriteRef,
-      );
-      if (shouldPersist && tasks.length > 0) {
-        saveKanbanTasksToLocalStorage(tasks);
-      }
+    const { tasks: initialTasks, shouldPersist: shouldPersistInitial } = applyHydratedTasksToState(
+      localSnapshot,
+      setKanbanTasks,
+      skipNextWriteRef,
+    );
+    if (shouldPersistInitial && initialTasks.length > 0) {
+      saveKanbanTasksToLocalStorage(initialTasks);
     }
     isLoadedRef.current = true;
 
     const syncFromStorage = async () => {
       await syncKanbanTasksFromBackend();
-      const stored = window.localStorage.getItem(kanbanStorageKey);
-      if (!stored) {
-        if (localSnapshot.length === 0) {
-          skipNextWriteRef.current = true;
-          setKanbanTasks(initialKanbanTasks);
-        }
-        return;
-      }
-      try {
-        const parsed = JSON.parse(stored) as KanbanTask[];
-        if (!Array.isArray(parsed) || parsed.length === 0) {
-          if (localSnapshot.length === 0) {
-            skipNextWriteRef.current = true;
-            setKanbanTasks(initialKanbanTasks);
-          }
-          return;
-        }
-        const { tasks, shouldPersist } = applyHydratedTasksToState(parsed, setKanbanTasks, skipNextWriteRef);
-        if (shouldPersist && tasks.length > 0) {
-          const okAdv = saveKanbanTasksToLocalStorage(tasks);
-          setKanbanPersistError(
-            okAdv
-              ? null
-              : "No se pudo guardar el tablero: almacenamiento lleno. Libera espacio del navegador o reduce tareas/archivos.",
-          );
-        }
-      } catch {
-        // ignore malformed storage
+      const consolidated = getTasksFromLocalStorage();
+      const { tasks, shouldPersist } = applyHydratedTasksToState(
+        consolidated,
+        setKanbanTasks,
+        skipNextWriteRef,
+      );
+      if (shouldPersist && tasks.length > 0) {
+        const okAdv = saveKanbanTasksToLocalStorage(tasks);
+        setKanbanPersistError(
+          okAdv
+            ? null
+            : "No se pudo guardar el tablero: almacenamiento lleno. Libera espacio del navegador o reduce tareas/archivos.",
+        );
       }
     };
 
@@ -496,25 +480,18 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
   useEffect(() => {
     if (typeof window === "undefined" || refreshTrigger === 0) return;
-    const stored = window.localStorage.getItem(kanbanStorageKey);
-    if (!stored) return;
-    try {
-      const parsed = JSON.parse(stored) as KanbanTask[];
-      if (Array.isArray(parsed) && parsed.length) {
-        const { tasks, shouldPersist } = hydrateKanbanTasksFromLocalStorage(parsed);
-        skipNextWriteRef.current = true;
-        setKanbanTasks(tasks);
-        if (shouldPersist && tasks.length > 0) {
-          const okRef = saveKanbanTasksToLocalStorage(tasks);
-          setKanbanPersistError(
-            okRef
-              ? null
-              : "No se pudo guardar el tablero: almacenamiento lleno. Libera espacio del navegador o reduce tareas/archivos.",
-          );
-        }
-      }
-    } catch {
-      // ignore
+    const consolidated = getTasksFromLocalStorage();
+    if (!consolidated.length) return;
+    const { tasks, shouldPersist } = hydrateKanbanTasksFromLocalStorage(consolidated);
+    skipNextWriteRef.current = true;
+    setKanbanTasks(tasks);
+    if (shouldPersist && tasks.length > 0) {
+      const okRef = saveKanbanTasksToLocalStorage(tasks);
+      setKanbanPersistError(
+        okRef
+          ? null
+          : "No se pudo guardar el tablero: almacenamiento lleno. Libera espacio del navegador o reduce tareas/archivos.",
+      );
     }
   }, [refreshTrigger]);
 
@@ -543,15 +520,10 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       applyHydratedTasksToState(tasks, setKanbanTasks, skipNextWriteRef);
     };
     const handleStorage = (event: StorageEvent) => {
-      if (event.key !== kanbanStorageKey || !event.newValue) return;
-      try {
-        const parsed = JSON.parse(event.newValue) as KanbanTask[];
-        if (Array.isArray(parsed)) {
-          applyHydratedTasksToState(parsed, setKanbanTasks, skipNextWriteRef);
-        }
-      } catch {
-        // ignore malformed storage
-      }
+      if (event.key !== kanbanStorageKey) return;
+      const consolidated = getTasksFromLocalStorage();
+      if (!consolidated.length) return;
+      applyHydratedTasksToState(consolidated, setKanbanTasks, skipNextWriteRef);
     };
     window.addEventListener(kanbanTasksUpdatedEventName, handleKanbanUpdated);
     window.addEventListener("storage", handleStorage);
@@ -794,10 +766,15 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     const taskSnapshot = kanbanTasks.find((t) => t.id === taskId);
     updateTask(taskId, (task) => ({
       ...task,
+      citaStarted: true,
       citaFinished: true,
       stage: "disenos" as TaskStage,
       status: "pendiente" as TaskStatus,
     }));
+
+    if (taskSnapshot?.codigoProyecto?.trim()) {
+      syncSeguimientoProjectKanbanStage(taskSnapshot.codigoProyecto, "disenos");
+    }
 
     if (taskSnapshot) {
       const [finishOk, stageOk] = await Promise.all([

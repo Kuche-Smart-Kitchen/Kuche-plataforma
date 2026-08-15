@@ -23,7 +23,6 @@ import {
 } from "lucide-react";
 import {
   activeCitaTaskStorageKey,
-  kanbanStorageKey,
   citaReturnUrlStorageKey,
   getPreliminarList,
   getTasksFromLocalStorage,
@@ -930,26 +929,19 @@ export default function CotizadorPreliminarPage() {
     const taskId = window.localStorage.getItem(activeCitaTaskStorageKey);
     if (taskId) {
       setActiveCitaTaskId(taskId);
-      const stored = window.localStorage.getItem(kanbanStorageKey);
-      if (stored) {
-        try {
-          const tasks = JSON.parse(stored) as KanbanTask[];
-          const task = tasks.find((t) => t.id === taskId);
-          if (task) {
-            setActiveCitaTask(task);
-            const initialValues = getSectionAInitialValues(task);
+      const tasks = getTasksFromLocalStorage();
+      const task = tasks.find((t) => t.id === taskId);
+      if (task) {
+        setActiveCitaTask(task);
+        const initialValues = getSectionAInitialValues(task);
 
-            if (initialValues.clientName) setClientName(initialValues.clientName);
-            if (initialValues.projectType) setProjectType(initialValues.projectType);
-            if (initialValues.location) setLocation(initialValues.location);
-            if (initialValues.largo) setLargo(initialValues.largo);
-            if (initialValues.alto) setAlto(initialValues.alto);
-            if (initialValues.deliveryWeeksMin) setDeliveryWeeksMin(initialValues.deliveryWeeksMin);
-            if (initialValues.deliveryWeeksMax) setDeliveryWeeksMax(initialValues.deliveryWeeksMax);
-          }
-        } catch {
-          // ignore
-        }
+        if (initialValues.clientName) setClientName(initialValues.clientName);
+        if (initialValues.projectType) setProjectType(initialValues.projectType);
+        if (initialValues.location) setLocation(initialValues.location);
+        if (initialValues.largo) setLargo(initialValues.largo);
+        if (initialValues.alto) setAlto(initialValues.alto);
+        if (initialValues.deliveryWeeksMin) setDeliveryWeeksMin(initialValues.deliveryWeeksMin);
+        if (initialValues.deliveryWeeksMax) setDeliveryWeeksMax(initialValues.deliveryWeeksMax);
       }
     }
   }, []);
@@ -1012,7 +1004,6 @@ export default function CotizadorPreliminarPage() {
       return null;
     }
     const newPreliminar = buildPreliminarDataFromForm();
-    const stored = window.localStorage.getItem(kanbanStorageKey);
     const completeCita = options?.completeCita ?? false;
     const matchCriteria = {
       targetId: activeCitaTaskId,
@@ -1020,12 +1011,7 @@ export default function CotizadorPreliminarPage() {
       clientName: activeCitaTask.project ?? clientName,
     };
 
-    let tasks: KanbanTask[];
-    try {
-      tasks = stored ? (JSON.parse(stored) as KanbanTask[]) : getTasksFromLocalStorage();
-    } catch {
-      tasks = getTasksFromLocalStorage();
-    }
+    const tasks = getTasksFromLocalStorage();
 
     const hasActiveTask = tasks.some((t) => taskMatchesKanbanUpdate(t, matchCriteria));
     const baseTasks = hasActiveTask ? tasks : [...tasks, activeCitaTask];
@@ -1038,9 +1024,11 @@ export default function CotizadorPreliminarPage() {
       codigoProyecto = task.codigoProyecto ?? generatePublicProjectCode();
       return {
         ...task,
+        id: task.id || `task-${codigoProyecto}`,
         codigoProyecto,
         preliminarCotizaciones,
         preliminarData: newPreliminar,
+        location: task.location || location.trim() || newPreliminar.location,
         ...(completeCita
           ? {
               citaStarted: true,
@@ -1081,7 +1069,9 @@ export default function CotizadorPreliminarPage() {
         cliente: activeCitaTask.project ?? clientName ?? "Cliente",
         kanbanStage: completeCita ? "disenos" : (taskAfter?.stage ?? activeCitaTask.stage),
         kanbanFollowUpStatus: taskAfter?.followUpStatus ?? activeCitaTask.followUpStatus ?? "pendiente",
+        preliminarData: newPreliminar,
         preliminarCotizaciones,
+        ubicacion: location.trim() || newPreliminar.location || existingParsed.ubicacion,
         inversion: estimatedInversion,
         fechaInicio: formatSeguimientoDateLong(),
         fechaEntrega: newPreliminar.date || "Por definir",
