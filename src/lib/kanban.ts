@@ -431,12 +431,32 @@ function extractPreliminarData(parsed: Record<string, unknown>): PreliminarData 
   return undefined;
 }
 
+function projectHasCompletedLevantamiento(parsed: Record<string, unknown>): boolean {
+  return Boolean(extractPreliminarData(parsed)) || parsed.kanbanStage === "disenos";
+}
+
 function resolveStageFromProject(parsed: Record<string, unknown>): TaskStage {
   const kanbanStage = parsed.kanbanStage;
   if (typeof kanbanStage === "string" && VALID_TASK_STAGES.has(kanbanStage as TaskStage)) {
-    return kanbanStage as TaskStage;
+    const stage = kanbanStage as TaskStage;
+    if (stage !== "citas") return stage;
   }
-  return extractPreliminarData(parsed) ? "disenos" : "citas";
+  return projectHasCompletedLevantamiento(parsed) ? "disenos" : "citas";
+}
+
+function resolveCitaFlagsFromProject(
+  parsed: Record<string, unknown>,
+  stage: TaskStage,
+): Pick<KanbanTask, "citaStarted" | "citaFinished"> {
+  if (
+    projectHasCompletedLevantamiento(parsed) ||
+    stage === "disenos" ||
+    stage === "cotizacion" ||
+    stage === "contrato"
+  ) {
+    return { citaStarted: true, citaFinished: true };
+  }
+  return { citaStarted: false, citaFinished: false };
 }
 
 function kanbanTaskFromSeguimientoProject(
@@ -455,6 +475,7 @@ function kanbanTaskFromSeguimientoProject(
       ? [preliminarData]
       : undefined;
   const stage = resolveStageFromProject(parsed);
+  const citaFlags = resolveCitaFlagsFromProject(parsed, stage);
 
   return {
     id: `task-${codigo}`,
@@ -472,8 +493,7 @@ function kanbanTaskFromSeguimientoProject(
           : undefined,
     mapsUrl: typeof parsed.mapsUrl === "string" ? parsed.mapsUrl : undefined,
     notes: typeof parsed.notas === "string" ? parsed.notas : undefined,
-    citaStarted: true,
-    citaFinished: true,
+    ...citaFlags,
     preliminarData,
     preliminarCotizaciones,
     createdAt:
@@ -485,7 +505,8 @@ function kanbanTaskFromSeguimientoProject(
 
 function syncExistingTaskWithProject(task: KanbanTask, parsed: Record<string, unknown>): KanbanTask {
   const preliminarData = extractPreliminarData(parsed);
-  const projectStage = parsed.kanbanStage;
+  const resolvedStage = resolveStageFromProject(parsed);
+  const citaFlags = resolveCitaFlagsFromProject(parsed, resolvedStage);
   let next: KanbanTask = {
     ...task,
     codigoProyecto: task.codigoProyecto ?? normalizeProjectCode(parsed.codigo, task.codigoProyecto ?? ""),
@@ -503,7 +524,20 @@ function syncExistingTaskWithProject(task: KanbanTask, parsed: Record<string, un
     next.preliminarCotizaciones = parsed.preliminarCotizaciones as PreliminarData[];
   }
 
-  if (projectStage === "disenos" && next.stage === "citas") {
+  const stageRank: Record<TaskStage, number> = {
+    citas: 0,
+    disenos: 1,
+    cotizacion: 2,
+    contrato: 3,
+  };
+  if (stageRank[resolvedStage] > stageRank[next.stage]) {
+    next = {
+      ...next,
+      stage: resolvedStage,
+      status: "pendiente",
+      ...citaFlags,
+    };
+  } else if (projectHasCompletedLevantamiento(parsed) && next.stage === "citas") {
     next = {
       ...next,
       stage: "disenos",
@@ -511,13 +545,11 @@ function syncExistingTaskWithProject(task: KanbanTask, parsed: Record<string, un
       citaStarted: true,
       citaFinished: true,
     };
-  } else if (preliminarData && next.stage === "citas" && projectStage !== "citas") {
+  } else if (citaFlags.citaStarted && citaFlags.citaFinished) {
     next = {
       ...next,
-      stage: "disenos",
-      status: "pendiente",
-      citaStarted: true,
-      citaFinished: true,
+      citaStarted: next.citaStarted ?? true,
+      citaFinished: next.citaFinished ?? true,
     };
   }
 
@@ -560,13 +592,32 @@ function hasRecoverableKanbanData(): boolean {
   return listSeguimientoProjectRecords().length > 0;
 }
 
-/** Lee tareas desde localStorage, las consolida con `kuche_project_*` y persiste el resultado. */
+function isKanbanListIncomplete(raw: KanbanTask[], consolidated: KanbanTask[]): boolean {
+  if (raw.length === 0 && consolidated.length > 0) return true;
+  if (consolidated.length > raw.length) return true;
+
+  for (const { key, parsed } of listSeguimientoProjectRecords()) {
+    const codigo = normalizeProjectCode(
+      parsed.codigo,
+      key.slice(seguimientoProjectStoragePrefix.length),
+    );
+    const cliente = String(parsed.cliente ?? parsed.nombre ?? "").trim();
+    const matched = raw.some((task) => taskMatchesSeguimientoProject(task, codigo, cliente));
+    if (!matched) return true;
+  }
+
+  return false;
+}
+
+/** Lee tareas desde localStorage, las consolida con `kuche_project_*` y persiste si faltaban tarjetas. */
 export function getTasksFromLocalStorage(): KanbanTask[] {
   if (typeof window === "undefined") return [];
 
   const raw = readRawKanbanTasksFromStorage();
   const consolidated = consolidateKanbanTasksWithProjects(raw);
-  saveKanbanTasksToLocalStorage(consolidated);
+  if (isKanbanListIncomplete(raw, consolidated)) {
+    saveKanbanTasksToLocalStorage(consolidated);
+  }
   return consolidated;
 }
 
