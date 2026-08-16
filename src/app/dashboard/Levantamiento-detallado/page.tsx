@@ -23,7 +23,6 @@ import {
 } from "lucide-react";
 import {
   activeCitaTaskStorageKey,
-  kanbanStorageKey,
   citaReturnUrlStorageKey,
   getPreliminarList,
   getTasksFromLocalStorage,
@@ -930,26 +929,19 @@ export default function CotizadorPreliminarPage() {
     const taskId = window.localStorage.getItem(activeCitaTaskStorageKey);
     if (taskId) {
       setActiveCitaTaskId(taskId);
-      const stored = window.localStorage.getItem(kanbanStorageKey);
-      if (stored) {
-        try {
-          const tasks = JSON.parse(stored) as KanbanTask[];
-          const task = tasks.find((t) => t.id === taskId);
-          if (task) {
-            setActiveCitaTask(task);
-            const initialValues = getSectionAInitialValues(task);
+      const tasks = getTasksFromLocalStorage();
+      const task = tasks.find((t) => t.id === taskId);
+      if (task) {
+        setActiveCitaTask(task);
+        const initialValues = getSectionAInitialValues(task);
 
-            if (initialValues.clientName) setClientName(initialValues.clientName);
-            if (initialValues.projectType) setProjectType(initialValues.projectType);
-            if (initialValues.location) setLocation(initialValues.location);
-            if (initialValues.largo) setLargo(initialValues.largo);
-            if (initialValues.alto) setAlto(initialValues.alto);
-            if (initialValues.deliveryWeeksMin) setDeliveryWeeksMin(initialValues.deliveryWeeksMin);
-            if (initialValues.deliveryWeeksMax) setDeliveryWeeksMax(initialValues.deliveryWeeksMax);
-          }
-        } catch {
-          // ignore
-        }
+        if (initialValues.clientName) setClientName(initialValues.clientName);
+        if (initialValues.projectType) setProjectType(initialValues.projectType);
+        if (initialValues.location) setLocation(initialValues.location);
+        if (initialValues.largo) setLargo(initialValues.largo);
+        if (initialValues.alto) setAlto(initialValues.alto);
+        if (initialValues.deliveryWeeksMin) setDeliveryWeeksMin(initialValues.deliveryWeeksMin);
+        if (initialValues.deliveryWeeksMax) setDeliveryWeeksMax(initialValues.deliveryWeeksMax);
       }
     }
   }, []);
@@ -1004,7 +996,7 @@ export default function CotizadorPreliminarPage() {
   const savePreliminarAndGetNextTasks = (options?: {
     seguimientoPdf?: { key: string; fileLabel: string };
     completeCita?: boolean;
-  }): { codigoProyecto: string | undefined; updatedTasks: KanbanTask[] } | null => {
+  }): { codigoProyecto: string | undefined; updatedTasks: KanbanTask[]; saved: boolean } | null => {
     if (!activeCitaTaskId || !activeCitaTask) return null;
     const err = validatePreliminarSections();
     if (err) {
@@ -1012,7 +1004,6 @@ export default function CotizadorPreliminarPage() {
       return null;
     }
     const newPreliminar = buildPreliminarDataFromForm();
-    const stored = window.localStorage.getItem(kanbanStorageKey);
     const completeCita = options?.completeCita ?? false;
     const matchCriteria = {
       targetId: activeCitaTaskId,
@@ -1020,12 +1011,7 @@ export default function CotizadorPreliminarPage() {
       clientName: activeCitaTask.project ?? clientName,
     };
 
-    let tasks: KanbanTask[];
-    try {
-      tasks = stored ? (JSON.parse(stored) as KanbanTask[]) : getTasksFromLocalStorage();
-    } catch {
-      tasks = getTasksFromLocalStorage();
-    }
+    const tasks = getTasksFromLocalStorage();
 
     const hasActiveTask = tasks.some((t) => taskMatchesKanbanUpdate(t, matchCriteria));
     const baseTasks = hasActiveTask ? tasks : [...tasks, activeCitaTask];
@@ -1038,9 +1024,11 @@ export default function CotizadorPreliminarPage() {
       codigoProyecto = task.codigoProyecto ?? generatePublicProjectCode();
       return {
         ...task,
+        id: task.id || `task-${codigoProyecto}`,
         codigoProyecto,
         preliminarCotizaciones,
         preliminarData: newPreliminar,
+        location: task.location || location.trim() || newPreliminar.location,
         ...(completeCita
           ? {
               citaStarted: true,
@@ -1054,13 +1042,7 @@ export default function CotizadorPreliminarPage() {
       };
     });
 
-    try {
-      notifyKanbanTasksUpdated(updatedTasks);
-    } catch {
-      // Si por alguna razón no podemos escribir en localStorage (cuota, modo incógnito, etc.),
-      // evitamos bloquear el flujo de la cita. Los datos de esta sesión podrían no persistir,
-      // pero el usuario puede continuar trabajando.
-    }
+    let projectSaved = true;
 
     if (codigoProyecto) {
       const projectKey = `${seguimientoProjectStoragePrefix}${codigoProyecto}`;
@@ -1081,7 +1063,9 @@ export default function CotizadorPreliminarPage() {
         cliente: activeCitaTask.project ?? clientName ?? "Cliente",
         kanbanStage: completeCita ? "disenos" : (taskAfter?.stage ?? activeCitaTask.stage),
         kanbanFollowUpStatus: taskAfter?.followUpStatus ?? activeCitaTask.followUpStatus ?? "pendiente",
+        preliminarData: newPreliminar,
         preliminarCotizaciones,
+        ubicacion: location.trim() || newPreliminar.location || existingParsed.ubicacion,
         inversion: estimatedInversion,
         fechaInicio: formatSeguimientoDateLong(),
         fechaEntrega: newPreliminar.date || "Por definir",
@@ -1109,11 +1093,13 @@ export default function CotizadorPreliminarPage() {
       try {
         window.localStorage.setItem(projectKey, JSON.stringify(seguimientoProject));
       } catch {
-        // Mismo criterio: no bloqueamos el flujo si esta escritura falla.
+        projectSaved = false;
       }
     }
 
-    return { codigoProyecto, updatedTasks };
+    const kanbanSaved = notifyKanbanTasksUpdated(updatedTasks);
+
+    return { codigoProyecto, updatedTasks, saved: projectSaved && kanbanSaved };
   };
 
   const handleFinishCita = async () => {
@@ -1146,7 +1132,12 @@ export default function CotizadorPreliminarPage() {
       completeCita: true,
     });
     if (!result) return;
-    notifyKanbanTasksUpdated(result.updatedTasks);
+    if (!result.saved) {
+      setFinishError(
+        "No se pudo guardar el tablero o el proyecto. Libera espacio del navegador e intenta de nuevo.",
+      );
+      return;
+    }
     const taskAfter = result.updatedTasks.find((t) =>
       taskMatchesKanbanUpdate(t, {
         targetId: activeCitaTaskId,

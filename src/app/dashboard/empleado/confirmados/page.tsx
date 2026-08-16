@@ -13,8 +13,7 @@ import {
   CalendarClock,
 } from "lucide-react";
 import {
-  initialKanbanTasks,
-  kanbanStorageKey,
+  getTasksFromLocalStorage,
   saveKanbanTasksToLocalStorage,
   deriveProjectTypesLabel,
   getAggregatedDeliveryWeeksFromTask,
@@ -24,7 +23,6 @@ import { ClientDocuments } from "@/components/admin/ClientDocuments";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
 import { useAuthContext } from "@/contexts/AuthContext";
-import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { EMPLEADO_DASHBOARD_USER } from "@/lib/empleado-dashboard-user";
 
 function formatIsoDateLong(iso: string): string {
@@ -64,16 +62,6 @@ function isEmpleadoConfirmado(t: KanbanTask, empleado: string): boolean {
   );
 }
 
-const mergeTasks = (storedTasks: KanbanTask[]): KanbanTask[] => {
-  const map = new Map(storedTasks.map((task) => [task.id, task]));
-  initialKanbanTasks.forEach((task) => {
-    if (!map.has(task.id)) {
-      map.set(task.id, task);
-    }
-  });
-  return Array.from(map.values());
-};
-
 export default function EmpleadoConfirmadosPage() {
   const { user } = useAuthContext();
   const currentEmployeeName = user?.nombre?.trim() || EMPLEADO_DASHBOARD_USER;
@@ -87,37 +75,9 @@ export default function EmpleadoConfirmadosPage() {
   }, [clients, columnCount]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const loadClients = async () => {
-      await syncKanbanTasksFromBackend();
-      const stored = window.localStorage.getItem(kanbanStorageKey);
-      let allTasks: KanbanTask[] = [];
-
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored) as KanbanTask[];
-          allTasks = mergeTasks(parsed);
-          saveKanbanTasksToLocalStorage(allTasks);
-        } catch {
-          allTasks = initialKanbanTasks;
-        }
-      } else {
-        allTasks = initialKanbanTasks;
-        saveKanbanTasksToLocalStorage(allTasks);
-      }
-
-      if (!cancelled) {
-        setClients(allTasks.filter((task) => isEmpleadoConfirmado(task, currentEmployeeName)));
-        setIsHydrated(true);
-      }
-    };
-
-    void loadClients();
-
-    return () => {
-      cancelled = true;
-    };
+    const allTasks = getTasksFromLocalStorage();
+    setClients(allTasks.filter((task) => isEmpleadoConfirmado(task, currentEmployeeName)));
+    setIsHydrated(true);
   }, [currentEmployeeName]);
 
   useEffect(() => {

@@ -14,8 +14,7 @@ import {
   CalendarClock,
 } from "lucide-react";
 import {
-  initialKanbanTasks,
-  kanbanStorageKey,
+  getTasksFromLocalStorage,
   saveKanbanTasksToLocalStorage,
   deriveProjectTypesLabel,
   getAggregatedDeliveryWeeksFromTask,
@@ -57,16 +56,6 @@ function getCardDeliverySummary(task: KanbanTask): string | null {
   return `${fmt(from)} – ${fmt(to)}`;
 }
 
-const mergeTasks = (storedTasks: KanbanTask[]): KanbanTask[] => {
-  const map = new Map(storedTasks.map((task) => [task.id, task]));
-  initialKanbanTasks.forEach((task) => {
-    if (!map.has(task.id)) {
-      map.set(task.id, task);
-    }
-  });
-  return Array.from(map.values());
-};
-
 export default function ClientesConfirmadosPage() {
   const [clients, setClients] = useState<KanbanTask[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -78,22 +67,7 @@ export default function ClientesConfirmadosPage() {
   }, [clients, columnCount]);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(kanbanStorageKey);
-    let allTasks: KanbanTask[] = [];
-
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as KanbanTask[];
-        allTasks = mergeTasks(parsed);
-        saveKanbanTasksToLocalStorage(allTasks);
-      } catch {
-        allTasks = initialKanbanTasks;
-      }
-    } else {
-      allTasks = initialKanbanTasks;
-      saveKanbanTasksToLocalStorage(allTasks);
-    }
-
+    const allTasks = getTasksFromLocalStorage();
     const confirmed = allTasks.filter((task) => task.followUpStatus === "confirmado");
     setClients(confirmed);
     setIsHydrated(true);

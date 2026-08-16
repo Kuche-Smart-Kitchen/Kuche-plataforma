@@ -13,8 +13,9 @@ import {
 } from "@/lib/axios/kanbanApi";
 import { actualizarTarea, asignarTrabajadoresTarea, cambiarEtapa } from "@/lib/axios/tareasApi";
 import {
-  saveKanbanTasksToLocalStorage,
   getTasksFromLocalStorage,
+  mergeKanbanTaskLists,
+  saveKanbanTasksToLocalStorage,
   type FollowUpStatus,
   type KanbanTask,
   type TaskFile,
@@ -138,8 +139,6 @@ const getAssignedIds = (raw: Record<string, unknown>): string[] => {
   return [];
 };
 
-const readLocalKanbanTasks = (): KanbanTask[] => getTasksFromLocalStorage();
-
 const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
   const raw = (toRecord(item) ?? {}) as Record<string, unknown>;
   const cita = toRecord(raw.cita);
@@ -236,19 +235,19 @@ export async function syncKanbanTasksFromBackend(): Promise<KanbanTask[] | null>
   if (typeof window === "undefined") return null;
   if (!authApi.isAuthenticated()) return null;
 
-  const localTasks = readLocalKanbanTasks();
-
   try {
-    const tasks = await fetchBackendKanbanTasks();
-    if (tasks.length === 0) {
-      return localTasks.length > 0 ? localTasks : null;
+    const backendTasks = await fetchBackendKanbanTasks();
+    if (!backendTasks || backendTasks.length === 0) {
+      return null;
     }
 
-    saveKanbanTasksToLocalStorage(tasks);
-    return tasks;
+    const localTasks = getTasksFromLocalStorage();
+    const merged = mergeKanbanTaskLists(localTasks, backendTasks);
+    saveKanbanTasksToLocalStorage(merged);
+    return merged;
   } catch (error) {
     console.warn("No se pudo sincronizar el kanban desde backend; se mantiene fallback local.", error);
-    return localTasks.length > 0 ? localTasks : null;
+    return null;
   }
 }
 

@@ -139,9 +139,28 @@ export default function LoginPage() {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 10 }}
-                  className="mt-4 rounded-2xl border border-accent/30 bg-accent/10 px-4 py-3 text-xs text-accent"
+                  className="mt-4 space-y-2 rounded-2xl border border-accent/30 bg-accent/10 px-4 py-3 text-xs text-accent"
                 >
-                  Verifica tus credenciales y la disponibilidad del backend configurado en NEXT_PUBLIC_API_URL o BACKEND_API_URL. Si estás en Vercel, confirma que la variable exista y que el backend acepte el proxy interno.
+                  <p>{errorMessage}</p>
+                  {errorMessage.includes("NEXT_PUBLIC_API_URL") ||
+                  errorMessage.includes("backend") ||
+                  errorMessage.includes("/api/health/backend") ? (
+                    <p className="text-secondary">
+                      En Vercel → Settings → Environment Variables, define{" "}
+                      <strong className="text-primary">NEXT_PUBLIC_API_URL</strong> con una sola URL, por
+                      ejemplo{" "}
+                      <code className="rounded bg-white/80 px-1 py-0.5 text-primary">
+                        https://backend-cocinas-inteligentes.vercel.app
+                      </code>
+                      , vuelve a desplegar y prueba{" "}
+                      <code className="rounded bg-white/80 px-1 py-0.5 text-primary">/api/health/backend</code>.
+                    </p>
+                  ) : (
+                    <p className="text-secondary">
+                      El login usa usuarios registrados en el backend (correo + contraseña). Las variables de
+                      entorno no contienen contraseñas; solo la URL del API.
+                    </p>
+                  )}
                 </motion.div>
               ) : null}
             </AnimatePresence>

@@ -5,8 +5,7 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, XCircle, User, Calendar, RotateCcw, X, MessageSquare } from "lucide-react";
 import {
-  initialKanbanTasks,
-  kanbanStorageKey,
+  getTasksFromLocalStorage,
   getTaskCardSubtitle,
   saveKanbanTasksToLocalStorage,
   type KanbanTask,
@@ -15,7 +14,6 @@ import { ClientDocuments } from "@/components/admin/ClientDocuments";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
 import { useAuthContext } from "@/contexts/AuthContext";
-import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { EMPLEADO_DASHBOARD_USER } from "@/lib/empleado-dashboard-user";
 
 const formatDate = (timestamp: number | undefined): string => {
@@ -33,16 +31,6 @@ function isEmpleadoInactivo(t: KanbanTask, empleado: string): boolean {
   return t.followUpStatus === "descartado" && isAssignedToEmpleado(t, empleado);
 }
 
-const mergeTasks = (storedTasks: KanbanTask[]): KanbanTask[] => {
-  const map = new Map(storedTasks.map((task) => [task.id, task]));
-  initialKanbanTasks.forEach((task) => {
-    if (!map.has(task.id)) {
-      map.set(task.id, task);
-    }
-  });
-  return Array.from(map.values());
-};
-
 export default function EmpleadoInactivosPage() {
   const { user } = useAuthContext();
   const currentEmployeeName = user?.nombre?.trim() || EMPLEADO_DASHBOARD_USER;
@@ -56,47 +44,17 @@ export default function EmpleadoInactivosPage() {
   }, [clients, columnCount]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const loadClients = async () => {
-      await syncKanbanTasksFromBackend();
-      const stored = window.localStorage.getItem(kanbanStorageKey);
-      let allTasks: KanbanTask[] = [];
-
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored) as KanbanTask[];
-          allTasks = mergeTasks(parsed);
-          saveKanbanTasksToLocalStorage(allTasks);
-        } catch {
-          allTasks = initialKanbanTasks;
-        }
-      } else {
-        allTasks = initialKanbanTasks;
-        saveKanbanTasksToLocalStorage(allTasks);
-      }
-
-      if (!cancelled) {
-        setClients(allTasks.filter((task) => isEmpleadoInactivo(task, currentEmployeeName)));
-        setIsHydrated(true);
-      }
-    };
-
-    void loadClients();
-
-    return () => {
-      cancelled = true;
-    };
+    const allTasks = getTasksFromLocalStorage();
+    setClients(allTasks.filter((task) => isEmpleadoInactivo(task, currentEmployeeName)));
+    setIsHydrated(true);
   }, [currentEmployeeName]);
 
   const handleReactivate = (clientId: string) => {
     const target = clients.find((c) => c.id === clientId);
     if (!target || !isAssignedToEmpleado(target, currentEmployeeName)) return;
 
-    const stored = window.localStorage.getItem(kanbanStorageKey);
-    if (!stored) return;
     try {
-      const tasks = JSON.parse(stored) as KanbanTask[];
+      const tasks = getTasksFromLocalStorage();
       const updatedTasks = tasks.map((task) => {
         if (task.id !== clientId) return task;
         if (!isAssignedToEmpleado(task, currentEmployeeName)) return task;
