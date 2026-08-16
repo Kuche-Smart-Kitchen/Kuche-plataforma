@@ -28,21 +28,6 @@ function getTodayStart() {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 }
 
-function loadStoredAppointments(): Record<string, number> {
-  if (typeof window === "undefined") return {};
-  try {
-    const stored = window.localStorage.getItem("kuche_appointments");
-    if (!stored) return {};
-    const parsed = JSON.parse(stored) as Record<string, number>;
-    if (parsed && typeof parsed === "object") {
-      return parsed;
-    }
-  } catch {
-    // ignore parse errors
-  }
-  return {};
-}
-
 export default function BookingSection() {
   const todayStart = useMemo(() => getTodayStart(), []);
   const [currentMonth, setCurrentMonth] = useState(() =>
@@ -66,9 +51,7 @@ export default function BookingSection() {
     locationLabel: string;
     date: Date;
   } | null>(null);
-  const [appointmentsByDate, setAppointmentsByDate] = useState<Record<string, number>>(() =>
-    loadStoredAppointments(),
-  );
+  const [appointmentsByDate, setAppointmentsByDate] = useState<Record<string, number>>({});
 
   const MAX_APPOINTMENTS_PER_DAY = 3;
 
@@ -80,20 +63,13 @@ export default function BookingSection() {
   };
 
   const registerAppointment = (date: Date) => {
-    if (typeof window === "undefined") return;
     const key = getDateKey(date);
     setAppointmentsByDate((prev) => {
       const currentCount = prev[key] ?? 0;
-      const next = {
+      return {
         ...prev,
         [key]: currentCount + 1,
       };
-      try {
-        window.localStorage.setItem("kuche_appointments", JSON.stringify(next));
-      } catch {
-        // ignore storage errors
-      }
-      return next;
     });
   };
 

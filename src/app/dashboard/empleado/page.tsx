@@ -46,7 +46,6 @@ function taskIsInactivo(t: KanbanTask): boolean {
   return t.followUpStatus === "descartado";
 }
 
-const TEAM_STORAGE_KEY = "kuche_team_members";
 const defaultTeamMembers = [
   { id: "e1", name: "Valeria" },
   { id: "e2", name: "Luis" },
@@ -55,20 +54,6 @@ const defaultTeamMembers = [
 ];
 
 function loadTeamMembers(): { id: string; name: string }[] {
-  if (typeof window === "undefined") return defaultTeamMembers;
-  try {
-    const stored = window.localStorage.getItem(TEAM_STORAGE_KEY);
-    if (!stored) return defaultTeamMembers;
-    const parsed = JSON.parse(stored);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed.map((m: { id?: string; name?: string }) => ({
-        id: String(m?.id ?? `e${Date.now()}`),
-        name: String(m?.name ?? "").trim() || "Sin nombre",
-      })).filter((m) => m.name !== "Sin nombre");
-    }
-  } catch {
-    // ignore
-  }
   return defaultTeamMembers;
 }
 

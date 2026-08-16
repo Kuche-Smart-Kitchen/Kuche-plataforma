@@ -38,20 +38,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem("Küche.admin.sidebar.collapsed");
-    if (stored === "true") {
-      setIsCollapsed(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem(
-      "Küche.admin.sidebar.collapsed",
-      isCollapsed ? "true" : "false",
-    );
-  }, [isCollapsed]);
-
-  useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [pathname]);
 

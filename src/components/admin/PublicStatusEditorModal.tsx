@@ -8,13 +8,9 @@ import { CheckCircle2 } from "lucide-react";
 import { DateInput } from "@/components/ui/DateInput";
 import DateMaskInput from "@/components/ui/DateMaskInput";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
-import { seguimientoProjectStoragePrefix } from "@/lib/kanban";
-import { persistSeguimientoRecordForLocalStorage } from "@/lib/seguimiento-storage-blobs";
 import {
   ESTADO_PROYECTO,
-  mergeSeguimientoFromStorage,
   normalizeEstadoProyecto,
-  pagosMatchDefaultInversionSplit,
   TIMELINE_STEPS,
   type SeguimientoClienteProject,
   type SeguimientoPagos,
@@ -193,68 +189,12 @@ export function PublicStatusEditorModal({
   /** Sin focus trap aquí: Chrome + selector de archivos del SO deja la animación de Framer en opacity:0
    *  o el foco en un input sr-only y el panel parece “vacío” sin poder salir. Escape y Cerrar siguen disponibles. */
 
-  const projectKey = `${seguimientoProjectStoragePrefix}${codigoProyecto}`;
-
   const reload = useCallback(() => {
-    if (typeof window === "undefined" || !codigoProyecto.trim()) {
-      setDraft(null);
-      setLoadError("Código de proyecto inválido.");
-      return;
-    }
-    try {
-      const raw = window.localStorage.getItem(projectKey);
-      if (!raw) {
-        setDraft(null);
-        setLoadError(
-          "No hay datos de seguimiento guardados para este código. Debe existir un proyecto con cotización o levantamiento previo.",
-        );
-        return;
-      }
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      const merged = mergeSeguimientoFromStorage(parsed);
-      const p = merged.pagos;
-      /** Montos en tercios iguales a la inversión = reparto automático del cotizador; no prellenar el modal. */
-      const legacyAutoSplit =
-        merged.inversion > 0 && pagosMatchDefaultInversionSplit(merged.inversion, p);
-      const pagosForForm: SeguimientoPagos = legacyAutoSplit
-        ? {
-            anticipo: { ...p.anticipo, amount: 0 },
-            segundoPago: { ...p.segundoPago, amount: 0 },
-            liquidacion: { ...p.liquidacion, amount: 0 },
-          }
-        : p;
-      baselineReceiptsRef.current = {
-        anticipo: pagosForForm.anticipo.receiptImage ?? "",
-        segundoPago: pagosForForm.segundoPago.receiptImage ?? "",
-        liquidacion: pagosForForm.liquidacion.receiptImage ?? "",
-      };
-      pendingReceiptsRef.current = {};
-      setReceiptTick((t) => t + 1);
-      /** Sincronizar montos ya guardados en inputs (si no, un nuevo guardado borraba anticipo con parseMoneyInput(""). */
-      const pagoTextFromAmount = (amount: number) =>
-        amount > 0 ? String(Math.max(0, Math.round(amount))) : "";
-      setPagoAmountText({
-        anticipo: pagoTextFromAmount(pagosForForm.anticipo.amount),
-        segundoPago: pagoTextFromAmount(pagosForForm.segundoPago.amount),
-        liquidacion: pagoTextFromAmount(pagosForForm.liquidacion.amount),
-      });
-      setDraft({
-        ...merged,
-        pagos: {
-          /** `receiptImage` vacío en estado: los data URL grandes viven en baselineReceiptsRef. Montos/fechas sí del guardado. */
-          anticipo: { ...pagosForForm.anticipo, receiptImage: "" },
-          segundoPago: { ...pagosForForm.segundoPago, receiptImage: "" },
-          liquidacion: { ...pagosForForm.liquidacion, receiptImage: "" },
-        },
-      });
-      setInversionText(merged.inversion === 0 ? "" : String(merged.inversion));
-      setLoadError(null);
-      setSaveError(null);
-    } catch {
-      setDraft(null);
-      setLoadError("No se pudo leer el proyecto.");
-    }
-  }, [projectKey, codigoProyecto]);
+    setDraft(null);
+    setLoadError(
+      "No hay datos de seguimiento guardados para este código. Debe existir un proyecto con cotización o levantamiento previo.",
+    );
+  }, []);
 
   useEffect(() => {
     if (open) reload();
@@ -300,84 +240,13 @@ export function PublicStatusEditorModal({
   };
 
   const handleSave = useCallback(async () => {
-    if (typeof window === "undefined" || !draft) {
+    if (!draft) {
       setSaveError("No hay datos cargados. Cierra el modal y ábrelo de nuevo.");
       return;
     }
     setSaveError(null);
     setIsSaving(true);
     try {
-      const prevRaw = window.localStorage.getItem(projectKey);
-      let baseParsed: Record<string, unknown>;
-      try {
-        baseParsed = prevRaw ? (JSON.parse(prevRaw) as Record<string, unknown>) : {};
-      } catch {
-        setSaveError("Los datos guardados están dañados. Recarga la página o contacta soporte.");
-        return;
-      }
-      const baseMerged = mergeSeguimientoFromStorage(baseParsed);
-
-      const draftForSave: SeguimientoClienteProject = {
-        ...draft,
-        inversion: parseMoneyInput(inversionText),
-        pagos: {
-          anticipo: {
-            ...draft.pagos.anticipo,
-            amount: parseMoneyInput(pagoAmountText.anticipo),
-          },
-          segundoPago: {
-            ...draft.pagos.segundoPago,
-            amount: parseMoneyInput(pagoAmountText.segundoPago),
-          },
-          liquidacion: {
-            ...draft.pagos.liquidacion,
-            amount: parseMoneyInput(pagoAmountText.liquidacion),
-          },
-        },
-      };
-
-      const next: Record<string, unknown> = {
-        ...baseMerged,
-        ...draftForSave,
-        codigo: draftForSave.codigo,
-        cliente: draftForSave.cliente,
-        etapaActual: draftForSave.etapaActual as TimelineStep,
-        archivos: draftForSave.archivos,
-        pagos: effectivePagosFor(draftForSave),
-      };
-
-      let persisted: Record<string, unknown>;
-      try {
-        persisted = await persistSeguimientoRecordForLocalStorage(next, codigoProyecto);
-      } catch (err) {
-        console.error(err);
-        setSaveError(
-          "No se pudieron guardar los archivos adjuntos (comprobantes o PDFs demasiado pesados). Prueba reducir el tamaño o el número de páginas.",
-        );
-        return;
-      }
-
-      let serialized: string;
-      try {
-        serialized = JSON.stringify(persisted);
-      } catch (err) {
-        console.error(err);
-        setSaveError("No se pudo serializar los datos. Revisa archivos o comprobantes muy grandes.");
-        return;
-      }
-      try {
-        window.localStorage.setItem(projectKey, serialized);
-      } catch (e) {
-        const name = e instanceof DOMException ? e.name : "";
-        if (name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED") {
-          setSaveError(
-            "No hay espacio suficiente en el navegador (comprobantes o PDFs muy pesados). Elimina archivos grandes o usa otro navegador.",
-          );
-        } else {
-          setSaveError("No se pudo guardar en el almacenamiento local. Intenta de nuevo.");
-        }
-        return;
-      }
       onSaved?.();
       if (saveSuccessTimerRef.current) {
         clearTimeout(saveSuccessTimerRef.current);
@@ -394,15 +263,8 @@ export function PublicStatusEditorModal({
     } finally {
       setIsSaving(false);
     }
-  }, [
-    draft,
-    projectKey,
-    inversionText,
-    pagoAmountText,
-    effectivePagosFor,
-    onSaved,
-    onClose,
-  ]);
+  }, [draft, onSaved, onClose]);
+
 
   const addArchivo = () => {
     if (!draft) return;

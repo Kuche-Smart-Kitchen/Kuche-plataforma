@@ -7,7 +7,7 @@ import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useClienteArchivos } from "@/hooks/useClienteArchivos";
 import { seguimientoApi } from "@/lib/axios";
-import { kanbanStorageKey, type KanbanTask } from "@/lib/kanban";
+import { type KanbanTask } from "@/lib/kanban";
 import {
   normalizePublicProjectCodeInput,
   resolveSeguimientoProjectByCode,
@@ -129,13 +129,7 @@ export default function SeguimientoPage() {
         }
       }
 
-      let tasks: KanbanTask[] = [];
-      try {
-        const kt = window.localStorage.getItem(kanbanStorageKey);
-        if (kt) tasks = JSON.parse(kt) as KanbanTask[];
-      } catch {
-        tasks = [];
-      }
+      const tasks: KanbanTask[] = [];
 
       try {
         const enriched = enrichSeguimientoParsedWithKanbanIfMissing(parsed, tasks);

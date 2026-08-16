@@ -11,15 +11,6 @@ import * as XLSX from "xlsx";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import {
-  activeCitaTaskStorageKey,
-  activeCotizacionFormalTaskStorageKey,
-  citaReturnUrlStorageKey,
-  getCotizacionesFormalesList,
-  getPreliminarList,
-  kanbanStorageKey,
-  initialKanbanTasks,
-  saveKanbanTasksToLocalStorage,
-  seguimientoProjectStoragePrefix,
   type KanbanTask,
   type CotizacionFormalData,
 } from "@/lib/kanban";
@@ -28,20 +19,12 @@ import {
   buildWorkshopPdfDataUrl,
   type WorkshopPdfBuildInput,
 } from "@/lib/cotizacion-workshop-pdf";
-import { createFormalWorkshopPdfKeys, saveFormalPdf } from "@/lib/formal-pdf-storage";
 import { NumericInputEmptyZero } from "@/components/dashboard/NumericInputEmptyZero";
-import { formatDeliveryWeeksLabel, parseDeliveryWeeksRangeFromLabel } from "@/lib/delivery-weeks";
+import { formatDeliveryWeeksLabel } from "@/lib/delivery-weeks";
 import { emptyWhenZeroIntString, emptyWhenZeroNumericString } from "@/lib/numeric-input-empty-zero";
-import { generatePublicProjectCode } from "@/lib/project-code";
-import {
-  ESTADO_PROYECTO,
-  formatSeguimientoDateLong,
-  mergePagosPreservingReceipts,
-  normalizeEtapaForStorage,
-} from "@/lib/seguimiento-project";
 import { CatalogProjectTypeField } from "@/components/catalogo/CatalogProjectTypeField";
 import { DashboardBackButton } from "@/components/dashboard/DashboardBackButton";
-import { CATALOG_PROJECT_TYPES, normalizeLegacyProjectTypeToCatalog } from "@/lib/catalog-project-types";
+import { CATALOG_PROJECT_TYPES } from "@/lib/catalog-project-types";
 import { KUCHE_EMAIL, KUCHE_FORMAL_PDF_FOOTER_LINE_1 } from "@/lib/kuche-contact";
 /** Precio por metro lineal para material base (según ítem de ESTRUCTURA seleccionado). */
 const MATERIAL_BASE_PRICE_PER_METER: Record<string, number> = {
@@ -393,19 +376,8 @@ function MaterialCatalogQtyControl({ itemId, qty, onSetQty, onAdjustDelta }: Mat
   );
 }
 
-function FormalCotizacionBanner({ taskId }: { taskId: string }) {
-  const projectName = (() => {
-    if (typeof window === "undefined") return "Proyecto";
-    const raw = window.localStorage.getItem(kanbanStorageKey);
-    if (!raw) return "Proyecto";
-    try {
-      const tasks = JSON.parse(raw) as KanbanTask[];
-      const task = Array.isArray(tasks) ? tasks.find((t) => t.id === taskId) : undefined;
-      return task?.project ?? "Proyecto";
-    } catch {
-      return "Proyecto";
-    }
-  })();
+function FormalCotizacionBanner() {
+  const projectName = "Proyecto";
   return (
     <div className="rounded-3xl border border-emerald-200 bg-emerald-50/80 p-5 shadow-md backdrop-blur-md">
       <p className="text-xs uppercase tracking-[0.3em] text-emerald-700">Cotización formal</p>
@@ -458,10 +430,6 @@ export default function CotizadorPage() {
   const [newItemPrice, setNewItemPrice] = useState("");
   const [newItemUnitType, setNewItemUnitType] = useState("pieza");
   const [newItemCategory, setNewItemCategory] = useState(initialCatalogoKuche[0]?.category ?? "");
-  const [activeCitaTaskId, setActiveCitaTaskId] = useState<string | null>(null);
-  const [activeCotizacionFormalTaskId, setActiveCotizacionFormalTaskId] = useState<string | null>(null);
-  /** Evita pisar datos si el efecto se repite con el mismo taskId. */
-  const prefilledFormalTaskIdRef = useRef<string | null>(null);
   const [finishFormalError, setFinishFormalError] = useState("");
   const [referenceImages, setReferenceImages] = useState<
     Array<{ id: string; name: string; dataUrl: string }>
@@ -634,98 +602,6 @@ export default function CotizadorPage() {
   }, [catalogoTabs, activeTab]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const storedCatalog = window.localStorage.getItem("kuche.catalogoKuche.v1");
-    if (storedCatalog) {
-      try {
-        const parsed = JSON.parse(storedCatalog);
-        if (Array.isArray(parsed)) {
-          const normalized = normalizeStoredCatalog(parsed);
-          if (normalized.length > 0) {
-            setCatalogoKuche(normalized);
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    setActiveCitaTaskId(window.localStorage.getItem(activeCitaTaskStorageKey));
-    setActiveCotizacionFormalTaskId(window.localStorage.getItem(activeCotizacionFormalTaskStorageKey));
-  }, []);
-
-  /** Desde la tarjeta del tablero: cliente, ubicación, tipo y semanas (último levantamiento preliminar). */
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const taskId = activeCotizacionFormalTaskId;
-    if (!taskId) {
-      prefilledFormalTaskIdRef.current = null;
-      return;
-    }
-    if (prefilledFormalTaskIdRef.current === taskId) return;
-
-    const raw = window.localStorage.getItem(kanbanStorageKey);
-    if (!raw) return;
-    let tasks: KanbanTask[];
-    try {
-      tasks = JSON.parse(raw) as KanbanTask[];
-    } catch {
-      return;
-    }
-    const task = tasks.find((t) => t.id === taskId);
-    if (!task) return;
-
-    prefilledFormalTaskIdRef.current = taskId;
-
-    const preList = getPreliminarList(task);
-    const pre = preList.length > 0 ? preList[preList.length - 1] : null;
-
-    const fromPreClient = pre?.client?.trim();
-    const clientName =
-      (fromPreClient && fromPreClient !== "Sin nombre" ? fromPreClient : null) ??
-      task.project?.trim() ??
-      "";
-    if (clientName) {
-      setClient(clientName);
-      setClients((prev) =>
-        prev.some((e) => e.name === clientName)
-          ? prev
-          : [...prev, { name: clientName, phone: "", email: "" }],
-      );
-    }
-
-    const fromPreLoc = pre?.location?.trim();
-    const loc =
-      (fromPreLoc && fromPreLoc !== "Por definir" ? fromPreLoc : null) ??
-      task.location?.trim() ??
-      "";
-    if (loc) setLocation(loc);
-
-    if (pre?.projectType?.trim()) {
-      setProjectType(normalizeLegacyProjectTypeToCatalog(pre.projectType));
-    }
-
-    const weeksParsed = pre?.date ? parseDeliveryWeeksRangeFromLabel(pre.date) : null;
-    if (weeksParsed) {
-      setDeliveryWeeksMin(String(weeksParsed.min));
-      setDeliveryWeeksMax(String(weeksParsed.max));
-    }
-
-    if (pre?.largo?.trim()) setLargo(pre.largo.trim());
-    if (pre?.alto?.trim()) setAlto(pre.alto.trim());
-  }, [activeCotizacionFormalTaskId]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem("kuche.catalogoKuche.v1", JSON.stringify(catalogoKuche));
-  }, [catalogoKuche]);
-
-  useEffect(() => {
     const estructura = catalogoKuche.find((c) => c.category === "ESTRUCTURA");
     const vistas = catalogoKuche.find((c) => c.category === "VISTAS");
     const estructuraIds = new Set(estructura?.items?.map((i) => i.id) ?? []);
@@ -824,12 +700,6 @@ export default function CotizadorPage() {
     setActiveTab(initialCatalogoKuche[0]?.category ?? "");
     setMaterialBaseItemId(getDefaultMaterialBaseItemId());
     setColorItemId(getDefaultColorItemId());
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(
-        "kuche.catalogoKuche.v1",
-        JSON.stringify(initialCatalogoKuche),
-      );
-    }
   };
 
   const downloadExcelTemplate = () => {
@@ -1181,274 +1051,6 @@ export default function CotizadorPage() {
       delete next[itemId];
       return next;
     });
-  };
-
-  const handleFinishCita = () => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    const taskId = window.localStorage.getItem(activeCitaTaskStorageKey);
-    if (!taskId) {
-      router.push("/dashboard/empleado");
-      return;
-    }
-    const stored = window.localStorage.getItem(kanbanStorageKey);
-    let baseTasks = initialKanbanTasks as KanbanTask[];
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as KanbanTask[];
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          baseTasks = parsed;
-        }
-      } catch {
-        // ignore malformed storage
-      }
-    }
-    const next = baseTasks.map((task) => {
-      if (task.id !== taskId) return task;
-      // Al terminar cita la tarea pasa a Diseños (misma lógica que cotizador preliminar)
-      return {
-        ...task,
-        stage: "disenos" as const,
-        status: "pendiente" as const,
-        citaStarted: true,
-        citaFinished: true,
-      };
-    });
-    saveKanbanTasksToLocalStorage(next);
-    window.localStorage.removeItem(activeCitaTaskStorageKey);
-    setActiveCitaTaskId(null);
-    router.push("/dashboard/empleado");
-  };
-
-  const validateFormalSections = (): boolean => {
-    const hasProject =
-      projectType.trim() !== "" &&
-      (client.trim() !== "" ||
-        location.trim() !== "" ||
-        deliveryWeeksMin.trim() !== "" ||
-        deliveryWeeksMax.trim() !== "");
-    const largoN = Number.parseFloat(largo) || 0;
-    const altoN = Number.parseFloat(alto) || 0;
-    const hasMeasures = largoN > 0 || altoN > 0;
-    const hasCatalog = Object.values(quantities).some((q) => q > 0);
-    return !!(hasProject && hasMeasures && hasCatalog);
-  };
-
-  const buildCotizacionFormalDataFromForm = (): CotizacionFormalData => ({
-    client: client.trim() || "—",
-    projectType: projectType || "—",
-    location: location.trim() || "—",
-    date: formatDeliveryWeeksLabel(deliveryWeeksMin, deliveryWeeksMax) || "—",
-    rangeLabel: "Cotización formal",
-    cubierta: baseMaterialLabel || "—",
-    frente: colorLabel || "—",
-    herraje: "—",
-  });
-
-  const saveFormalAndGetNextTasks = (data: CotizacionFormalData): { codigoProyecto: string; updatedTasks: KanbanTask[] } | null => {
-    if (typeof window === "undefined") return null;
-    const taskId = window.localStorage.getItem(activeCotizacionFormalTaskStorageKey);
-    if (!taskId) return null;
-    if (!validateFormalSections()) {
-      setFinishFormalError("Completa al menos un dato en cada sección: datos del proyecto, medidas y al menos un ítem en el catálogo.");
-      return null;
-    }
-    let baseTasks: KanbanTask[] = initialKanbanTasks as KanbanTask[];
-    const stored = window.localStorage.getItem(kanbanStorageKey);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as KanbanTask[];
-        if (Array.isArray(parsed) && parsed.length > 0) baseTasks = parsed;
-      } catch {
-        // ignore
-      }
-    }
-    const taskToUpdate = baseTasks.find((t) => t.id === taskId);
-    const codigoProyecto = taskToUpdate?.codigoProyecto ?? generatePublicProjectCode();
-    const existingList = taskToUpdate ? getCotizacionesFormalesList(taskToUpdate) : [];
-    const cotizacionesFormales = [...existingList, data];
-    const next = baseTasks.map((task) => {
-      if (task.id !== taskId) return task;
-      return {
-        ...task,
-        codigoProyecto: task.codigoProyecto ?? codigoProyecto,
-        cotizacionesFormales,
-        cotizacionFormalData: data,
-        citaFinished: true,
-        stage: task.stage,
-        status: task.status,
-        followUpEnteredAt: task.followUpEnteredAt,
-        followUpStatus: task.followUpStatus,
-      };
-    });
-    saveKanbanTasksToLocalStorage(next);
-    const projectKey = `${seguimientoProjectStoragePrefix}${codigoProyecto}`;
-    try {
-      const existing = window.localStorage.getItem(projectKey);
-      const base =
-        existing != null
-          ? (JSON.parse(existing) as Record<string, unknown>)
-          : { codigo: codigoProyecto, cliente: taskToUpdate?.project ?? "Cliente" };
-      const prevArchivos = Array.isArray(base.archivos) ? [...(base.archivos as object[])] : [];
-      const safeId = (k: string) => k.replace(/[^a-zA-Z0-9_-]/g, "_");
-      const pdfArchivos: object[] = [];
-      if (data.formalPdfKey) {
-        pdfArchivos.push({
-          id: `seg-formal-${safeId(data.formalPdfKey)}`,
-          name: `Cotización formal — ${data.projectType}.pdf`,
-          type: "pdf",
-          indexedPdfKey: data.formalPdfKey,
-        });
-      }
-      const inversion = Math.round(totalNeto);
-      const fechaInicioPersist =
-        typeof base.fechaInicio === "string" && base.fechaInicio.trim()
-          ? base.fechaInicio
-          : formatSeguimientoDateLong();
-      const pagosMerged = mergePagosPreservingReceipts(base.pagos, inversion);
-      const seguimientoProject = {
-        ...base,
-        codigo: codigoProyecto,
-        cliente: ((base.cliente as string) || taskToUpdate?.project) ?? "Cliente",
-        kanbanStage: taskToUpdate?.stage,
-        kanbanFollowUpStatus: taskToUpdate?.followUpStatus ?? "pendiente",
-        inversion,
-        fechaInicio: fechaInicioPersist,
-        fechaEntrega: data.date || "Por definir",
-        etapaActual: normalizeEtapaForStorage(base.etapaActual),
-        estadoProyecto:
-          typeof base.estadoProyecto === "string" && base.estadoProyecto.trim()
-            ? base.estadoProyecto
-            : ESTADO_PROYECTO.EN_PROCESO,
-        pagos: pagosMerged,
-        cotizacionesFormales,
-        archivos: [...prevArchivos, ...pdfArchivos],
-      };
-      window.localStorage.setItem(projectKey, JSON.stringify(seguimientoProject));
-    } catch {
-      // optional
-    }
-    return { codigoProyecto, updatedTasks: next };
-  };
-
-  const handleTerminarCotizacion = async () => {
-    setFinishFormalError("");
-    const taskId = window.localStorage.getItem(activeCotizacionFormalTaskStorageKey);
-    if (!taskId) {
-      router.push("/dashboard/empleado");
-      return;
-    }
-    if (!validateFormalSections()) {
-      setFinishFormalError("Completa al menos un dato en cada sección: datos del proyecto, medidas y al menos un ítem en el catálogo.");
-      return;
-    }
-    let dataUrl: string;
-    try {
-      dataUrl = await buildFormalPdfDataUrl();
-    } catch {
-      setFinishFormalError("No se pudo generar el PDF. Intenta de nuevo.");
-      return;
-    }
-    let workshopUrl: string;
-    try {
-      const logoDataUrl = await getImageDataUrl(
-        new URL("/images/marca/kuche-logo.png", window.location.origin).toString(),
-      );
-      workshopUrl = await buildWorkshopPdfDataUrl(collectWorkshopPdfBuildInput(), logoDataUrl);
-    } catch {
-      setFinishFormalError("No se pudo generar la hoja de taller. Intenta de nuevo.");
-      return;
-    }
-    const data = buildCotizacionFormalDataFromForm();
-    const existingCount = (() => {
-      try {
-        const stored = window.localStorage.getItem(kanbanStorageKey);
-        const tasks = stored ? (JSON.parse(stored) as KanbanTask[]) : [];
-        const task = tasks.find((t) => t.id === taskId);
-        return task ? getCotizacionesFormalesList(task).length : 0;
-      } catch {
-        return 0;
-      }
-    })();
-    const { formalPdfKey, workshopPdfKey } = createFormalWorkshopPdfKeys(taskId, existingCount);
-    try {
-      await saveFormalPdf(formalPdfKey, dataUrl);
-      await saveFormalPdf(workshopPdfKey, workshopUrl);
-    } catch {
-      setFinishFormalError("No se pudo guardar los PDFs. Intenta de nuevo.");
-      return;
-    }
-    data.formalPdfKey = formalPdfKey;
-    data.workshopPdfKey = workshopPdfKey;
-    const result = saveFormalAndGetNextTasks(data);
-    if (!result) return;
-    saveKanbanTasksToLocalStorage(result.updatedTasks);
-    window.localStorage.removeItem(activeCotizacionFormalTaskStorageKey);
-    setActiveCotizacionFormalTaskId(null);
-    const returnUrl = window.localStorage.getItem(citaReturnUrlStorageKey) || "/dashboard/empleado";
-    window.localStorage.removeItem(citaReturnUrlStorageKey);
-    router.push(returnUrl);
-  };
-
-  const handleTerminarYContinuar = async () => {
-    setFinishFormalError("");
-    if (!validateFormalSections()) {
-      setFinishFormalError("Completa al menos un dato en cada sección: datos del proyecto, medidas y al menos un ítem en el catálogo.");
-      return;
-    }
-    const taskId = window.localStorage.getItem(activeCotizacionFormalTaskStorageKey);
-    if (!taskId) return;
-    let dataUrl: string;
-    try {
-      dataUrl = await buildFormalPdfDataUrl();
-    } catch {
-      setFinishFormalError("No se pudo generar el PDF. Intenta de nuevo.");
-      return;
-    }
-    let workshopUrl: string;
-    try {
-      const logoDataUrl = await getImageDataUrl(
-        new URL("/images/marca/kuche-logo.png", window.location.origin).toString(),
-      );
-      workshopUrl = await buildWorkshopPdfDataUrl(collectWorkshopPdfBuildInput(), logoDataUrl);
-    } catch {
-      setFinishFormalError("No se pudo generar la hoja de taller. Intenta de nuevo.");
-      return;
-    }
-    const data = buildCotizacionFormalDataFromForm();
-    const existingCount = (() => {
-      try {
-        const stored = window.localStorage.getItem(kanbanStorageKey);
-        const tasks = stored ? (JSON.parse(stored) as KanbanTask[]) : [];
-        const task = tasks.find((t) => t.id === taskId);
-        return task ? getCotizacionesFormalesList(task).length : 0;
-      } catch {
-        return 0;
-      }
-    })();
-    const { formalPdfKey, workshopPdfKey } = createFormalWorkshopPdfKeys(taskId, existingCount);
-    try {
-      await saveFormalPdf(formalPdfKey, dataUrl);
-      await saveFormalPdf(workshopPdfKey, workshopUrl);
-    } catch {
-      setFinishFormalError("No se pudo guardar los PDFs. Intenta de nuevo.");
-      return;
-    }
-    data.formalPdfKey = formalPdfKey;
-    data.workshopPdfKey = workshopPdfKey;
-    const result = saveFormalAndGetNextTasks(data);
-    if (!result) return;
-    setProjectType(CATALOG_PROJECT_TYPES[0]);
-    setLocation("");
-    setDeliveryWeeksMin("");
-    setDeliveryWeeksMax("");
-    setLargo("");
-    setAlto("");
-    setQuantities({});
-    setPdfHighlightedItems({});
-    setMaterialBaseItemId(getDefaultMaterialBaseItemId());
-    setColorItemId(getDefaultColorItemId());
   };
 
   const getImageDataUrl = async (imageUrl: string) => {
@@ -1889,11 +1491,9 @@ export default function CotizadorPage() {
     }
   };
 
-  const showCotizadorBottomBar = Boolean(activeCotizacionFormalTaskId || activeCitaTaskId);
-
   return (
-    <div className={`space-y-8 ${showCotizadorBottomBar ? "pb-32" : "pb-24"}`}>
-      <DashboardBackButton href="/admin" preferCitaReturnUrl />
+    <div className="space-y-8 pb-24">
+      <DashboardBackButton href="/admin" />
       <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-md">
         <p className="text-xs uppercase tracking-[0.3em] text-secondary">COTIZADOR PRO</p>
         <h1 className="mt-2 text-3xl font-semibold">Perfil del proyecto</h1>
@@ -1901,18 +1501,6 @@ export default function CotizadorPage() {
           Fusiona una experiencia visual con un desglose técnico riguroso para el taller.
         </p>
       </div>
-      {activeCitaTaskId ? (
-        <div className="rounded-3xl border border-primary/10 bg-white/80 p-5 shadow-md backdrop-blur-md">
-          <p className="text-xs uppercase tracking-[0.3em] text-secondary">Cita en curso</p>
-          <p className="mt-2 text-sm text-secondary">
-            Al terminar la cita se marcará como completada en el tablero. Usa el botón fijo al pie de la
-            pantalla.
-          </p>
-        </div>
-      ) : null}
-      {activeCotizacionFormalTaskId ? (
-        <FormalCotizacionBanner taskId={activeCotizacionFormalTaskId} />
-      ) : null}
 
       <section className="space-y-6 rounded-3xl border border-white/70 bg-white/80 p-8 shadow-xl backdrop-blur-md">
         <div>
@@ -2888,53 +2476,8 @@ export default function CotizadorPage() {
         </div>
       </section>
 
-      {activeCotizacionFormalTaskId ? (
-        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-emerald-200/90 bg-white/95 px-4 py-3 shadow-[0_-6px_24px_rgba(0,0,0,0.07)] backdrop-blur-md">
-          <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="max-w-xl text-xs text-secondary">
-              Guarda la cotización formal en la tarjeta y continúa en el tablero. El PDF no se descarga solo:
-              úsalo desde Clientes en proceso o confirmados/proyectos inactivos (admin), o con{" "}
-              <span className="font-semibold text-gray-700">Generar PDF Cliente</span>.
-            </p>
-            <div className="flex shrink-0 flex-wrap justify-end gap-2">
-              <button
-                type="button"
-                onClick={handleTerminarCotizacion}
-                className="rounded-2xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-700"
-              >
-                Terminar
-              </button>
-              <button
-                type="button"
-                onClick={handleTerminarYContinuar}
-                className="rounded-2xl border-2 border-emerald-600 bg-white px-5 py-2.5 text-sm font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-50"
-              >
-                Terminar y continuar
-              </button>
-            </div>
-          </div>
-          {finishFormalError ? (
-            <p className="mx-auto mt-2 max-w-6xl text-sm text-rose-600">{finishFormalError}</p>
-          ) : null}
-        </div>
-      ) : activeCitaTaskId ? (
-        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-primary/15 bg-white/95 px-4 py-3 shadow-[0_-6px_24px_rgba(0,0,0,0.07)] backdrop-blur-md">
-          <div className="mx-auto flex w-full max-w-6xl flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end">
-            <button
-              type="button"
-              onClick={handleFinishCita}
-              className="rounded-2xl bg-accent px-6 py-2.5 text-sm font-semibold text-white shadow-md transition hover:opacity-95"
-            >
-              Terminar cita
-            </button>
-          </div>
-        </div>
-      ) : null}
-
       <div
-        className={`fixed right-6 z-40 w-[260px] rounded-3xl border border-white/70 bg-white/90 p-4 shadow-2xl backdrop-blur-md ${
-          showCotizadorBottomBar ? "bottom-28" : "bottom-6"
-        }`}
+        className="fixed bottom-6 right-6 z-40 w-[260px] rounded-3xl border border-white/70 bg-white/90 p-4 shadow-2xl backdrop-blur-md"
       >
         <p className="text-xs uppercase tracking-[0.25em] text-secondary">Total Neto</p>
         <p className="mt-2 text-2xl font-semibold text-accent">{formatCurrency(totalNeto)}</p>

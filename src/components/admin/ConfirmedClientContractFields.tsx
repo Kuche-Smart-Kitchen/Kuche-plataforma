@@ -3,8 +3,6 @@
 import { useState } from "react";
 import { CalendarRange, Package, Pencil, CalendarClock } from "lucide-react";
 import {
-  kanbanStorageKey,
-  saveKanbanTasksToLocalStorage,
   getAggregatedDeliveryWeeksFromTask,
   getConfirmedCardProjectLines,
   type KanbanTask,
@@ -42,18 +40,7 @@ export function ConfirmedClientContractFields({ task, onUpdate }: Props) {
       : "";
 
   const persistTaskPatch = (patch: Partial<KanbanTask>) => {
-    if (typeof window === "undefined") return;
-    const stored = window.localStorage.getItem(kanbanStorageKey);
-    if (!stored) return;
-    try {
-      const tasks = JSON.parse(stored) as KanbanTask[];
-      const next = tasks.map((t) => (t.id === task.id ? { ...t, ...patch } : t));
-      saveKanbanTasksToLocalStorage(next);
-      const updated = next.find((t) => t.id === task.id);
-      if (updated) onUpdate(updated);
-    } catch {
-      // ignore
-    }
+    onUpdate({ ...task, ...patch });
   };
 
   const saveContract = () => {

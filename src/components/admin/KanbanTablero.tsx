@@ -35,9 +35,6 @@ import {
   initialKanbanTasks,
   notifyKanbanTasksUpdated,
   syncSeguimientoProjectKanbanStage,
-  activeCitaTaskStorageKey,
-  citaReturnUrlStorageKey,
-  activeCotizacionFormalTaskStorageKey,
   type KanbanTask,
   type TaskFile,
   type TaskPriority,
@@ -721,10 +718,6 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
         window.setTimeout(() => setBackendSyncMessage(null), 4500);
       }
     }
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(activeCitaTaskStorageKey, taskId);
-      window.localStorage.setItem(citaReturnUrlStorageKey, window.location.pathname);
-    }
     router.push("/dashboard/Levantamiento-detallado");
   };
 
@@ -759,10 +752,6 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
   const startCotizacionFormal = (taskId: string) => {
     updateTask(taskId, (t) => ({ ...t, citaStarted: true }));
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(activeCotizacionFormalTaskStorageKey, taskId);
-      window.localStorage.setItem(citaReturnUrlStorageKey, window.location.pathname);
-    }
     router.push("/dashboard/cotizador");
   };
 

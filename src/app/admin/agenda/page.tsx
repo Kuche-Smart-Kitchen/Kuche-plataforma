@@ -32,8 +32,6 @@ type TeamMember = {
   role: string;
 };
 
-const APPOINTMENTS_KEY = "kuche_agenda_events";
-const TEAM_KEY = "kuche_team_members";
 const UNASSIGNED_FILTER = "__unassigned__";
 
 const typeStyles: Record<AppointmentType, string> = {
@@ -75,50 +73,6 @@ export default function AgendaPage() {
 
   useEscapeClose(isModalOpen, () => setIsModalOpen(false));
   useFocusTrap(isModalOpen, modalRef);
-
-  useEffect(() => {
-    const stored = window.localStorage.getItem(APPOINTMENTS_KEY);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          const normalized = parsed.map((item) => ({
-            ...item,
-            assignedTo: item.assignedTo ?? "",
-            status: item.status ?? (item.assignedTo ? "Confirmada" : "Pendiente"),
-          }));
-          setAppointments(normalized);
-        }
-      } catch {
-        // ignore corrupted storage
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(appointments));
-  }, [appointments]);
-
-  useEffect(() => {
-    const storedTeam = window.localStorage.getItem(TEAM_KEY);
-    if (storedTeam) {
-      try {
-        const parsed = JSON.parse(storedTeam);
-        if (Array.isArray(parsed)) {
-          setTeamMembers(parsed);
-          if (!formState.assignedTo && parsed[0]?.id) {
-            setFormState((prev) => ({
-              ...prev,
-              assignedTo: parsed[0].id,
-              status: "Confirmada",
-            }));
-          }
-        }
-      } catch {
-        // ignore corrupted storage
-      }
-    }
-  }, [formState.assignedTo]);
 
   useEffect(() => {
     if (!isModalOpen) {

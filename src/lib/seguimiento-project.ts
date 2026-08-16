@@ -2,7 +2,7 @@
  * Modelo y utilidades del proyecto de seguimiento del cliente (`kuche_project_${codigo}` en localStorage).
  */
 
-import { seguimientoProjectStoragePrefix, type KanbanTask } from "@/lib/kanban";
+import { type KanbanTask } from "@/lib/kanban";
 
 /** Orden del embudo en el tablero. Las etapas que se añadan después de `contrato` deben ir al final. */
 export const KANBAN_PIPELINE_STAGES = ["citas", "disenos", "cotizacion", "contrato"] as const;
@@ -285,25 +285,10 @@ export function mergeKanbanSnapshotIntoSeguimientoRecord(
   return next;
 }
 
-/** Tras «Confirmar cliente» en cualquier columna del tablero. */
+/** Sin persistencia: no-op, se mantiene la firma para no romper llamadores. */
 export function syncSeguimientoEstadoFromKanbanConfirm(
-  task: Pick<KanbanTask, "codigoProyecto" | "project" | "title" | "stage" | "followUpStatus">,
+  _task: Pick<KanbanTask, "codigoProyecto" | "project" | "title" | "stage" | "followUpStatus">,
 ): void {
-  if (typeof window === "undefined") return;
-  const code = task.codigoProyecto?.trim();
-  if (!code || task.followUpStatus !== "confirmado") return;
-  const key = `${seguimientoProjectStoragePrefix}${code}`;
-  try {
-    const raw = window.localStorage.getItem(key);
-    const base = raw
-      ? (JSON.parse(raw) as Record<string, unknown>)
-      : {
-          codigo: code,
-          cliente: String(task.project ?? task.title ?? "Cliente").trim() || "Cliente",
-        };
-    const merged = mergeKanbanSnapshotIntoSeguimientoRecord(base, task);
-    window.localStorage.setItem(key, JSON.stringify(merged));
-  } catch {
-    // ignore
-  }
+  // no-op: ya no se persiste en localStorage
 }
+

@@ -10,7 +10,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useRouter } from "next/navigation";
 import {
   Check,
   CheckCircle2,
@@ -22,19 +21,8 @@ import {
   Search,
 } from "lucide-react";
 import {
-  activeCitaTaskStorageKey,
-  citaReturnUrlStorageKey,
-  getPreliminarList,
-  getTasksFromLocalStorage,
-  notifyKanbanTasksUpdated,
-  taskMatchesKanbanUpdate,
-  seguimientoProjectStoragePrefix,
-  type KanbanTask,
   type PreliminarData,
-  type TaskStage,
-  type TaskStatus,
 } from "@/lib/kanban";
-import { syncCitaFinishWithBackend } from "@/lib/admin-workflow";
 import { CatalogProjectTypeField } from "@/components/catalogo/CatalogProjectTypeField";
 import {
   CATALOG_PROJECT_TYPES,
@@ -53,7 +41,6 @@ import {
   buildShowroomSelectionSummary,
   type ShowroomMaterialOption as MaterialOption,
 } from "./logica_Levantamiento_y_cotizacion/showroomCatalog";
-import { getSectionAInitialValues } from "./logica_Levantamiento_y_cotizacion/sectionA";
 import {
   APPLIANCE_CATEGORIAS,
   APPLIANCE_ITEMS,
@@ -88,7 +75,6 @@ import {
   buildPreliminarPdfDataUrl,
   downloadPreliminarPdf,
 } from "@/lib/pdf-preliminar";
-import { createPreliminarSeguimientoPdfKey, saveFormalPdf } from "@/lib/formal-pdf-storage";
 import { formatDeliveryWeeksLabel } from "@/lib/delivery-weeks";
 import { emptyWhenZeroIntString, emptyWhenZeroNumericString } from "@/lib/numeric-input-empty-zero";
 import ApplianceTypeImage from "@/components/levantamiento/ApplianceTypeImage";
@@ -97,13 +83,6 @@ import LightingTypeImage from "@/components/levantamiento/LightingTypeImage";
 import { WallTypeIcon } from "@/components/levantamiento/WallTypeIcons";
 import { InteractiveCroquis } from "@/components/levantamiento/InteractiveCroquis";
 import Link from "next/link";
-import { generatePublicProjectCode } from "@/lib/project-code";
-import {
-  defaultPagosForInversion,
-  ESTADO_PROYECTO,
-  formatSeguimientoDateLong,
-  normalizeEtapaForStorage,
-} from "@/lib/seguimiento-project";
 import {
   createDefaultLevantamientoConfig,
   getLevantamientoConfig,
@@ -504,9 +483,6 @@ const materialCatalog = buildMaterialShowroomCatalog(DEFAULT_LEVANTAMIENTO_MATER
 type AutoScenarioId = LevantamientoScenarioId;
 
 export default function CotizadorPreliminarPage() {
-  const router = useRouter();
-  const [activeCitaTaskId, setActiveCitaTaskId] = useState<string | null>(null);
-  const [activeCitaTask, setActiveCitaTask] = useState<KanbanTask | null>(null);
   const [clientName, setClientName] = useState("");
   const [projectType, setProjectType] = useState<string>(CATALOG_PROJECT_TYPES[0]);
   const [location, setLocation] = useState("");
@@ -523,7 +499,6 @@ export default function CotizadorPreliminarPage() {
   );
   const [selectedScenario, setSelectedScenario] = useState<AutoScenarioId>("esencial");
   const [materialSearch, setMaterialSearch] = useState("");
-  const [finishError, setFinishError] = useState<string | null>(null);
   const [levantamiento, setLevantamiento] = useState<LevantamientoDetalle>(() => defaultLevantamientoDetalle());
   /** Índice 0-based de la pared actual en el flujo dinámico (Sección B). */
   const [currentWallIndex, setCurrentWallIndex] = useState(0);
@@ -924,28 +899,6 @@ export default function CotizadorPreliminarPage() {
     }
   }, [clientName, location, deliveryWeeksMin, deliveryWeeksMax, largo, alto]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const taskId = window.localStorage.getItem(activeCitaTaskStorageKey);
-    if (taskId) {
-      setActiveCitaTaskId(taskId);
-      const tasks = getTasksFromLocalStorage();
-      const task = tasks.find((t) => t.id === taskId);
-      if (task) {
-        setActiveCitaTask(task);
-        const initialValues = getSectionAInitialValues(task);
-
-        if (initialValues.clientName) setClientName(initialValues.clientName);
-        if (initialValues.projectType) setProjectType(initialValues.projectType);
-        if (initialValues.location) setLocation(initialValues.location);
-        if (initialValues.largo) setLargo(initialValues.largo);
-        if (initialValues.alto) setAlto(initialValues.alto);
-        if (initialValues.deliveryWeeksMin) setDeliveryWeeksMin(initialValues.deliveryWeeksMin);
-        if (initialValues.deliveryWeeksMax) setDeliveryWeeksMax(initialValues.deliveryWeeksMax);
-      }
-    }
-  }, []);
-
   const validatePreliminarSections = (): string | null => {
     const hasDatos =
       clientName.trim() !== "" ||
@@ -991,217 +944,6 @@ export default function CotizadorPreliminarPage() {
         alto: alto.trim() || undefined,
       },
     };
-  };
-
-  const savePreliminarAndGetNextTasks = (options?: {
-    seguimientoPdf?: { key: string; fileLabel: string };
-    completeCita?: boolean;
-  }): { codigoProyecto: string | undefined; updatedTasks: KanbanTask[]; saved: boolean } | null => {
-    if (!activeCitaTaskId || !activeCitaTask) return null;
-    const err = validatePreliminarSections();
-    if (err) {
-      setFinishError(err);
-      return null;
-    }
-    const newPreliminar = buildPreliminarDataFromForm();
-    const completeCita = options?.completeCita ?? false;
-    const matchCriteria = {
-      targetId: activeCitaTaskId,
-      projectCode: activeCitaTask.codigoProyecto,
-      clientName: activeCitaTask.project ?? clientName,
-    };
-
-    const tasks = getTasksFromLocalStorage();
-
-    const hasActiveTask = tasks.some((t) => taskMatchesKanbanUpdate(t, matchCriteria));
-    const baseTasks = hasActiveTask ? tasks : [...tasks, activeCitaTask];
-
-    let codigoProyecto: string | undefined;
-    const updatedTasks = baseTasks.map((task) => {
-      if (!taskMatchesKanbanUpdate(task, matchCriteria)) return task;
-      const existingList = getPreliminarList(task);
-      const preliminarCotizaciones = [...existingList, newPreliminar];
-      codigoProyecto = task.codigoProyecto ?? generatePublicProjectCode();
-      return {
-        ...task,
-        id: task.id || `task-${codigoProyecto}`,
-        codigoProyecto,
-        preliminarCotizaciones,
-        preliminarData: newPreliminar,
-        location: task.location || location.trim() || newPreliminar.location,
-        ...(completeCita
-          ? {
-              citaStarted: true,
-              citaFinished: true,
-              stage: "disenos" as TaskStage,
-              status: "pendiente" as TaskStatus,
-            }
-          : {
-              citaStarted: task.citaStarted ?? true,
-            }),
-      };
-    });
-
-    let projectSaved = true;
-
-    if (codigoProyecto) {
-      const projectKey = `${seguimientoProjectStoragePrefix}${codigoProyecto}`;
-      let existingParsed: Record<string, unknown> = {};
-      try {
-        const existing = window.localStorage.getItem(projectKey);
-        if (existing) existingParsed = JSON.parse(existing) as Record<string, unknown>;
-      } catch {
-        // ignore
-      }
-      const taskAfter =
-        updatedTasks.find((t) => taskMatchesKanbanUpdate(t, matchCriteria)) ?? activeCitaTask;
-      const preliminarCotizaciones = getPreliminarList(taskAfter);
-      const estimatedInversion = Math.round(metrics.total);
-      const seguimientoProject: Record<string, unknown> = {
-        ...existingParsed,
-        codigo: codigoProyecto,
-        cliente: activeCitaTask.project ?? clientName ?? "Cliente",
-        kanbanStage: completeCita ? "disenos" : (taskAfter?.stage ?? activeCitaTask.stage),
-        kanbanFollowUpStatus: taskAfter?.followUpStatus ?? activeCitaTask.followUpStatus ?? "pendiente",
-        preliminarData: newPreliminar,
-        preliminarCotizaciones,
-        ubicacion: location.trim() || newPreliminar.location || existingParsed.ubicacion,
-        inversion: estimatedInversion,
-        fechaInicio: formatSeguimientoDateLong(),
-        fechaEntrega: newPreliminar.date || "Por definir",
-        etapaActual: normalizeEtapaForStorage(existingParsed.etapaActual),
-        estadoProyecto: ESTADO_PROYECTO.EN_PROCESO,
-        pagos: defaultPagosForInversion(0),
-        garantiaInicio: "",
-        cotizacionPreliminarImage: "",
-        cotizacionFormalImage: "",
-      };
-      if (options?.seguimientoPdf) {
-        const prevArchivos = Array.isArray(existingParsed.archivos)
-          ? [...(existingParsed.archivos as object[])]
-          : [];
-        seguimientoProject.archivos = [
-          ...prevArchivos,
-          {
-            id: `seg-preliminar-${options.seguimientoPdf.key}`,
-            name: options.seguimientoPdf.fileLabel,
-            type: "pdf",
-            indexedPdfKey: options.seguimientoPdf.key,
-          },
-        ];
-      }
-      try {
-        window.localStorage.setItem(projectKey, JSON.stringify(seguimientoProject));
-      } catch {
-        projectSaved = false;
-      }
-    }
-
-    const kanbanSaved = notifyKanbanTasksUpdated(updatedTasks);
-
-    return { codigoProyecto, updatedTasks, saved: projectSaved && kanbanSaved };
-  };
-
-  const handleFinishCita = async () => {
-    setFinishError(null);
-    if (!activeCitaTaskId || !activeCitaTask) return;
-    const err = validatePreliminarSections();
-    if (err) {
-      setFinishError(err);
-      return;
-    }
-    const newPreliminar = buildPreliminarDataFromForm();
-    const existingCount = getPreliminarList(activeCitaTask).length;
-    const preliminarPdfKey = createPreliminarSeguimientoPdfKey(activeCitaTaskId, existingCount);
-    let dataUrl: string;
-    try {
-      dataUrl = await buildPreliminarPdfDataUrl(newPreliminar);
-    } catch {
-      setFinishError("No se pudo generar el PDF para seguimiento. Intenta de nuevo.");
-      return;
-    }
-    try {
-      await saveFormalPdf(preliminarPdfKey, dataUrl);
-    } catch {
-      setFinishError("No se pudo guardar el PDF. Intenta de nuevo.");
-      return;
-    }
-    const fileLabel = `Levantamiento detallado — ${newPreliminar.projectType}.pdf`;
-    const result = savePreliminarAndGetNextTasks({
-      seguimientoPdf: { key: preliminarPdfKey, fileLabel },
-      completeCita: true,
-    });
-    if (!result) return;
-    if (!result.saved) {
-      setFinishError(
-        "No se pudo guardar el tablero o el proyecto. Libera espacio del navegador e intenta de nuevo.",
-      );
-      return;
-    }
-    const taskAfter = result.updatedTasks.find((t) =>
-      taskMatchesKanbanUpdate(t, {
-        targetId: activeCitaTaskId,
-        projectCode: result.codigoProyecto,
-        clientName: activeCitaTask.project ?? clientName,
-      }),
-    );
-    if (taskAfter) {
-      await syncCitaFinishWithBackend(taskAfter);
-    }
-    window.localStorage.removeItem(activeCitaTaskStorageKey);
-    const returnUrl = window.localStorage.getItem(citaReturnUrlStorageKey);
-    window.localStorage.removeItem(citaReturnUrlStorageKey);
-    router.push(returnUrl || "/dashboard/empleado");
-  };
-
-  const handleFinishAndContinue = async () => {
-    setFinishError(null);
-    if (!activeCitaTaskId || !activeCitaTask) return;
-    const err = validatePreliminarSections();
-    if (err) {
-      setFinishError(err);
-      return;
-    }
-    const newPreliminar = buildPreliminarDataFromForm();
-    const existingCount = getPreliminarList(activeCitaTask).length;
-    const preliminarPdfKey = createPreliminarSeguimientoPdfKey(activeCitaTaskId, existingCount);
-    let dataUrl: string;
-    try {
-      dataUrl = await buildPreliminarPdfDataUrl(newPreliminar);
-    } catch {
-      setFinishError("No se pudo generar el PDF para seguimiento. Intenta de nuevo.");
-      return;
-    }
-    try {
-      await saveFormalPdf(preliminarPdfKey, dataUrl);
-    } catch {
-      setFinishError("No se pudo guardar el PDF. Intenta de nuevo.");
-      return;
-    }
-    const fileLabel = `Levantamiento detallado — ${newPreliminar.projectType}.pdf`;
-    const result = savePreliminarAndGetNextTasks({
-      seguimientoPdf: { key: preliminarPdfKey, fileLabel },
-    });
-    if (!result) return;
-    setProjectType(CATALOG_PROJECT_TYPES[0]);
-    setLocation("");
-    setDeliveryWeeksMin("");
-    setDeliveryWeeksMax("");
-    setLargo("");
-    setAlto("");
-    setSelectedCubierta(null);
-    setSelectedFrenteIds([]);
-    setSelectedHerraje(null);
-    setLevantamiento(defaultLevantamientoDetalle());
-    setCurrentWallIndex(0);
-    setWallSearch("");
-    setApplianceStep(0);
-    setApplianceSearch("");
-    setApplianceBrowseMode(true);
-    setLightingShowOtro(false);
-    setLightingBrowseMode(true);
-    setLightingFocusedId(null);
-    setLightingSearch("");
   };
 
   const metrics = useMemo(() => {
@@ -1413,11 +1155,9 @@ export default function CotizadorPreliminarPage() {
   }, [currentWallIndex, levantamiento.wallMeasures, levantamiento.wallSlotCount]);
 
   return (
-    <main
-      className={`min-h-screen bg-background px-4 py-10 text-primary ${activeCitaTask ? "pb-36 sm:pb-32" : "pb-10"}`}
-    >
+    <main className="min-h-screen bg-background px-4 py-10 text-primary pb-10">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
-        <DashboardBackButton href="/admin" preferCitaReturnUrl />
+        <DashboardBackButton href="/admin" />
         <header>
           <p className="text-xs uppercase tracking-[0.3em] text-secondary">Levantamiento</p>
           <h1 className="mt-2 text-3xl font-semibold">Levantamiento Detallado</h1>
@@ -1425,27 +1165,6 @@ export default function CotizadorPreliminarPage() {
             Estimación rápida para prospectos. No sustituye una cotización formal.
           </p>
         </header>
-
-        {activeCitaTask ? (
-          <div className="rounded-2xl border-2 border-emerald-300 bg-emerald-50 p-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100">
-                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-emerald-800">
-                  Cita activa: {activeCitaTask.project}
-                </p>
-                <p className="text-xs text-emerald-600">
-                  Completa el formulario; al pie tienes <strong>Terminar</strong> y{" "}
-                  <strong>Terminar y continuar</strong>. La estimación se guarda en la tarjeta; descarga el PDF
-                  desde Clientes en proceso o las listas del panel admin cuando la necesites (o con{" "}
-                  <strong>Generar estimación en PDF</strong> arriba).
-                </p>
-              </div>
-            </div>
-          </div>
-        ) : null}
 
         <SectionCard>
           <div className="space-y-4">
@@ -3583,42 +3302,8 @@ export default function CotizadorPreliminarPage() {
           </div>
         </SectionCard>
       </div>
-      {activeCitaTask ? (
-        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-emerald-200/90 bg-white/95 px-4 py-3 shadow-[0_-6px_24px_rgba(0,0,0,0.07)] backdrop-blur-md">
-          <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="max-w-xl text-xs text-secondary">
-              Cierra la cita y guarda la estimación en la tarjeta del cliente. Con{" "}
-              <span className="font-semibold text-emerald-800">Terminar y continuar</span> el formulario se
-              reinicia para otro espacio. El PDF no se descarga solo: úsalo desde la vista de clientes o con{" "}
-              <span className="font-semibold text-emerald-800">Generar estimación en PDF</span>.
-            </p>
-            <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
-              <button
-                type="button"
-                onClick={handleFinishCita}
-                className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-700"
-              >
-                <CheckCircle2 className="h-4 w-4" />
-                Terminar
-              </button>
-              <button
-                type="button"
-                onClick={handleFinishAndContinue}
-                className="flex items-center justify-center gap-2 rounded-2xl border-2 border-emerald-600 bg-white px-5 py-2.5 text-sm font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-50"
-              >
-                Terminar y continuar
-              </button>
-            </div>
-          </div>
-          {finishError ? (
-            <p className="mx-auto mt-2 max-w-6xl text-sm text-rose-600">{finishError}</p>
-          ) : null}
-        </div>
-      ) : null}
       <div
-        className={`fixed right-6 z-40 w-[min(260px,calc(100vw-2rem))] rounded-3xl border border-white/70 bg-white/90 p-4 shadow-2xl backdrop-blur-md ${
-          activeCitaTask ? "bottom-28" : "top-24"
-        }`}
+        className="fixed right-6 top-24 z-40 w-[min(260px,calc(100vw-2rem))] rounded-3xl border border-white/70 bg-white/90 p-4 shadow-2xl backdrop-blur-md"
       >
         <p className="text-xs uppercase tracking-[0.25em] text-secondary">Rango estimado</p>
         <p className="mt-2 text-xl font-semibold text-[#8B1C1C]">

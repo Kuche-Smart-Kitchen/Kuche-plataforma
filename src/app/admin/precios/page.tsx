@@ -80,7 +80,6 @@ const initialFlatData = catalogoInicial.flatMap((category) =>
   })),
 );
 
-const STORAGE_KEY = "kuche.catalogo.precios.v1";
 
 const currencyFormatter = new Intl.NumberFormat("es-MX", {
   style: "currency",
@@ -102,21 +101,6 @@ export default function PreciosPage() {
   const [newItemPrice, setNewItemPrice] = useState("");
   const [addError, setAddError] = useState("");
   const modalRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (!stored) {
-      return;
-    }
-    try {
-      const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        setItems(parsed);
-      }
-    } catch {
-      // ignore corrupted storage
-    }
-  }, []);
 
   useEffect(() => {
     if (!isAddModalOpen) {
@@ -166,7 +150,6 @@ export default function PreciosPage() {
   };
 
   const handleSave = () => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
     setHasChanges(false);
   };
 
@@ -253,7 +236,6 @@ export default function PreciosPage() {
   const handleRestoreDefaults = () => {
     setItems(initialFlatData);
     setHasChanges(true);
-    window.localStorage.removeItem(STORAGE_KEY);
   };
 
   const handleAddMaterial = () => {

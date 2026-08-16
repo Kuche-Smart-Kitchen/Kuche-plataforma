@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import {
   getTasksFromLocalStorage,
-  saveKanbanTasksToLocalStorage,
   deriveProjectTypesLabel,
   getAggregatedDeliveryWeeksFromTask,
   getTaskCardSubtitle,

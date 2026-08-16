@@ -3,38 +3,19 @@
 import { ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-import { citaReturnUrlStorageKey } from "@/lib/kanban";
-
 const ADMIN_PRECIOS_CATALOGO = "/admin/precios";
-
-function isSafeInternalPath(path: string): boolean {
-  return path.startsWith("/") && !path.startsWith("//");
-}
 
 type Props = {
   /** Destino al volver (por defecto: Precios y Catálogo en admin). */
   href?: string;
-  /**
-   * Si es true, usa la última URL guardada al abrir el flujo desde el tablero de citas
-   * (`kuche-cita-return-url`) cuando sea una ruta interna; si no, usa `href`.
-   */
-  preferCitaReturnUrl?: boolean;
 };
 
 export function DashboardBackButton({
   href = ADMIN_PRECIOS_CATALOGO,
-  preferCitaReturnUrl = false,
 }: Props) {
   const router = useRouter();
 
   const goBack = () => {
-    if (preferCitaReturnUrl && typeof window !== "undefined") {
-      const stored = window.localStorage.getItem(citaReturnUrlStorageKey);
-      if (stored && isSafeInternalPath(stored)) {
-        router.push(stored);
-        return;
-      }
-    }
     router.push(href);
   };
 

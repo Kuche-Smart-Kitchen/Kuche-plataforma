@@ -15,7 +15,7 @@ import {
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
-import { kanbanStorageKey, saveKanbanTasksToLocalStorage, type KanbanTask, type TaskFile } from "@/lib/kanban";
+import { type KanbanTask, type TaskFile } from "@/lib/kanban";
 import { downloadTaskFile } from "@/lib/task-file-download";
 
 type ProjectStatus = "Pendiente" | "Aprobado" | "Revisión";
@@ -103,33 +103,13 @@ export default function DisenosPage() {
   const previewRef = useRef<HTMLDivElement | null>(null);
 
   const loadProjects = useCallback(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const stored = window.localStorage.getItem(kanbanStorageKey);
-      const tasks: KanbanTask[] = stored ? JSON.parse(stored) : [];
-      if (!Array.isArray(tasks)) {
-        setProjects([]);
-        return;
-      }
-      setProjects(designProjectsFromTasks(tasks));
-    } catch {
-      setProjects([]);
-    }
+    setProjects([]);
   }, []);
 
   useEffect(() => {
     loadProjects();
     setIsHydrated(true);
   }, [loadProjects]);
-
-  useEffect(() => {
-    if (!isHydrated) return;
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === kanbanStorageKey) loadProjects();
-    };
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, [isHydrated, loadProjects]);
 
   useEscapeClose(Boolean(activePreview), () => setActivePreview(null));
   useFocusTrap(Boolean(activePreview), previewRef);
@@ -172,20 +152,10 @@ export default function DisenosPage() {
   }, [activePreview, goToNext, goToPrev]);
 
   const handleApprove = (taskId: string) => {
-    if (typeof window === "undefined") return;
-    try {
-      const stored = window.localStorage.getItem(kanbanStorageKey);
-      const tasks: KanbanTask[] = stored ? JSON.parse(stored) : [];
-      if (!Array.isArray(tasks)) return;
-      const next = tasks.map((t) =>
-        t.id === taskId ? { ...t, designApprovedByAdmin: true } : t,
-      );
-      saveKanbanTasksToLocalStorage(next);
-      setProjects(designProjectsFromTasks(next));
-      setActiveFeedbackId(null);
-    } catch {
-      // ignore
-    }
+    setProjects((prev) =>
+      prev.map((p) => (p.id === taskId ? { ...p, status: "Aprobado" } : p)),
+    );
+    setActiveFeedbackId(null);
   };
 
   const handleSendFeedback = (projectId: string) => {

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, User, X } from "lucide-react";
-import { getTaskCardSubtitle, kanbanStorageKey, stageStyles, type KanbanTask } from "@/lib/kanban";
+import { getTaskCardSubtitle, stageStyles, type KanbanTask } from "@/lib/kanban";
 import { ClientDocuments } from "@/components/admin/ClientDocuments";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
@@ -42,18 +42,8 @@ export default function EmpleadoClientesEnProcesoPage() {
     const loadTasks = async () => {
       if (typeof window === "undefined") return;
       await syncKanbanTasksFromBackend();
-      try {
-        const stored = window.localStorage.getItem(kanbanStorageKey);
-        const parsed = stored ? (JSON.parse(stored) as KanbanTask[]) : [];
-        if (!cancelled) {
-          setTasks(Array.isArray(parsed) ? parsed : []);
-        }
-      } catch {
-        if (!cancelled) {
-          setTasks([]);
-        }
-      }
       if (!cancelled) {
+        setTasks([]);
         setIsHydrated(true);
       }
     };
