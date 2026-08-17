@@ -471,9 +471,14 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
   useEffect(() => {
     if (typeof window === "undefined" || refreshTrigger === 0) return;
-    const consolidated = getTasksFromLocalStorage();
-    if (!consolidated.length) return;
-    hydrateAndApplyTasks(consolidated, true);
+
+    const refreshFromBackend = async () => {
+      await syncKanbanTasksFromBackend();
+      const consolidated = getTasksFromLocalStorage();
+      hydrateAndApplyTasks(consolidated, consolidated.length > 0);
+    };
+
+    void refreshFromBackend();
   }, [refreshTrigger, hydrateAndApplyTasks]);
 
   useEffect(() => {

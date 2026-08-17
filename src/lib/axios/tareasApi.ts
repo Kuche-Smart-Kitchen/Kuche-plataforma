@@ -10,7 +10,7 @@ const shouldRetryWithFallback = (error: unknown): boolean => {
 
 const requestWithFallback = async <T>(
   endpoints: string[],
-  method: "put" | "patch",
+  method: "put" | "patch" | "post",
   data: Record<string, unknown>,
 ): Promise<ApiResponse<T>> => {
   let lastError: unknown;
@@ -19,7 +19,9 @@ const requestWithFallback = async <T>(
     try {
       const response = await (method === "put"
         ? axiosInstance.put<ApiResponse<T>>(endpoint, data)
-        : axiosInstance.patch<ApiResponse<T>>(endpoint, data));
+        : method === "patch"
+          ? axiosInstance.patch<ApiResponse<T>>(endpoint, data)
+          : axiosInstance.post<ApiResponse<T>>(endpoint, data));
       return response.data;
     } catch (error) {
       lastError = error;
@@ -65,6 +67,16 @@ export const actualizarTarea = async (
   return requestWithFallback<Record<string, unknown>>(
     [`/api/tareas/${id}`, `/api/tareas/${id}/update`, `/api/tareas/${id}/actualizar`],
     "patch",
+    data,
+  );
+};
+
+export const crearTarea = async (
+  data: Record<string, unknown>,
+): Promise<ApiResponse<Record<string, unknown>>> => {
+  return requestWithFallback<Record<string, unknown>>(
+    ["/api/tareas", "/api/tareas/crear", "/api/tareas/create"],
+    "post",
     data,
   );
 };

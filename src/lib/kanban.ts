@@ -213,14 +213,17 @@ export const activeCotizacionFormalTaskStorageKey = "kuche-active-cotizacion-for
 /** Prefijo histórico de claves de seguimiento por código: kuche_project_${codigoProyecto}. Ya no se lee/escribe nada con él. */
 export const seguimientoProjectStoragePrefix = "kuche_project_";
 
-/** Sin persistencia: solo diseño. No se guarda ni se recorta nada, se conserva la firma para no romper llamadores. */
+let runtimeKanbanTasks: KanbanTask[] = [];
+
+/** Mantiene la lista vigente en memoria para que la UI pueda sincronizarse con backend sin depender de localStorage. */
 export function stripKanbanTasksForStorage(tasks: KanbanTask[]): KanbanTask[] {
   return tasks;
 }
 
-/** Sin persistencia: no escribe en ningún lado, siempre reporta que no hubo guardado. */
-export function saveKanbanTasksToLocalStorage(_tasks: KanbanTask[]): boolean {
-  return false;
+/** Persiste en memoria la lista vigente del tablero. */
+export function saveKanbanTasksToLocalStorage(tasks: KanbanTask[]): boolean {
+  runtimeKanbanTasks = tasks;
+  return true;
 }
 
 export const kanbanTasksUpdatedEventName = "kuche:kanban-tasks-updated";
@@ -291,9 +294,9 @@ export function mergeKanbanTaskLists(local: KanbanTask[], incoming: KanbanTask[]
   return Array.from(merged.values());
 }
 
-/** Sin persistencia: siempre vacío, ya no se lee ni reconstruye nada desde `kuche_project_*`. */
+/** Devuelve la lista vigente del tablero en memoria. */
 export function getTasksFromLocalStorage(): KanbanTask[] {
-  return [];
+  return runtimeKanbanTasks;
 }
 
 /** Sin persistencia: no-op, se mantiene la firma para no romper llamadores. */
@@ -331,8 +334,9 @@ export function taskMatchesKanbanUpdate(task: KanbanTask, criteria: KanbanTaskMa
   return false;
 }
 
-/** Sin persistencia: no guarda ni notifica cambios. */
-export function notifyKanbanTasksUpdated(_tasks: KanbanTask[]): boolean {
-  return false;
+/** Notifica cambios del tablero y los deja disponibles para la UI en memoria. */
+export function notifyKanbanTasksUpdated(tasks: KanbanTask[]): boolean {
+  runtimeKanbanTasks = tasks;
+  return true;
 }
 

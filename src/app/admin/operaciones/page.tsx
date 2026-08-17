@@ -20,6 +20,8 @@ import {
   type TaskStage,
 } from "@/lib/kanban";
 import { generatePublicProjectCode } from "@/lib/project-code";
+import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
+import { crearTarea } from "@/lib/axios/tareasApi";
 
 
 const defaultTeamMembers = [
@@ -68,7 +70,24 @@ export default function OperacionesPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setKanbanTasks(getTasksFromLocalStorage());
+
+    let cancelled = false;
+    const loadTasks = async () => {
+      try {
+        await syncKanbanTasksFromBackend();
+      } catch {
+        // el tablero seguirá con los datos ya disponibles en memoria
+      }
+
+      if (!cancelled) {
+        setKanbanTasks(getTasksFromLocalStorage());
+      }
+    };
+
+    void loadTasks();
+    return () => {
+      cancelled = true;
+    };
   }, [refreshTrigger]);
 
   const tasksWithProjectCode = useMemo(
@@ -97,40 +116,36 @@ export default function OperacionesPage() {
     }
   }, [teamMembers, newTaskAssignedTo]);
 
-  const handleAssignPending = () => {
+  const handleAssignPending = async () => {
     const project = newTaskProject.trim();
     if (!project) {
       setAssignError("Completa proyecto/cliente.");
       return;
     }
+
     const assignees =
       newTaskAssignedTo && newTaskAssignedTo !== "Sin asignar"
         ? [newTaskAssignedTo]
         : [];
-    const now = Date.now();
-    const newTask: KanbanTask = {
-      id: `task-${now}`,
-      title: project,
-      stage: newTaskStage,
-      status: "pendiente",
-      assignedTo: assignees,
-      project,
-      notes: "",
-      files: [],
-      priority: newTaskPriority,
-      dueDate: newTaskDueDate.trim() || undefined,
-      createdAt: now,
-      location: newTaskLocation.trim() || undefined,
-      mapsUrl: newTaskMapsUrl.trim() || undefined,
-      codigoProyecto: generatePublicProjectCode(),
-    };
+    const codigoProyecto = generatePublicProjectCode();
+
     try {
-      const current = getTasksFromLocalStorage();
-      const next = [...current, newTask];
-      if (!saveKanbanTasksToLocalStorage(next)) {
-        setAssignError("No se pudo guardar la tarea.");
-        return;
+      const response = await crearTarea({
+        nombreProyecto: project,
+        etapa: newTaskStage,
+        estado: "pendiente",
+        asignadoA: assignees,
+        prioridad: newTaskPriority,
+        ubicacion: newTaskLocation.trim() || undefined,
+        notas: "",
+        codigoProyecto,
+        fechaLimite: newTaskDueDate.trim() || undefined,
+      });
+
+      if (!response.success) {
+        throw new Error(response.message || "No se pudo crear la tarea");
       }
+
       setRefreshTrigger((t) => t + 1);
       setIsAssignModalOpen(false);
       setNewTaskProject("");
@@ -142,7 +157,7 @@ export default function OperacionesPage() {
       setNewTaskMapsUrl("");
       setAssignError("");
     } catch {
-      setAssignError("No se pudo guardar la tarea.");
+      setAssignError("No se pudo guardar la tarea en backend.");
     }
   };
 
