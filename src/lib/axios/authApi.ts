@@ -1,6 +1,76 @@
 import axiosInstance, { type ApiResponse } from "./axiosConfig";
 import { runtimeStore } from "@/lib/runtime-store";
 
+const SESSION_ROUTE = "/api/auth/session";
+
+const setSessionCookie = async (token: string, user: User) => {
+  try {
+    await fetch(SESSION_ROUTE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ token, user }),
+    });
+  } catch {
+    // ignore cookie write errors; the in-memory store still handles the current session
+  }
+};
+
+const clearSessionCookie = async () => {
+  try {
+    await fetch(SESSION_ROUTE, {
+      method: "DELETE",
+      credentials: "include",
+    });
+  } catch {
+    // ignore cookie removal errors
+  }
+};
+
+export const restoreSession = async (): Promise<ApiResponse<AuthResponse>> => {
+  try {
+    const response = await fetch(SESSION_ROUTE, {
+      method: "GET",
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      return {
+        success: false,
+        message: "No hay sesión activa",
+      };
+    }
+
+    const payload = (await response.json()) as { success?: boolean; data?: { token?: string; user?: User } };
+    const token = payload?.data?.token;
+    const user = payload?.data?.user;
+
+    if (!payload.success || !token || !user) {
+      return {
+        success: false,
+        message: "No hay sesión activa",
+      };
+    }
+
+    runtimeStore.setItem("authToken", token);
+    runtimeStore.setItem("user", JSON.stringify(user));
+
+    return {
+      success: true,
+      message: "Sesión restaurada",
+      data: {
+        token,
+        user,
+      },
+    };
+  } catch {
+    return {
+      success: false,
+      message: "No se pudo restaurar la sesión",
+    };
+  }
+};
+
 const loginEndpoints = ["/api/auth/login", "/api/login", "/api/auth/signin", "/api/auth/sign-in"];
 const currentUserEndpoints = ["/api/auth/me", "/api/me", "/api/auth/profile", "/api/user/me"];
 
@@ -113,6 +183,7 @@ export const login = async (credentials: LoginCredentials): Promise<ApiResponse<
           const { token, user } = normalized.data;
           runtimeStore.setItem("authToken", token);
           runtimeStore.setItem("user", JSON.stringify(user));
+          await setSessionCookie(token, user);
         }
 
         return normalized;
@@ -133,6 +204,7 @@ export const register = async (data: RegisterData): Promise<ApiResponse<AuthResp
     const { token, user } = normalized.data;
     runtimeStore.setItem("authToken", token);
     runtimeStore.setItem("user", JSON.stringify(user));
+    await setSessionCookie(token, user);
   }
 
   return normalized;
@@ -141,7 +213,10 @@ export const register = async (data: RegisterData): Promise<ApiResponse<AuthResp
 export const logout = async (): Promise<void> => {
   try {
     await axiosInstance.post("/api/auth/logout");
+  } catch {
+    // continue cleanup even if the server endpoint is unavailable
   } finally {
+    await clearSessionCookie();
     runtimeStore.removeItem("authToken");
     runtimeStore.removeItem("user");
   }

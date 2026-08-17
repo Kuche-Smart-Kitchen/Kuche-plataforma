@@ -1010,7 +1010,7 @@ export default function CotizadorPreliminarPage() {
     });
 
     if (typeof window !== "undefined") {
-      window.sessionStorage.setItem("kuche-levantamiento-draft", JSON.stringify(payload));
+      window.localStorage.setItem("kuche-levantamiento-draft", JSON.stringify(payload));
     }
   }, [alto, largo, levantamiento]);
 

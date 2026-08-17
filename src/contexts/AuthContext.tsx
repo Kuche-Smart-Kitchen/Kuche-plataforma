@@ -20,11 +20,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    const storedUser = authApi.getUserFromStorage();
-    if (storedUser) {
-      setUser(storedUser);
-    }
-    setLoading(false);
+    let cancelled = false;
+
+    const restoreSession = async () => {
+      try {
+        const storedUser = authApi.getUserFromStorage();
+        if (storedUser) {
+          setUser(storedUser);
+        }
+
+        const restoredSession = await authApi.restoreSession();
+        if (!cancelled && restoredSession.success && restoredSession.data) {
+          setUser(restoredSession.data.user);
+        } else if (!cancelled && !storedUser) {
+          setUser(null);
+        }
+      } catch {
+        if (!cancelled) {
+          setUser(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void restoreSession();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const login = async (correo: string, password: string) => {

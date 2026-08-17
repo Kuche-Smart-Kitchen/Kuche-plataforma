@@ -2,9 +2,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+  Boxes,
   Calendar,
   CheckCircle2,
   ChevronLeft,
@@ -19,10 +20,12 @@ import {
   XCircle,
 } from "lucide-react";
 import { useAuthContext } from "@/contexts/AuthContext";
+import { getDashboardRouteForRole } from "@/lib/role-routes";
 
 const navigation = [
   { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
   { label: "Precios y Catálogo", href: "/admin/precios", icon: CircleDollarSign },
+  { label: "Equipamiento", href: "/admin/equipamiento", icon: Boxes },
   { label: "Aprobación Diseños", href: "/admin/disenos", icon: Palette },
   { label: "Operaciones y Taller", href: "/admin/operaciones", icon: Hammer },
   { label: "Agenda", href: "/admin/agenda", icon: Calendar },
@@ -33,13 +36,27 @@ const navigation = [
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { logout } = useAuthContext();
+  const router = useRouter();
+  const { user, loading, logout } = useAuthContext();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    if (loading) return;
+
+    if (!user) {
+      router.replace("/login");
+      return;
+    }
+
+    if (user.rol !== "admin") {
+      router.replace(getDashboardRouteForRole(user.rol));
+    }
+  }, [loading, router, user]);
 
   useEffect(() => {
     if (typeof document === "undefined" || !isMobileMenuOpen) return;
@@ -51,6 +68,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }, [isMobileMenuOpen]);
 
   const sidebarExpanded = !isCollapsed || isMobileMenuOpen;
+
+  if (loading || !user || user.rol !== "admin") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
