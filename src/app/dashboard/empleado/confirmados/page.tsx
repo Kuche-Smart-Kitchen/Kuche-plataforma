@@ -18,6 +18,7 @@ import {
   getAggregatedDeliveryWeeksFromTask,
   type KanbanTask,
 } from "@/lib/kanban";
+import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { ClientDocuments } from "@/components/admin/ClientDocuments";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
@@ -74,9 +75,20 @@ export default function EmpleadoConfirmadosPage() {
   }, [clients, columnCount]);
 
   useEffect(() => {
-    const allTasks = getTasksFromLocalStorage();
-    setClients(allTasks.filter((task) => isEmpleadoConfirmado(task, currentEmployeeName)));
-    setIsHydrated(true);
+    const load = async () => {
+      try {
+        const synced = await syncKanbanTasksFromBackend();
+        const allTasks = (synced ?? getTasksFromLocalStorage()) as KanbanTask[];
+        setClients(allTasks.filter((task) => isEmpleadoConfirmado(task, currentEmployeeName)));
+      } catch {
+        const allTasks = getTasksFromLocalStorage();
+        setClients(allTasks.filter((task) => isEmpleadoConfirmado(task, currentEmployeeName)));
+      } finally {
+        setIsHydrated(true);
+      }
+    };
+
+    void load();
   }, [currentEmployeeName]);
 
   useEffect(() => {

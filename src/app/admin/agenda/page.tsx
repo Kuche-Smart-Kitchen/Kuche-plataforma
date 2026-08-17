@@ -6,6 +6,8 @@ import { AlertCircle, ChevronLeft, ChevronRight } from "lucide-react";
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { obtenerTodasLasCitas } from "@/lib/axios/citasApi";
+import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 
 type AppointmentType =
   | "Levantamiento / Medidas"
@@ -73,6 +75,40 @@ export default function AgendaPage() {
 
   useEscapeClose(isModalOpen, () => setIsModalOpen(false));
   useFocusTrap(isModalOpen, modalRef);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [citasResponse] = await Promise.all([obtenerTodasLasCitas(), syncKanbanTasksFromBackend()]);
+        if (citasResponse.success && Array.isArray(citasResponse.data)) {
+          const nextAppointments: Appointment[] = citasResponse.data.map((cita, index) => ({
+            id: String((cita._id as string | undefined) ?? `agenda-${index}`),
+            title: typeof cita.informacionAdicional === "string" ? cita.informacionAdicional : "Visita",
+            client: typeof cita.nombreCliente === "string" ? cita.nombreCliente : "Cliente sin nombre",
+            location: typeof cita.ubicacion === "string" ? cita.ubicacion : "",
+            date: typeof cita.fechaAgendada === "string" ? cita.fechaAgendada.slice(0, 10) : toDateInput(new Date()),
+            time: typeof cita.fechaAgendada === "string" ? cita.fechaAgendada.slice(11, 16) : "09:00",
+            type: "Levantamiento / Medidas",
+            assignedTo:
+              typeof cita.ingenieroAsignado === "string"
+                ? cita.ingenieroAsignado
+                : Array.isArray(cita.ingenieroAsignado) && cita.ingenieroAsignado.length > 0
+                  ? String(cita.ingenieroAsignado[0])
+                  : null,
+            status: typeof cita.estado === "string" && cita.estado === "cancelada" ? "Pendiente" : "Confirmada",
+          }));
+          setAppointments(nextAppointments);
+          if (nextAppointments.length > 0) {
+            setTeamMembers((prev) => prev.length > 0 ? prev : [{ id: "ingeniero", name: "Ingeniero", role: "Asignado" }]);
+          }
+        }
+      } catch {
+        // fallback silencioso
+      }
+    };
+
+    void load();
+  }, []);
 
   useEffect(() => {
     if (!isModalOpen) {

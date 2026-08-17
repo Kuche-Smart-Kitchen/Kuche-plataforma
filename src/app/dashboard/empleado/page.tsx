@@ -19,6 +19,7 @@ import {
   type TaskPriority,
   type TaskStage,
 } from "@/lib/kanban";
+import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { generatePublicProjectCode } from "@/lib/project-code";
 import { EMPLEADO_DASHBOARD_USER as CURRENT_USER } from "@/lib/empleado-dashboard-user";
 
@@ -83,7 +84,17 @@ export default function EmpleadoDashboard() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setKanbanTasks(getTasksFromLocalStorage());
+
+    const load = async () => {
+      try {
+        const synced = await syncKanbanTasksFromBackend();
+        setKanbanTasks((synced ?? getTasksFromLocalStorage()) as KanbanTask[]);
+      } catch {
+        setKanbanTasks(getTasksFromLocalStorage());
+      }
+    };
+
+    void load();
   }, [refreshTrigger]);
 
   /** Todas las tareas asignadas al empleado que tienen código (incluye confirmadas e inactivas). */

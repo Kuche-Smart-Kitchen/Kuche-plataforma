@@ -15,6 +15,9 @@ import {
 } from "lucide-react";
 
 import { dueDateToSortTimestamp } from "@/lib/kanban-due-datetime";
+import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
+import { getTasksFromLocalStorage, type KanbanTask } from "@/lib/kanban";
+import { obtenerTodasLasCitas } from "@/lib/axios/citasApi";
 
 type AppointmentLike = {
   status?: string;
@@ -46,13 +49,18 @@ const getStoredArray = <T,>(key: string): T[] => {
 
 const getStoredMateriales = (): unknown[] => getStoredArray<unknown>("kuche.catalogo.precios.v1");
 
-const obtenerTodasLasCitas = (): { success: boolean; data: CitaLike[] } => {
-  const data = getStoredArray<CitaLike>("kuche_agenda_events");
-  return {
-    success: data.length > 0 || typeof window !== "undefined",
-    data,
-  };
-};
+const mapBackendCitaToAppointment = (cita: Record<string, unknown>): CitaLike => ({
+  nombreCliente: typeof cita.nombreCliente === "string" ? cita.nombreCliente : undefined,
+  fechaAgendada: typeof cita.fechaAgendada === "string" ? cita.fechaAgendada : undefined,
+  estado: typeof cita.estado === "string" ? cita.estado : undefined,
+  ingenieroAsignado: typeof cita.ingenieroAsignado === "string"
+    ? cita.ingenieroAsignado
+    : Array.isArray(cita.ingenieroAsignado)
+      ? cita.ingenieroAsignado
+      : typeof cita.ingenieroAsignado === "object" && cita.ingenieroAsignado !== null
+        ? { nombre: typeof (cita.ingenieroAsignado as { nombre?: unknown }).nombre === "string" ? (cita.ingenieroAsignado as { nombre?: string }).nombre : undefined }
+        : undefined,
+});
 
 const formatDateLabel = (date: Date) => {
   const formatted = new Intl.DateTimeFormat("es-MX", {
@@ -154,25 +162,63 @@ export default function AdminPage() {
   const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
-    const load = () => {
-      const citasRes = obtenerTodasLasCitas();
-      if (citasRes?.success) {
-        setAppointments(citasRes.data.map(citaToAppointment));
+    const load = async () => {
+      try {
+        const [citasResponse, backendSync] = await Promise.all([
+          obtenerTodasLasCitas(),
+          syncKanbanTasksFromBackend(),
+        ]);
+
+        const citas = citasResponse.success && Array.isArray(citasResponse.data)
+          ? citasResponse.data.map(mapBackendCitaToAppointment)
+          : [];
+        setAppointments(citas.map(citaToAppointment));
+
+        const materiales = getStoredMateriales();
+        setTotalMaterials(materiales.length);
+
+        const workflowTasks = (backendSync ? backendSync : getTasksFromLocalStorage()) as KanbanTask[];
+        const dashboardTasks: DashboardTask[] = workflowTasks.map((task) => ({
+          id: task.id,
+          title: task.title,
+          project: task.project,
+          stage: task.stage,
+          status: task.status,
+          assignedTo: task.assignedTo,
+          dueDate: task.dueDate,
+          visitScheduledAt: task.dueDate,
+          createdAt: task.createdAt ?? Date.now(),
+          followUpStatus: task.followUpStatus,
+          designApprovedByAdmin: task.designApprovedByAdmin,
+          designApprovedByClient: task.designApprovedByClient,
+        }));
+
+        setTasks(dashboardTasks);
+        setConfirmedClients(dashboardTasks.filter(isTaskConfirmed).length);
+        setDiscardedClients(dashboardTasks.filter(isTaskDiscarded).length);
+        setStaleFollowUpCount(0);
+      } catch {
+        const fallbackTasks = getTasksFromLocalStorage() as KanbanTask[];
+        setTasks(fallbackTasks.map((task) => ({
+          id: task.id,
+          title: task.title,
+          project: task.project,
+          stage: task.stage,
+          status: task.status,
+          assignedTo: task.assignedTo,
+          dueDate: task.dueDate,
+          visitScheduledAt: task.dueDate,
+          createdAt: task.createdAt ?? Date.now(),
+          followUpStatus: task.followUpStatus,
+          designApprovedByAdmin: task.designApprovedByAdmin,
+          designApprovedByClient: task.designApprovedByClient,
+        })));
+      } finally {
+        setIsHydrated(true);
       }
-
-      const materiales = getStoredMateriales();
-      setTotalMaterials(materiales.length);
-
-      const storedTasks = getStoredArray<DashboardTask>("kuche-kanban-tasks");
-      const workflowTasks = storedTasks;
-      setTasks(workflowTasks);
-      setConfirmedClients(workflowTasks.filter(isTaskConfirmed).length);
-      setDiscardedClients(workflowTasks.filter(isTaskDiscarded).length);
-      setStaleFollowUpCount(0);
-      setIsHydrated(true);
     };
 
-    load();
+    void load();
   }, []);
 
   const activeTasks = useMemo(

@@ -10,6 +10,7 @@ import {
   saveKanbanTasksToLocalStorage,
   type KanbanTask,
 } from "@/lib/kanban";
+import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { ClientDocuments } from "@/components/admin/ClientDocuments";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
@@ -44,9 +45,20 @@ export default function EmpleadoInactivosPage() {
   }, [clients, columnCount]);
 
   useEffect(() => {
-    const allTasks = getTasksFromLocalStorage();
-    setClients(allTasks.filter((task) => isEmpleadoInactivo(task, currentEmployeeName)));
-    setIsHydrated(true);
+    const load = async () => {
+      try {
+        const synced = await syncKanbanTasksFromBackend();
+        const allTasks = (synced ?? getTasksFromLocalStorage()) as KanbanTask[];
+        setClients(allTasks.filter((task) => isEmpleadoInactivo(task, currentEmployeeName)));
+      } catch {
+        const allTasks = getTasksFromLocalStorage();
+        setClients(allTasks.filter((task) => isEmpleadoInactivo(task, currentEmployeeName)));
+      } finally {
+        setIsHydrated(true);
+      }
+    };
+
+    void load();
   }, [currentEmployeeName]);
 
   const handleReactivate = (clientId: string) => {

@@ -14,12 +14,12 @@ import {
   CalendarClock,
 } from "lucide-react";
 import {
-  getTasksFromLocalStorage,
   deriveProjectTypesLabel,
   getAggregatedDeliveryWeeksFromTask,
   getTaskCardSubtitle,
   type KanbanTask,
 } from "@/lib/kanban";
+import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { ConfirmedClientContractFields } from "@/components/admin/ConfirmedClientContractFields";
 import { ExpedientePdfSections } from "@/components/admin/ExpedientePdfSections";
 import { splitIntoColumns } from "@/lib/split-into-columns";
@@ -66,10 +66,20 @@ export default function ClientesConfirmadosPage() {
   }, [clients, columnCount]);
 
   useEffect(() => {
-    const allTasks = getTasksFromLocalStorage();
-    const confirmed = allTasks.filter((task) => task.followUpStatus === "confirmado");
-    setClients(confirmed);
-    setIsHydrated(true);
+    const load = async () => {
+      try {
+        const synced = await syncKanbanTasksFromBackend();
+        const tasks = (synced ?? []) as KanbanTask[];
+        const confirmed = tasks.filter((task) => task.followUpStatus === "confirmado");
+        setClients(confirmed);
+      } catch {
+        setClients([]);
+      } finally {
+        setIsHydrated(true);
+      }
+    };
+
+    void load();
   }, []);
 
   const handleConfirmedTaskUpdate = (updated: KanbanTask) => {

@@ -7,6 +7,19 @@ import { Search, Settings } from "lucide-react";
 
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { emptyWhenZeroNumericString } from "@/lib/numeric-input-empty-zero";
+import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
+
+type CatalogApiItem = {
+  id: string;
+  label: string;
+  unitPrice: number;
+  unit?: string;
+};
+
+type CatalogApiCategory = {
+  category: string;
+  items: CatalogApiItem[];
+};
 
 const catalogoInicial = [
   {
@@ -101,6 +114,39 @@ export default function PreciosPage() {
   const [newItemPrice, setNewItemPrice] = useState("");
   const [addError, setAddError] = useState("");
   const modalRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    let ignore = false;
+
+    const loadCatalogFromApi = async () => {
+      try {
+        const response = await fetch("/api/catalogo-base");
+        if (!response.ok) return;
+        const payload = (await response.json()) as { catalog?: CatalogApiCategory[] };
+        const nextItems = (payload.catalog ?? []).flatMap((category) =>
+          category.items.map((item) => ({
+            ...item,
+            category: category.category || "SIN CATEGORIA",
+            unit: item.unit ?? "pz",
+          })),
+        );
+
+        if (!ignore && nextItems.length > 0) {
+          setItems(nextItems);
+          setHasChanges(false);
+        }
+      } catch {
+        // Fallback silencioso al catálogo local
+      }
+    };
+
+    void loadCatalogFromApi();
+    void syncKanbanTasksFromBackend();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isAddModalOpen) {

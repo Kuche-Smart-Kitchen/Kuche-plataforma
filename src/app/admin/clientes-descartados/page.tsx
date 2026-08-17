@@ -6,11 +6,11 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, XCircle, User, Calendar, RotateCcw, X } from "lucide-react";
 import {
-  getTasksFromLocalStorage,
   getTaskCardSubtitle,
   saveKanbanTasksToLocalStorage,
   type KanbanTask,
 } from "@/lib/kanban";
+import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { ExpedientePdfSections } from "@/components/admin/ExpedientePdfSections";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
@@ -33,30 +33,39 @@ export default function ClientesDescartadosPage() {
   }, [clients, columnCount]);
 
   useEffect(() => {
-    const allTasks = getTasksFromLocalStorage();
-    const discarded = allTasks.filter((task) => task.followUpStatus === "descartado");
-    setClients(discarded);
-    setIsHydrated(true);
+    const load = async () => {
+      try {
+        const synced = await syncKanbanTasksFromBackend();
+        const tasks = (synced ?? []) as KanbanTask[];
+        const discarded = tasks.filter((task) => task.followUpStatus === "descartado");
+        setClients(discarded);
+      } catch {
+        setClients([]);
+      } finally {
+        setIsHydrated(true);
+      }
+    };
+
+    void load();
   }, []);
 
   const handleReactivate = (clientId: string) => {
     try {
-      const tasks = getTasksFromLocalStorage();
-      const updatedTasks = tasks.map((task) => {
-          if (task.id === clientId) {
-            return {
-              ...task,
-              followUpStatus: "pendiente" as const,
-              status: "pendiente" as const,
-              stage: "contrato" as const,
-              followUpEnteredAt: Date.now(),
-            };
-          }
-          return task;
-        });
-        saveKanbanTasksToLocalStorage(updatedTasks);
-        setClients(updatedTasks.filter((t) => t.followUpStatus === "descartado"));
-        setSelectedClient(null);
+      const updatedTasks = (clients as KanbanTask[]).map((task) => {
+        if (task.id === clientId) {
+          return {
+            ...task,
+            followUpStatus: "pendiente" as const,
+            status: "pendiente" as const,
+            stage: "contrato" as const,
+            followUpEnteredAt: Date.now(),
+          };
+        }
+        return task;
+      });
+      saveKanbanTasksToLocalStorage(updatedTasks);
+      setClients(updatedTasks.filter((t) => t.followUpStatus === "descartado"));
+      setSelectedClient(null);
     } catch {
       console.error("Error al reactivar cliente");
     }

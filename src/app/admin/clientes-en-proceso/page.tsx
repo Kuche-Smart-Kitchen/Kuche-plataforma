@@ -9,6 +9,7 @@ import { getTaskCardSubtitle, stageStyles, type KanbanTask } from "@/lib/kanban"
 import { ClientDocuments } from "@/components/admin/ClientDocuments";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
+import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 
 const stageLabel: Record<string, string> = {
   citas: "Citas",
@@ -38,8 +39,18 @@ export default function AdminClientesEnProcesoPage() {
   const [selectedClient, setSelectedClient] = useState<KanbanTask | null>(null);
 
   useEffect(() => {
-    setTasks([]);
-    setIsHydrated(true);
+    const load = async () => {
+      try {
+        const synced = await syncKanbanTasksFromBackend();
+        setTasks((synced ?? []) as KanbanTask[]);
+      } catch {
+        setTasks([]);
+      } finally {
+        setIsHydrated(true);
+      }
+    };
+
+    void load();
   }, []);
 
   const inProgress = getTasksInProgress(tasks, null);
