@@ -253,6 +253,55 @@ export async function syncKanbanTasksFromBackend(): Promise<KanbanTask[] | null>
 
 const isObjectId = (value: string) => /^[a-fA-F0-9]{24}$/.test(value);
 
+const buildTaskPatchPayload = (task: KanbanTask, patch: Partial<KanbanTask>): Record<string, unknown> => {
+  const snapshot = { ...task, ...patch };
+  const payload: Record<string, unknown> = {};
+
+  if (patch.title !== undefined || task.title) payload.titulo = snapshot.title;
+  if (patch.stage !== undefined || task.stage) payload.etapa = snapshot.stage;
+  if (patch.status !== undefined || task.status) payload.estado = snapshot.status;
+  if (patch.notes !== undefined || task.notes !== undefined) payload.notas = snapshot.notes;
+  if (patch.location !== undefined || task.location !== undefined) payload.ubicacion = snapshot.location;
+  if (patch.mapsUrl !== undefined || task.mapsUrl !== undefined) payload.mapsUrl = snapshot.mapsUrl;
+  if (patch.dueDate !== undefined || task.dueDate !== undefined) payload.fechaLimite = snapshot.dueDate;
+  if (patch.priority !== undefined || task.priority !== undefined) payload.prioridad = snapshot.priority;
+  if (patch.codigoProyecto !== undefined || task.codigoProyecto !== undefined) {
+    payload.codigoProyecto = snapshot.codigoProyecto;
+  }
+  if (patch.followUpEnteredAt !== undefined || task.followUpEnteredAt !== undefined) {
+    payload.followUpEnteredAt = snapshot.followUpEnteredAt;
+  }
+  if (patch.followUpStatus !== undefined || task.followUpStatus !== undefined) {
+    payload.followUpStatus = snapshot.followUpStatus;
+  }
+  if (patch.designApprovedByAdmin !== undefined || task.designApprovedByAdmin !== undefined) {
+    payload.designApprovedByAdmin = snapshot.designApprovedByAdmin;
+  }
+  if (patch.designApprovedByClient !== undefined || task.designApprovedByClient !== undefined) {
+    payload.designApprovedByClient = snapshot.designApprovedByClient;
+  }
+  if (patch.citaStarted !== undefined || task.citaStarted !== undefined) {
+    payload.citaStarted = snapshot.citaStarted;
+  }
+  if (patch.citaFinished !== undefined || task.citaFinished !== undefined) {
+    payload.citaFinished = snapshot.citaFinished;
+  }
+  if (patch.preliminarData !== undefined || task.preliminarData !== undefined) {
+    payload.preliminarData = snapshot.preliminarData;
+  }
+  if (patch.cotizacionFormalData !== undefined || task.cotizacionFormalData !== undefined) {
+    payload.cotizacionFormalData = snapshot.cotizacionFormalData;
+  }
+  if (patch.preliminarCotizaciones !== undefined || task.preliminarCotizaciones !== undefined) {
+    payload.preliminarCotizaciones = snapshot.preliminarCotizaciones;
+  }
+  if (patch.cotizacionesFormales !== undefined || task.cotizacionesFormales !== undefined) {
+    payload.cotizacionesFormales = snapshot.cotizacionesFormales;
+  }
+
+  return payload;
+};
+
 export async function syncTaskAssigneesWithBackend(task: KanbanTask, assignedTo: string[]): Promise<boolean> {
   const taskId = task.id?.trim();
   if (!taskId) return false;
@@ -272,6 +321,22 @@ export async function syncTaskAssigneesWithBackend(task: KanbanTask, assignedTo:
     return true;
   } catch (error) {
     console.warn("No se pudo sincronizar responsables en backend", { taskId, error });
+    return false;
+  }
+}
+
+export async function syncTaskPatchWithBackend(task: KanbanTask, patch: Partial<KanbanTask>): Promise<boolean> {
+  const taskId = task.id?.trim();
+  if (!taskId) return false;
+
+  try {
+    const payload = buildTaskPatchPayload(task, patch);
+    if (Object.keys(payload).length === 0) return true;
+
+    await actualizarTarea(taskId, payload);
+    return true;
+  } catch (error) {
+    console.warn("No se pudo sincronizar avance de tarea en backend", { taskId, patch, error });
     return false;
   }
 }

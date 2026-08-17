@@ -45,7 +45,6 @@ import {
   APPLIANCE_CATEGORIAS,
   APPLIANCE_ITEMS,
   APPLIANCE_OTRO_STEP_INDEX,
-  defaultLevantamientoDetalle,
   emptyMedidas,
   emptyOtro,
   emptyWallMeasuresForId,
@@ -75,6 +74,7 @@ import {
   buildPreliminarPdfDataUrl,
   downloadPreliminarPdf,
 } from "@/lib/pdf-preliminar";
+import { defaultLevantamientoDetalle, normalizeLevantamientoDetalle } from "@/lib/levantamiento-catalog";
 import { formatDeliveryWeeksLabel } from "@/lib/delivery-weeks";
 import { emptyWhenZeroIntString, emptyWhenZeroNumericString } from "@/lib/numeric-input-empty-zero";
 import ApplianceTypeImage from "@/components/levantamiento/ApplianceTypeImage";
@@ -938,11 +938,11 @@ export default function CotizadorPreliminarPage() {
       subtotal: metrics.subtotal,
       iva: metrics.iva,
       total: metrics.total,
-      levantamiento: {
+      levantamiento: normalizeLevantamientoDetalle({
         ...levantamiento,
         largo: largo.trim() || undefined,
         alto: alto.trim() || undefined,
-      },
+      }),
     };
   };
 
@@ -1001,6 +1001,22 @@ export default function CotizadorPreliminarPage() {
     const data = buildPreliminarDataFromForm();
     downloadPreliminarPdf(data, "levantamiento-detallado.pdf");
   };
+
+  const handlePersistLevantamientoDraft = useCallback(() => {
+    const payload = normalizeLevantamientoDetalle({
+      ...levantamiento,
+      largo: largo.trim() || undefined,
+      alto: alto.trim() || undefined,
+    });
+
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem("kuche-levantamiento-draft", JSON.stringify(payload));
+    }
+  }, [alto, largo, levantamiento]);
+
+  useEffect(() => {
+    handlePersistLevantamientoDraft();
+  }, [handlePersistLevantamientoDraft]);
 
   const applianceStepMeta = useMemo(() => {
     const isOtro = applianceStep >= APPLIANCE_OTRO_STEP_INDEX;

@@ -1701,6 +1701,10 @@ export type ConIslaRespuesta = "" | "si" | "no";
 export type LevantamientoDetalle = {
   /** Solo aplica de forma relevante a cocina; en otros tipos puede quedar vacío. */
   conIsla?: ConIslaRespuesta;
+  /** Identificador de proyecto/cliente si el levantamiento se asocia a una tarea del tablero. */
+  taskId?: string;
+  /** Código público del proyecto si ya existe y se quiere enlazar con seguimiento. */
+  projectCode?: string;
   /** Medidas generales del espacio (m), formulario preliminar / PDF. */
   largo?: string;
   alto?: string;
@@ -2076,6 +2080,8 @@ export function normalizeLevantamientoDetalle(raw: unknown): LevantamientoDetall
 
   return {
     conIsla,
+    taskId: typeof r.taskId === "string" ? r.taskId : undefined,
+    projectCode: typeof r.projectCode === "string" ? r.projectCode : undefined,
     largo: largoGen,
     alto: altoGen,
     medidasGenerales,

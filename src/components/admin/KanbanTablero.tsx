@@ -24,6 +24,7 @@ import {
   syncKanbanTasksFromBackend,
   syncTaskAssigneesWithBackend,
   syncTaskFollowUpWithBackend,
+  syncTaskPatchWithBackend,
   syncTaskStageWithBackend,
 } from "@/lib/admin-workflow";
 import { syncSeguimientoEstadoFromKanbanConfirm } from "@/lib/seguimiento-project";
@@ -584,18 +585,20 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
   const moveTaskToStage = async (taskId: string, stage: TaskStage) => {
     const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
-    updateTask(taskId, (task) => {
-      const updates: Partial<KanbanTask> = { stage };
-      if (stage === "contrato" && task.stage !== "contrato") {
-        updates.followUpEnteredAt = Date.now();
-        updates.followUpStatus = "pendiente";
-      }
-      return { ...task, ...updates };
-    });
+    const updates: Partial<KanbanTask> = { stage };
+    if (stage === "contrato" && taskSnapshot?.stage !== "contrato") {
+      updates.followUpEnteredAt = Date.now();
+      updates.followUpStatus = "pendiente";
+    }
+
+    updateTask(taskId, (task) => ({ ...task, ...updates }));
 
     if (taskSnapshot) {
-      const ok = await syncTaskStageWithBackend(taskSnapshot, stage);
-      if (!ok) {
+      const [stageOk, patchOk] = await Promise.all([
+        syncTaskStageWithBackend(taskSnapshot, stage),
+        syncTaskPatchWithBackend(taskSnapshot, updates),
+      ]);
+      if (!stageOk || !patchOk) {
         setBackendSyncMessage("Se movió localmente, pero no se pudo sincronizar la etapa con backend.");
         window.setTimeout(() => setBackendSyncMessage(null), 4500);
       }
@@ -717,8 +720,11 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
     updateTask(taskId, (task) => ({ ...task, citaStarted: true }));
     if (taskSnapshot) {
-      const ok = await syncCitaStartWithBackend(taskSnapshot);
-      if (!ok && taskSnapshot.sourceType?.toLowerCase() === "cita") {
+      const [citaOk, patchOk] = await Promise.all([
+        syncCitaStartWithBackend(taskSnapshot),
+        syncTaskPatchWithBackend(taskSnapshot, { citaStarted: true }),
+      ]);
+      if ((!citaOk && taskSnapshot.sourceType?.toLowerCase() === "cita") || !patchOk) {
         setBackendSyncMessage("No se pudo sincronizar el inicio de cita en backend.");
         window.setTimeout(() => setBackendSyncMessage(null), 4500);
       }
@@ -728,28 +734,27 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
   const finishCita = async (taskId: string) => {
     const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
-    updateTask(taskId, (task) => ({
-      ...task,
+    const patch: Partial<KanbanTask> = {
       citaStarted: true,
       citaFinished: true,
-      stage: "disenos" as TaskStage,
-      status: "pendiente" as TaskStatus,
-    }));
+      stage: "disenos",
+      status: "pendiente",
+    };
+
+    updateTask(taskId, (task) => ({ ...task, ...patch }));
 
     if (taskSnapshot?.codigoProyecto?.trim()) {
       syncSeguimientoProjectKanbanStage(taskSnapshot.codigoProyecto, "disenos");
     }
 
     if (taskSnapshot) {
-      const [finishOk, stageOk] = await Promise.all([
+      const [finishOk, stageOk, patchOk] = await Promise.all([
         syncCitaFinishWithBackend(taskSnapshot),
         syncTaskStageWithBackend(taskSnapshot, "disenos"),
+        syncTaskPatchWithBackend(taskSnapshot, patch),
       ]);
-      if (!finishOk && taskSnapshot.sourceType?.toLowerCase() === "cita") {
-        setBackendSyncMessage("No se pudo sincronizar la finalización de cita en backend.");
-        window.setTimeout(() => setBackendSyncMessage(null), 4500);
-      } else if (!stageOk) {
-        setBackendSyncMessage("La cita terminó localmente, pero no se sincronizó la etapa en backend.");
+      if ((!finishOk && taskSnapshot.sourceType?.toLowerCase() === "cita") || !stageOk || !patchOk) {
+        setBackendSyncMessage("La cita terminó localmente, pero no se sincronizó completamente con backend.");
         window.setTimeout(() => setBackendSyncMessage(null), 4500);
       }
     }
@@ -760,23 +765,43 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     router.push("/dashboard/cotizador");
   };
 
-  const approveDesignAsAdmin = (taskId: string) => {
+  const approveDesignAsAdmin = async (taskId: string) => {
+    const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
     updateTask(taskId, (task) => ({ ...task, designApprovedByAdmin: true }));
+
+    if (taskSnapshot) {
+      const ok = await syncTaskPatchWithBackend(taskSnapshot, { designApprovedByAdmin: true });
+      if (!ok) {
+        setBackendSyncMessage("No se pudo persistir la aprobación de diseño en backend.");
+        window.setTimeout(() => setBackendSyncMessage(null), 4500);
+      }
+    }
   };
 
   const handleDropboxUpload = async (taskId: string, file: File) => {
     // TODO: Implementar llamada real a API de Dropbox (subir `file` y validar respuesta).
+    const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
+    const patch: Partial<KanbanTask> = {
+      designApprovedByClient: true,
+      stage: "cotizacion",
+      status: "pendiente",
+      citaStarted: false,
+      citaFinished: false,
+    };
+
     setDropboxUploading(true);
     try {
       await new Promise((resolve) => setTimeout(resolve, 700));
-      updateTask(taskId, (task) => ({
-        ...task,
-        designApprovedByClient: true,
-        stage: "cotizacion" as TaskStage,
-        status: "pendiente" as TaskStatus,
-        citaStarted: false,
-        citaFinished: false,
-      }));
+      updateTask(taskId, (task) => ({ ...task, ...patch }));
+      if (taskSnapshot) {
+        const [patchOk] = await Promise.all([
+          syncTaskPatchWithBackend(taskSnapshot, patch),
+        ]);
+        if (!patchOk) {
+          setBackendSyncMessage("El diseño fue aceptado localmente, pero no se persistió en backend.");
+          window.setTimeout(() => setBackendSyncMessage(null), 4500);
+        }
+      }
       setUploadAcceptedDesignsTaskId(null);
       setDropboxStagingFile(null);
     } finally {
@@ -786,18 +811,22 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
   const completeCotizacion = async (taskId: string) => {
     const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
-    updateTask(taskId, (task) => ({
-      ...task,
-      stage: "contrato" as TaskStage,
-      status: "pendiente" as TaskStatus,
+    const patch: Partial<KanbanTask> = {
+      stage: "contrato",
+      status: "pendiente",
       followUpEnteredAt: Date.now(),
-      followUpStatus: "pendiente" as FollowUpStatus,
-    }));
+      followUpStatus: "pendiente",
+    };
+
+    updateTask(taskId, (task) => ({ ...task, ...patch }));
 
     if (taskSnapshot) {
-      const ok = await syncTaskStageWithBackend(taskSnapshot, "contrato");
-      if (!ok) {
-        setBackendSyncMessage("Se pasó a seguimiento localmente, pero no se sincronizó la etapa en backend.");
+      const [stageOk, patchOk] = await Promise.all([
+        syncTaskStageWithBackend(taskSnapshot, "contrato"),
+        syncTaskPatchWithBackend(taskSnapshot, patch),
+      ]);
+      if (!stageOk || !patchOk) {
+        setBackendSyncMessage("Se pasó a seguimiento localmente, pero no se sincronizó completamente con backend.");
         window.setTimeout(() => setBackendSyncMessage(null), 4500);
       }
     }

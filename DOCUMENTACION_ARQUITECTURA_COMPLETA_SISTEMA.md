@@ -410,3 +410,69 @@ Consumido por:
 3. El endpoint `/api/workflow/citas/:id/promover` puede no estar implementado en backend; el frontend depende de un fallback (crear tarea + cerrar cita) — confirmar con backend antes de asumir que existe.
 4. `KanbanTablero.tsx` es código legado (usa `runtimeStore`, auto-avance de etapas) no conectado a la página real (`operaciones/page.tsx`) — no usar como referencia de la lógica viva.
 5. Mantener la regla de precedencia de campos planos sobre `visita.*` legado (sección 1.2) y la separación de `assignWorkers` vs `updateTask` (nunca mezclar `asignadoA` en el payload general).
+
+---
+
+## 11. Mapa de replicación rápida para otra rama
+
+### 11.1 Orden recomendado de migración
+
+1. **Infraestructura base**: dejar listo el cliente HTTP centralizado, variables de entorno y rutas de API.
+2. **Modelo compartido**: replicar `KanbanTask`, `AdminWorkflowTask`, `LevantamientoDetalle` y los tipos de seguimiento antes de tocar UI.
+3. **Admin workflow**: implementar primero el tablero, la creación/actualización de tareas y las reglas de transición de etapa.
+4. **Agendado y levantamiento**: conectar citas, visitas y preliminares después del core del tablero.
+5. **Cotización formal y archivos**: integrar los PDFs, upload y vinculación a tarea una vez que el workflow base funcione.
+6. **Seguimiento cliente**: dejar el portal como capa de lectura/visualización sobre los mismos datos de proyecto.
+
+### 11.2 Archivos críticos por dominio
+
+- **Base y configuración**
+  - [src/lib/axios/axiosConfig.ts](src/lib/axios/axiosConfig.ts)
+  - [src/lib/config-levantamiento.ts](src/lib/config-levantamiento.ts)
+  - [package.json](package.json)
+  - [vercel.json](vercel.json)
+
+- **Admin / Kanban**
+  - [src/app/admin/operaciones/page.tsx](src/app/admin/operaciones/page.tsx)
+  - [src/components/admin/KanbanTablero.tsx](src/components/admin/KanbanTablero.tsx)
+  - [src/lib/admin-workflow.ts](src/lib/admin-workflow.ts)
+  - [src/lib/kanban.ts](src/lib/kanban.ts)
+
+- **Citas / visitas**
+  - [src/lib/axios/citasApi.ts](src/lib/axios/citasApi.ts)
+  - [src/app/admin/agenda/page.tsx](src/app/admin/agenda/page.tsx)
+  - [src/components/agendar/BookingSection.tsx](src/components/agendar/BookingSection.tsx)
+
+- **Levantamiento y cotización**
+  - [src/app/dashboard/Levantamiento-detallado/page.tsx](src/app/dashboard/Levantamiento-detallado/page.tsx)
+  - [src/lib/levantamiento-catalog.ts](src/lib/levantamiento-catalog.ts)
+  - [src/lib/pdf-preliminar.ts](src/lib/pdf-preliminar.ts)
+  - [src/app/dashboard/cotizador/page.tsx](src/app/dashboard/cotizador/page.tsx)
+  - [src/lib/cotizacion-workshop-pdf.ts](src/lib/cotizacion-workshop-pdf.ts)
+
+- **Archivos y seguimiento**
+  - [src/lib/axios/uploadsApi.ts](src/lib/axios/uploadsApi.ts)
+  - [src/hooks/useClienteArchivos.ts](src/hooks/useClienteArchivos.ts)
+  - [src/contexts/SeguimientoAuthContext.tsx](src/contexts/SeguimientoAuthContext.tsx)
+  - [src/app/seguimiento/lib.ts](src/app/seguimiento/lib.ts)
+
+### 11.3 Checklist de replicación segura
+
+- Mantener el backend como fuente de verdad; evitar reintroducir lógica de persistencia basada solo en `localStorage` para el flujo principal.
+- Separar claramente los ejes de workflow (`stage`) y seguimiento (`followUpStatus`).
+- Preservar la regla de precedencia de campos planos sobre `visita.*` cuando se actualicen tareas.
+- Mantener `assignWorkers` separado de `updateTask` para no mezclar responsabilidades.
+- Documentar cualquier endpoint de promoción de citas a tarea como potencialmente dependiente del backend, porque puede requerir fallback.
+- Reusar el mismo modelo de archivos y PDFs para levantamiento, cotización y recibos, en vez de duplicar flujos por pantalla.
+
+### 11.4 Recomendación final de implementación
+
+La estrategia más estable para replicar esta plataforma en otra rama es construirla por capas:
+
+1. tipos y helpers de dominio,
+2. cliente HTTP y autenticación,
+3. workflow de admin/kanban,
+4. agendado y levantamiento,
+5. cotización formal, archivos y seguimiento del cliente.
+
+Este orden minimiza el riesgo de reintroducir deuda técnica y permite validar cada dominio por separado antes de pasar al siguiente.
