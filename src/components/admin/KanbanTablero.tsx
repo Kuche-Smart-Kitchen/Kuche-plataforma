@@ -573,6 +573,19 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     commitKanbanTasks(nextTasks);
   };
 
+  const updateTaskAndSync = async (taskId: string, patch: Partial<KanbanTask>) => {
+    const taskSnapshot = kanbanTasksRef.current.find((task) => task.id === taskId);
+    updateTask(taskId, (task) => ({ ...task, ...patch }));
+
+    if (!taskSnapshot) return;
+
+    const ok = await syncTaskPatchWithBackend(taskSnapshot, patch);
+    if (!ok) {
+      setBackendSyncMessage("Los cambios se guardaron localmente, pero no se pudo sincronizar con backend.");
+      window.setTimeout(() => setBackendSyncMessage(null), 4500);
+    }
+  };
+
   const removeTask = (taskId: string) => {
     const nextTasks = kanbanTasksRef.current.filter((task) => task.id !== taskId);
     commitKanbanTasks(nextTasks);
@@ -1519,12 +1532,9 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                   </p>
                   <select
                     value={activeTask.priority ?? "media"}
-                    onChange={(e) =>
-                      updateTask(activeTask.id, (task) => ({
-                        ...task,
-                        priority: e.target.value as TaskPriority,
-                      }))
-                    }
+                    onChange={(e) => {
+                      void updateTaskAndSync(activeTask.id, { priority: e.target.value as TaskPriority });
+                    }}
                     className="mt-3 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm font-semibold text-secondary"
                   >
                     <option value="alta">Alta</option>
@@ -1535,17 +1545,47 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
+                    Nombre del proyecto
+                  </p>
+                  <input
+                    type="text"
+                    value={activeTask.project ?? ""}
+                    onChange={(e) => {
+                      const nextProject = e.target.value.trim() || "General";
+                      void updateTaskAndSync(activeTask.id, {
+                        project: nextProject,
+                        title: nextProject,
+                      });
+                    }}
+                    placeholder="Nombre del proyecto"
+                    className="mt-3 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
+                  />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
+                    Notas internas
+                  </p>
+                  <textarea
+                    value={activeTask.notes ?? ""}
+                    onChange={(e) => {
+                      const nextNotes = e.target.value.trim() || undefined;
+                      void updateTaskAndSync(activeTask.id, { notes: nextNotes });
+                    }}
+                    placeholder="Detalle de seguimiento, requerimientos o acuerdos"
+                    className="mt-3 min-h-24 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
+                  />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
                     Dirección / Localidad (opcional)
                   </p>
                   <input
                     type="text"
                     value={activeTask.location ?? ""}
-                    onChange={(e) =>
-                      updateTask(activeTask.id, (task) => ({
-                        ...task,
-                        location: e.target.value.trim() || undefined,
-                      }))
-                    }
+                    onChange={(e) => {
+                      const nextLocation = e.target.value.trim() || undefined;
+                      void updateTaskAndSync(activeTask.id, { location: nextLocation });
+                    }}
                     placeholder="Ej. Av. Principal 123, Monterrey"
                     className="mt-3 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
                   />
@@ -1557,12 +1597,10 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                   <input
                     type="url"
                     value={activeTask.mapsUrl ?? ""}
-                    onChange={(e) =>
-                      updateTask(activeTask.id, (task) => ({
-                        ...task,
-                        mapsUrl: e.target.value.trim() || undefined,
-                      }))
-                    }
+                    onChange={(e) => {
+                      const nextMapsUrl = e.target.value.trim() || undefined;
+                      void updateTaskAndSync(activeTask.id, { mapsUrl: nextMapsUrl });
+                    }}
                     placeholder="https://maps.google.com/..."
                     className="mt-3 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
                   />
@@ -1575,12 +1613,9 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                   </p>
                   <DueDateInput
                     value={activeTask.dueDate}
-                    onChange={(next) =>
-                      updateTask(activeTask.id, (task) => ({
-                        ...task,
-                        dueDate: next,
-                      }))
-                    }
+                    onChange={(next) => {
+                      void updateTaskAndSync(activeTask.id, { dueDate: next });
+                    }}
                     className="mt-3"
                   />
                 </div>
@@ -1591,9 +1626,9 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                   </p>
                   <select
                     value={activeTask.status}
-                    onChange={(event) =>
-                      setTaskStatus(activeTask.id, event.target.value as TaskStatus)
-                    }
+                    onChange={(event) => {
+                      void updateTaskAndSync(activeTask.id, { status: event.target.value as TaskStatus });
+                    }}
                     className="mt-3 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm font-semibold text-secondary"
                   >
                     <option value="pendiente">Pendiente</option>

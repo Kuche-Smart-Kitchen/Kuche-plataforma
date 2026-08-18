@@ -15,7 +15,15 @@ import {
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
-import { type KanbanTask, type TaskFile } from "@/lib/kanban";
+import { syncTaskPatchWithBackend } from "@/lib/admin-workflow";
+import {
+  getTasksFromLocalStorage,
+  kanbanStorageKey,
+  kanbanTasksUpdatedEventName,
+  notifyKanbanTasksUpdated,
+  type KanbanTask,
+  type TaskFile,
+} from "@/lib/kanban";
 import { downloadTaskFile } from "@/lib/task-file-download";
 
 type ProjectStatus = "Pendiente" | "Aprobado" | "Revisión";
@@ -102,13 +110,38 @@ export default function DisenosPage() {
   const [isHydrated, setIsHydrated] = useState(false);
   const previewRef = useRef<HTMLDivElement | null>(null);
 
-  const loadProjects = useCallback(() => {
-    setProjects([]);
+  const loadProjects = useCallback(async () => {
+    const currentTasks = getTasksFromLocalStorage();
+    setProjects(designProjectsFromTasks(currentTasks));
+
+    try {
+      await import("@/lib/admin-workflow").then(({ syncKanbanTasksFromBackend }) => syncKanbanTasksFromBackend());
+      setProjects(designProjectsFromTasks(getTasksFromLocalStorage()));
+    } catch {
+      // Se mantiene el estado del tablero local si el backend no responde.
+    } finally {
+      setIsHydrated(true);
+    }
   }, []);
 
   useEffect(() => {
-    loadProjects();
-    setIsHydrated(true);
+    void loadProjects();
+
+    const handleKanbanUpdated = () => {
+      setProjects(designProjectsFromTasks(getTasksFromLocalStorage()));
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key && event.key !== kanbanStorageKey) return;
+      setProjects(designProjectsFromTasks(getTasksFromLocalStorage()));
+    };
+
+    window.addEventListener(kanbanTasksUpdatedEventName, handleKanbanUpdated);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener(kanbanTasksUpdatedEventName, handleKanbanUpdated);
+      window.removeEventListener("storage", handleStorage);
+    };
   }, [loadProjects]);
 
   useEscapeClose(Boolean(activePreview), () => setActivePreview(null));
@@ -151,10 +184,26 @@ export default function DisenosPage() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [activePreview, goToNext, goToPrev]);
 
-  const handleApprove = (taskId: string) => {
-    setProjects((prev) =>
-      prev.map((p) => (p.id === taskId ? { ...p, status: "Aprobado" } : p)),
+  const handleApprove = async (taskId: string) => {
+    const currentTasks = getTasksFromLocalStorage();
+    const taskSnapshot = currentTasks.find((task) => task.id === taskId);
+    const nextTasks = currentTasks.map((task) =>
+      task.id === taskId ? { ...task, designApprovedByAdmin: true } : task,
     );
+
+    const persisted = notifyKanbanTasksUpdated(nextTasks);
+    if (persisted) {
+      setProjects(designProjectsFromTasks(nextTasks));
+      window.dispatchEvent(new CustomEvent(kanbanTasksUpdatedEventName, { detail: { tasks: nextTasks } }));
+    }
+
+    if (taskSnapshot) {
+      const ok = await syncTaskPatchWithBackend(taskSnapshot, { designApprovedByAdmin: true });
+      if (!ok) {
+        console.warn("No se pudo sincronizar la aprobación de diseño con el backend.");
+      }
+    }
+
     setActiveFeedbackId(null);
   };
 
