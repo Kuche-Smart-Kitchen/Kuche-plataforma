@@ -215,37 +215,16 @@ export const seguimientoProjectStoragePrefix = "kuche_project_";
 
 let runtimeKanbanTasks: KanbanTask[] = [];
 
-const readPersistedKanbanTasks = (): KanbanTask[] | null => {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const raw = window.localStorage.getItem(kanbanStorageKey);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return null;
-    return parsed as KanbanTask[];
-  } catch {
-    return null;
-  }
-};
-
 const writePersistedKanbanTasks = (tasks: KanbanTask[]) => {
   runtimeKanbanTasks = tasks;
-  if (typeof window === "undefined") return;
-
-  try {
-    window.localStorage.setItem(kanbanStorageKey, JSON.stringify(tasks));
-  } catch {
-    // ignore storage write errors
-  }
 };
 
-/** Mantiene la lista vigente en memoria para que la UI pueda sincronizarse con backend sin depender de localStorage. */
+/** Mantiene la lista vigente en memoria para que la UI se alimente del backend. */
 export function stripKanbanTasksForStorage(tasks: KanbanTask[]): KanbanTask[] {
   return tasks;
 }
 
-/** Persiste en memoria y en sesión la lista vigente del tablero. */
+/** Persiste en memoria la lista vigente del tablero. */
 export function saveKanbanTasksToLocalStorage(tasks: KanbanTask[]): boolean {
   writePersistedKanbanTasks(tasks);
   return true;
@@ -319,14 +298,8 @@ export function mergeKanbanTaskLists(local: KanbanTask[], incoming: KanbanTask[]
   return Array.from(merged.values());
 }
 
-/** Devuelve la lista vigente del tablero, restaurando desde sesión si es necesario. */
+/** Devuelve la lista vigente del tablero desde memoria. */
 export function getTasksFromLocalStorage(): KanbanTask[] {
-  const persisted = readPersistedKanbanTasks();
-  if (persisted) {
-    runtimeKanbanTasks = persisted;
-    return persisted;
-  }
-
   return runtimeKanbanTasks;
 }
 

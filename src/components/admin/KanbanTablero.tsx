@@ -19,9 +19,9 @@ import { DueDateInput } from "@/components/ui/DueDateInput";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import {
+  fetchBackendKanbanTasks,
   syncCitaFinishWithBackend,
   syncCitaStartWithBackend,
-  syncKanbanTasksFromBackend,
   syncTaskAssigneesWithBackend,
   syncTaskFollowUpWithBackend,
   syncTaskPatchWithBackend,
@@ -30,9 +30,6 @@ import {
 import { syncSeguimientoEstadoFromKanbanConfirm } from "@/lib/seguimiento-project";
 import {
   kanbanColumns,
-  kanbanStorageKey,
-  kanbanTasksUpdatedEventName,
-  getTasksFromLocalStorage,
   initialKanbanTasks,
   notifyKanbanTasksUpdated,
   syncSeguimientoProjectKanbanStage,
@@ -90,13 +87,6 @@ const getDaysInFollowUp = (enteredAt: number | undefined): number => {
   return Math.floor((Date.now() - enteredAt) / (1000 * 60 * 60 * 24));
 };
 
-const getDemoFollowUpDate = (taskId: string): number => {
-  const hash = taskId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  const daysVariants = [1, 4, 7, 10];
-  const days = daysVariants[hash % daysVariants.length];
-  return Date.now() - (days * 24 * 60 * 60 * 1000);
-};
-
 const formatDate = (timestamp: number | undefined): string => {
   if (!timestamp) return "Sin fecha";
   const date = new Date(timestamp);
@@ -115,12 +105,6 @@ const normalizeMapsUrl = (url: string | undefined): string => {
   const looksLikeMapsLink = hasProtocol || /google\.com\/maps|maps\.google|goo\.gl\/maps/i.test(u);
   if (looksLikeMapsLink) return hasProtocol ? u : `https://${u}`;
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(u)}`;
-};
-
-const generateDateFromId = (taskId: string): number => {
-  const hash = taskId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  const daysAgo = (hash % 25) + 1;
-  return Date.now() - (daysAgo * 24 * 60 * 60 * 1000);
 };
 
 const normalizeTask = (task: Partial<KanbanTask> & Record<string, unknown>): KanbanTask => {
@@ -216,12 +200,10 @@ const normalizeTask = (task: Partial<KanbanTask> & Record<string, unknown>): Kan
     mapsUrl: typeof task.mapsUrl === "string" ? task.mapsUrl : undefined,
     createdAt: typeof task.createdAt === "number" && task.createdAt > 1600000000000
       ? task.createdAt
-      : generateDateFromId(typeof task.id === "string" ? task.id : `task-${Date.now()}`),
+      : undefined,
     followUpEnteredAt: typeof task.followUpEnteredAt === "number"
       ? task.followUpEnteredAt
-      : stage === "contrato"
-        ? getDemoFollowUpDate(typeof task.id === "string" ? task.id : "")
-        : undefined,
+      : undefined,
     followUpStatus,
     preliminarData,
     cotizacionFormalData,
@@ -240,21 +222,9 @@ const normalizeTask = (task: Partial<KanbanTask> & Record<string, unknown>): Kan
   };
 };
 
-/** Enriquece las tareas guardadas con datos de initial (createdAt, files, etc.). No reañade tareas eliminadas: lo guardado en localStorage es la fuente de verdad. */
+/** Normaliza y corrige las tareas recibidas desde el backend sin inventar datos. */
 const mergeTasks = (storedTasks: KanbanTask[]) => {
-  const initialMap = new Map(initialKanbanTasks.map((task) => [task.id, task]));
-  return storedTasks.map((task) => {
-    const initialTask = initialMap.get(task.id);
-    if (initialTask) {
-      return {
-        ...task,
-        createdAt: initialTask.createdAt,
-        files: initialTask.files && initialTask.files.length > 0 ? initialTask.files : task.files,
-        designApprovedByAdmin: initialTask.designApprovedByAdmin ?? task.designApprovedByAdmin,
-      };
-    }
-    return { ...task, createdAt: task.createdAt || generateDateFromId(task.id) };
-  }).map(repairTaskStatusAfterEarlyFollowUp);
+  return storedTasks.map((task) => repairTaskStatusAfterEarlyFollowUp(task));
 };
 
 /** Confirmar/descartar en Seguimiento cierra la tarjeta en el tablero; en otras columnas solo marca compromiso. */
@@ -438,28 +408,23 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const consolidated = getTasksFromLocalStorage();
-    hydrateAndApplyTasks(consolidated, consolidated.length > 0);
-
-    const syncFromStorage = async () => {
-      const localBeforeSync = getTasksFromLocalStorage();
-      if (localBeforeSync.length > 0) {
-        hydrateAndApplyTasks(localBeforeSync, false);
+    const syncFromBackend = async () => {
+      try {
+        const backendTasks = await fetchBackendKanbanTasks();
+        hydrateAndApplyTasks(backendTasks, backendTasks.length > 0);
+      } catch (error) {
+        console.warn("No se pudieron cargar las tareas del kanban desde backend.", error);
+        hydrateAndApplyTasks([], false);
       }
-
-      await syncKanbanTasksFromBackend();
-
-      const refreshed = getTasksFromLocalStorage();
-      hydrateAndApplyTasks(refreshed, refreshed.length > 0);
     };
 
-    void syncFromStorage();
+    void syncFromBackend();
     const handleFocus = () => {
-      void syncFromStorage();
+      void syncFromBackend();
     };
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
-        void syncFromStorage();
+        void syncFromBackend();
       }
     };
     window.addEventListener("focus", handleFocus);
@@ -474,35 +439,17 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     if (typeof window === "undefined" || refreshTrigger === 0) return;
 
     const refreshFromBackend = async () => {
-      await syncKanbanTasksFromBackend();
-      const consolidated = getTasksFromLocalStorage();
-      hydrateAndApplyTasks(consolidated, consolidated.length > 0);
+      try {
+        const backendTasks = await fetchBackendKanbanTasks();
+        hydrateAndApplyTasks(backendTasks, backendTasks.length > 0);
+      } catch (error) {
+        console.warn("No se pudo refrescar el kanban desde backend.", error);
+        hydrateAndApplyTasks([], false);
+      }
     };
 
     void refreshFromBackend();
   }, [refreshTrigger, hydrateAndApplyTasks]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const handleKanbanUpdated = (event: Event) => {
-      const custom = event as CustomEvent<{ tasks?: KanbanTask[] }>;
-      const tasks = custom.detail?.tasks ?? getTasksFromLocalStorage();
-      if (!Array.isArray(tasks) || tasks.length === 0) return;
-      hydrateAndApplyTasks(tasks, false);
-    };
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key !== kanbanStorageKey) return;
-      const consolidated = getTasksFromLocalStorage();
-      if (!consolidated.length) return;
-      hydrateAndApplyTasks(consolidated, false);
-    };
-    window.addEventListener(kanbanTasksUpdatedEventName, handleKanbanUpdated);
-    window.addEventListener("storage", handleStorage);
-    return () => {
-      window.removeEventListener(kanbanTasksUpdatedEventName, handleKanbanUpdated);
-      window.removeEventListener("storage", handleStorage);
-    };
-  }, [hydrateAndApplyTasks]);
 
   useEffect(() => {
     const autoDiscardExpiredFollowUps = () => {

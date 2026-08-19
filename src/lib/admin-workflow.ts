@@ -237,16 +237,10 @@ export async function syncKanbanTasksFromBackend(): Promise<KanbanTask[] | null>
 
   try {
     const backendTasks = await fetchBackendKanbanTasks();
-    if (!backendTasks || backendTasks.length === 0) {
-      return null;
-    }
-
-    const localTasks = getTasksFromLocalStorage();
-    const merged = mergeKanbanTaskLists(localTasks, backendTasks);
-    saveKanbanTasksToLocalStorage(merged);
-    return merged;
+    saveKanbanTasksToLocalStorage(backendTasks);
+    return backendTasks;
   } catch (error) {
-    console.warn("No se pudo sincronizar el kanban desde backend; se mantiene fallback local.", error);
+    console.warn("No se pudo sincronizar el kanban desde backend.", error);
     return null;
   }
 }

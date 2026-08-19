@@ -13,14 +13,12 @@ import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import {
   kanbanColumns,
-  getTasksFromLocalStorage,
-  saveKanbanTasksToLocalStorage,
   type KanbanTask,
   type TaskPriority,
   type TaskStage,
 } from "@/lib/kanban";
 import { generatePublicProjectCode } from "@/lib/project-code";
-import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
+import { fetchBackendKanbanTasks } from "@/lib/admin-workflow";
 import { crearTarea } from "@/lib/axios/tareasApi";
 
 
@@ -74,13 +72,14 @@ export default function OperacionesPage() {
     let cancelled = false;
     const loadTasks = async () => {
       try {
-        await syncKanbanTasksFromBackend();
+        const backendTasks = await fetchBackendKanbanTasks();
+        if (!cancelled) {
+          setKanbanTasks(backendTasks);
+        }
       } catch {
-        // el tablero seguirá con los datos ya disponibles en memoria
-      }
-
-      if (!cancelled) {
-        setKanbanTasks(getTasksFromLocalStorage());
+        if (!cancelled) {
+          setKanbanTasks([]);
+        }
       }
     };
 
