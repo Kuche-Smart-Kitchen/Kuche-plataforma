@@ -162,7 +162,10 @@ const buildAuthSuccessResponse = (
   };
 };
 
-export const login = async (credentials: LoginCredentials): Promise<ApiResponse<AuthResponse>> => {
+export const login = async (
+  credentials: LoginCredentials,
+  captchaToken?: string,
+): Promise<ApiResponse<AuthResponse>> => {
   const payloadCandidates = [
     { correo: credentials.correo, password: credentials.password },
     { email: credentials.correo, password: credentials.password },
@@ -171,12 +174,25 @@ export const login = async (credentials: LoginCredentials): Promise<ApiResponse<
     { email: credentials.correo, contrasena: credentials.password },
   ];
 
+  const token = captchaToken?.trim();
+  const requestConfig = token
+    ? {
+        headers: {
+          "captcha-token": token,
+        },
+      }
+    : undefined;
+
   let lastError: unknown;
 
   for (const endpoint of loginEndpoints) {
     for (const payload of payloadCandidates) {
       try {
-        const response = await axiosInstance.post<LoginBackendResponse>(endpoint, payload);
+        const response = await axiosInstance.post<LoginBackendResponse>(
+          endpoint,
+          payload,
+          requestConfig,
+        );
         const normalized = buildAuthSuccessResponse(response.data, credentials.correo);
 
         if (normalized.success) {

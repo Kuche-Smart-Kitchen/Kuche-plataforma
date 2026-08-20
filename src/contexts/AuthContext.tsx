@@ -8,7 +8,11 @@ type AuthContextType = {
   user: User | null;
   loading: boolean;
   isAuthenticated: boolean;
-  login: (correo: string, password: string) => Promise<{ success: boolean; error?: string; user?: User }>;
+  login: (
+    correo: string,
+    password: string,
+    captchaToken?: string,
+  ) => Promise<{ success: boolean; error?: string; user?: User }>;
   logout: () => Promise<void>;
 };
 
@@ -53,9 +57,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const login = async (correo: string, password: string) => {
+  const login = async (correo: string, password: string, captchaToken?: string) => {
     try {
-      const response = await authApi.login({ correo, password });
+      const response = await authApi.login({ correo, password }, captchaToken);
       if (response.success) {
         setUser(response.data.user);
         return { success: true, user: response.data.user };

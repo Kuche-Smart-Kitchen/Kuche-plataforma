@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, Lock, User } from "lucide-react";
 import { useAuthContext } from "@/contexts/AuthContext";
+import Captcha from "@/components/ui/Captcha";
 import { getLoginRedirectForUser } from "@/lib/role-routes";
 
 export default function LoginPage() {
@@ -14,6 +15,7 @@ export default function LoginPage() {
   const { isAuthenticated, loading, login, user } = useAuthContext();
   const [correo, setCorreo] = useState("");
   const [password, setPassword] = useState("");
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -25,10 +27,17 @@ export default function LoginPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    if (!captchaToken) {
+      setStatus("error");
+      setErrorMessage("Por favor completa el captcha");
+      return;
+    }
+
     setStatus("loading");
     setErrorMessage("");
 
-    const result = await login(correo.trim(), password);
+    const result = await login(correo.trim(), password, captchaToken);
     if (result.success && result.user) {
       router.push(getLoginRedirectForUser(result.user));
       return;
@@ -124,9 +133,15 @@ export default function LoginPage() {
                 </div>
               </label>
 
+              <Captcha
+                onVerify={setCaptchaToken}
+                onExpire={() => setCaptchaToken(null)}
+                onError={() => setCaptchaToken(null)}
+              />
+
               <button
                 type="submit"
-                disabled={status === "loading" || !correo || !password}
+                disabled={status === "loading" || !correo || !password || !captchaToken}
                 className="flex w-full items-center justify-center rounded-2xl bg-accent py-3 text-sm font-semibold text-white shadow-lg transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {status === "loading" ? "Validando..." : "Entrar"}

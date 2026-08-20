@@ -34,9 +34,9 @@ export function useAuth() {
     void checkAuth();
   }, [checkAuth]);
 
-  const login = useCallback(async (correo: string, password: string) => {
+  const login = useCallback(async (correo: string, password: string, captchaToken?: string) => {
     try {
-      const response = await authApi.login({ correo, password });
+      const response = await authApi.login({ correo, password }, captchaToken);
       if (response.success) {
         setUser(response.data.user);
         return { success: true, user: response.data.user };
