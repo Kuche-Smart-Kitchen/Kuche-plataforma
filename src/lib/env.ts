@@ -25,11 +25,11 @@ const readEnv = (key: string): string => {
   return "";
 };
 
-/** Clave de prueba oficial de Cloudflare Turnstile (siempre pasa en modo test). */
-export const TURNSTILE_SITE_KEY_FALLBACK = "1x00000000000000000000AA";
+/** Site Key de producción de Cloudflare Turnstile (fallback si no hay env). */
+export const TURNSTILE_SITE_KEY_DEFAULT = "0x4AAAAAAC5tkCTPmiBULbEx";
 
 const resolveTurnstileSiteKey = (): string =>
-  readEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY") || TURNSTILE_SITE_KEY_FALLBACK;
+  readEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY") || TURNSTILE_SITE_KEY_DEFAULT;
 
 /** Resuelve una sola URL de backend (sin listas separadas por coma). */
 export function resolveBackendApiUrl(): string {

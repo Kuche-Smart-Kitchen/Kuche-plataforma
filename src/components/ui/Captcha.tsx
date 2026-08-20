@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { loadTurnstileScript } from "@/lib/load-turnstile-script";
-import { env } from "@/lib/env";
+import { TURNSTILE_SITE_KEY_DEFAULT } from "@/lib/env";
 
 type CaptchaProps = {
   onVerify: (token: string) => void;
@@ -24,7 +24,9 @@ declare global {
 }
 
 const resolveSiteKey = (siteKey?: string): string =>
-  siteKey?.trim() || env.turnstileSiteKey;
+  siteKey?.trim() ||
+  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim() ||
+  TURNSTILE_SITE_KEY_DEFAULT;
 
 export default function Captcha({
   onVerify,
