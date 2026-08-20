@@ -9,9 +9,8 @@ type CaptchaProps = {
   onExpire?: () => void;
   onError?: () => void;
   className?: string;
+  siteKey?: string;
 };
-
-const getSiteKey = () => env.turnstileSiteKey;
 
 declare global {
   interface Window {
@@ -24,18 +23,21 @@ declare global {
   }
 }
 
+const resolveSiteKey = (siteKey?: string): string =>
+  siteKey?.trim() || env.turnstileSiteKey;
+
 export default function Captcha({
   onVerify,
   onExpire,
   onError,
   className,
+  siteKey,
 }: CaptchaProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | null>(null);
-  const siteKey = getSiteKey();
+  const resolvedSiteKey = resolveSiteKey(siteKey);
 
   useEffect(() => {
-    if (!siteKey) return;
     let cancelled = false;
 
     const renderWidget = () => {
@@ -49,7 +51,7 @@ export default function Captcha({
       }
 
       widgetIdRef.current = window.turnstile.render(containerRef.current, {
-        sitekey: siteKey,
+        sitekey: resolvedSiteKey,
         theme: "light",
         callback: (token: string) => onVerify(token),
         "expired-callback": () => onExpire?.(),
@@ -80,22 +82,13 @@ export default function Captcha({
         widgetIdRef.current = null;
       }
     };
-  }, [onVerify, onExpire, onError]);
+  }, [resolvedSiteKey, onVerify, onExpire, onError]);
 
-  if (!siteKey) {
-    return (
-      <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
-        <p>Configura NEXT_PUBLIC_TURNSTILE_SITE_KEY para habilitar el captcha real.</p>
-        <button
-          type="button"
-          className="rounded-lg bg-amber-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-amber-700"
-          onClick={() => onVerify("dev-captcha-token")}
-        >
-          Simular captcha (solo desarrollo)
-        </button>
-      </div>
-    );
-  }
-
-  return <div ref={containerRef} className={className} />;
+  return (
+    <div
+      ref={containerRef}
+      className={className ?? "min-h-[65px] w-full"}
+      aria-label="Verificación de seguridad Cloudflare Turnstile"
+    />
+  );
 }

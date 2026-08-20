@@ -25,6 +25,12 @@ const readEnv = (key: string): string => {
   return "";
 };
 
+/** Clave de prueba oficial de Cloudflare Turnstile (siempre pasa en modo test). */
+export const TURNSTILE_SITE_KEY_FALLBACK = "1x00000000000000000000AA";
+
+const resolveTurnstileSiteKey = (): string =>
+  readEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY") || TURNSTILE_SITE_KEY_FALLBACK;
+
 /** Resuelve una sola URL de backend (sin listas separadas por coma). */
 export function resolveBackendApiUrl(): string {
   const raw = readEnv("BACKEND_API_URL") || readEnv("NEXT_PUBLIC_API_URL");
@@ -60,7 +66,7 @@ export const env = {
   apiUrl: readEnv("NEXT_PUBLIC_API_URL"),
   backendApiUrl: resolveBackendApiUrl(),
   fileUploadEndpoint: readEnv("NEXT_PUBLIC_FILE_UPLOAD_ENDPOINT"),
-  turnstileSiteKey: readEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY"),
+  turnstileSiteKey: resolveTurnstileSiteKey(),
   showroomAddress: readEnv("NEXT_PUBLIC_SHOWROOM_ADDRESS"),
   googleMapsEmbedSrc: readEnv("NEXT_PUBLIC_GOOGLE_MAPS_EMBED_SRC"),
   metaGraphVersion: readEnv("META_GRAPH_VERSION") || "v22.0",

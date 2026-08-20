@@ -134,7 +134,7 @@ export default function LoginPage() {
               </label>
 
               <Captcha
-                onVerify={setCaptchaToken}
+                onVerify={(token) => setCaptchaToken(token)}
                 onExpire={() => setCaptchaToken(null)}
                 onError={() => setCaptchaToken(null)}
               />
