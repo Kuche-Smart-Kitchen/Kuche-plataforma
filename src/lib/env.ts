@@ -26,7 +26,7 @@ const readEnv = (key: string): string => {
 };
 
 /** Site Key de producción de Cloudflare Turnstile (fallback si no hay env). */
-export const TURNSTILE_SITE_KEY_DEFAULT = "0x4AAAAAAC5tkCTPmiBULbEx";
+export const TURNSTILE_SITE_KEY_DEFAULT = "0x4AAAAAAEXDasq90F9UN4O8";
 
 const resolveTurnstileSiteKey = (): string =>
   readEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY") || TURNSTILE_SITE_KEY_DEFAULT;
