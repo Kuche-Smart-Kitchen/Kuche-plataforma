@@ -20,7 +20,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useAuthContext } from "@/contexts/AuthContext";
-import { getDashboardRouteForRole } from "@/lib/role-routes";
+import { resolveRouteAccess } from "@/lib/role-routes";
 
 const navigation = [
   { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
@@ -48,15 +48,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (loading) return;
 
-    if (!user) {
-      router.replace("/login");
-      return;
-    }
+    const access = resolveRouteAccess({
+      role: user?.rol,
+      pathname,
+    });
 
-    if (user.rol !== "admin") {
-      router.replace(getDashboardRouteForRole(user.rol));
+    if (!access.allowed && access.redirect) {
+      router.replace(access.redirect);
     }
-  }, [loading, router, user]);
+  }, [loading, pathname, router, user?.rol]);
 
   useEffect(() => {
     if (typeof document === "undefined" || !isMobileMenuOpen) return;

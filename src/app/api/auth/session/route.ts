@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
   const sessionValue = request.cookies.get(SESSION_COOKIE)?.value;
 
   if (!sessionValue) {
-    return NextResponse.json({ success: false, message: "No hay sesión activa" }, { status: 401 });
+    return NextResponse.json({ success: false, message: "No hay sesión activa" });
   }
 
   try {
@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch {
-    return NextResponse.json({ success: false, message: "Sesión inválida" }, { status: 401 });
+    return NextResponse.json({ success: false, message: "Sesión inválida" });
   }
 }
 

@@ -154,7 +154,7 @@ sequenceDiagram
   Api->>BE: POST /api/citas/agregarCita
   BE-->>Api: Cita creada
   Admin->>Api: obtenerTodasLasCitas()
-  Api->>BE: GET /api/citas/getAllCitas
+  Api->>BE: GET /api/citas/admin/getAllCitas
 ```
 
 - `/agendar` (público) → `AgendarCitaProvider` + `BookingSection` (calendario, bloqueo de horarios vía `obtenerHorariosOcupados`/`obtenerDisponibilidadDia`) + `LevantamientoSection` (informativa).

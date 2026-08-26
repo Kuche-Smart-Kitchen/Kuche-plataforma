@@ -1,10 +1,33 @@
-import { AxiosError } from "axios";
+import { AxiosError, type AxiosRequestConfig } from "axios";
 
 import axiosInstance, { type ApiResponse } from "./axiosConfig";
 
 export interface AsignarIngenierosCitaData {
   ingenieroIds: string[];
 }
+
+export interface AgendarCitaPayload {
+  fechaAgendada: string;
+  nombreCliente: string;
+  correoCliente: string;
+  telefonoCliente: string;
+  ubicacion?: string;
+  diseno?: string;
+  informacionAdicional?: string;
+  estado?: string;
+}
+
+export interface DisponibilidadDiaResponse {
+  success: boolean;
+  fecha?: string;
+  horariosOcupados?: string[];
+  message?: string;
+}
+
+const publicCitaRequestConfig: AxiosRequestConfig = {
+  skipAuthToken: true,
+  skipAuthRedirect: true,
+} as AxiosRequestConfig;
 
 const normalizeCitaListResponse = (payload: unknown): Record<string, unknown>[] => {
   if (Array.isArray(payload)) {
@@ -53,33 +76,73 @@ const requestWithFallback = async <T>(
 };
 
 export const obtenerTodasLasCitas = async (): Promise<ApiResponse<Record<string, unknown>[]>> => {
-  const endpoints = ["/api/citas/getAllCitas", "/api/citas", "/api/citas/all", "/api/citas/getAll"];
-  let lastError: unknown;
-
-  for (const endpoint of endpoints) {
-    try {
-      const response = await axiosInstance.get<unknown>(endpoint);
-      const normalized = normalizeCitaListResponse(response.data);
-      return {
-        success: true,
-        data: normalized,
-      };
-    } catch (error) {
-      lastError = error;
-    }
-  }
+  const response = await axiosInstance.get<unknown>("/api/citas/admin/getAllCitas");
+  const normalized = normalizeCitaListResponse(response.data);
 
   return {
-    success: false,
-    message: lastError instanceof Error ? lastError.message : "No fue posible obtener las citas",
+    success: true,
+    data: normalized,
   };
+};
+
+export const agendarCita = async (
+  data: AgendarCitaPayload,
+  captchaToken?: string,
+): Promise<ApiResponse<Record<string, unknown>>> => {
+  const response = await axiosInstance.post<ApiResponse<Record<string, unknown>>>('/api/citas/agregarCita', data, {
+    ...publicCitaRequestConfig,
+    headers: captchaToken
+      ? {
+          "captcha-token": captchaToken.trim(),
+        }
+      : undefined,
+  });
+
+  return response.data;
 };
 
 export const crearCita = async (
   data: Record<string, unknown>,
 ): Promise<ApiResponse<Record<string, unknown>>> => {
-  const response = await axiosInstance.post<ApiResponse<Record<string, unknown>>>('/api/citas/agregarCita', data);
-  return response.data;
+  const response = await axiosInstance.post<ApiResponse<Record<string, unknown>>>('/api/citas/agregarCita', data, {
+    ...publicCitaRequestConfig,
+  });
+  return response.data as ApiResponse<Record<string, unknown>>;
+};
+
+export const obtenerDisponibilidadDia = async (
+  fecha: string,
+): Promise<DisponibilidadDiaResponse> => {
+  const response = await axiosInstance.get<unknown>(`/api/citas/disponibilidad?fecha=${encodeURIComponent(fecha)}`, publicCitaRequestConfig);
+
+  const payload = response.data as Record<string, unknown>;
+  const horariosOcupados = Array.isArray(payload?.horariosOcupados)
+    ? payload.horariosOcupados.filter((item): item is string => typeof item === 'string')
+    : Array.isArray(payload?.data)
+      ? payload.data.filter((item): item is string => typeof item === 'string')
+      : [];
+
+  return {
+    success: payload?.success !== false,
+    fecha: typeof payload?.fecha === 'string' ? payload.fecha : fecha,
+    horariosOcupados,
+    message: typeof payload?.message === 'string' ? payload.message : undefined,
+  };
+};
+
+export const obtenerHorariosOcupados = async (): Promise<string[]> => {
+  const response = await axiosInstance.get<unknown>('/api/citas/horarios-ocupados', publicCitaRequestConfig);
+
+  if (Array.isArray(response.data)) {
+    return response.data.filter((value): value is string => typeof value === 'string');
+  }
+
+  const payload = response.data as Record<string, unknown>;
+  if (Array.isArray(payload?.data)) {
+    return payload.data.filter((value): value is string => typeof value === 'string');
+  }
+
+  return [];
 };
 
 export const actualizarCita = async (

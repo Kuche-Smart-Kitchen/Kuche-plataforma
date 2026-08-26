@@ -27,9 +27,21 @@ const readEnv = (key: string): string => {
 
 /** Site Key de producción de Cloudflare Turnstile (fallback si no hay env). */
 export const TURNSTILE_SITE_KEY_DEFAULT = "0x4AAAAAAEXDasq90F9UN4O8";
+/** Site Key de pruebas oficial de Cloudflare Turnstile para desarrollo local. */
+export const TURNSTILE_SITE_KEY_TEST = "1x00000000000000000000AA";
 
-const resolveTurnstileSiteKey = (): string =>
-  readEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY") || TURNSTILE_SITE_KEY_DEFAULT;
+const resolveTurnstileMode = (): "development" | "production" => {
+  const nodeEnv = readEnv("NODE_ENV");
+  const isProduction = nodeEnv === "production" || readEnv("VERCEL") === "1";
+  return !isProduction && readEnv("NEXT_PUBLIC_TURNSTILE_MODE") === "development"
+    ? "development"
+    : "production";
+};
+
+const resolveTurnstileSiteKey = (): string => {
+  if (resolveTurnstileMode() === "development") return TURNSTILE_SITE_KEY_TEST;
+  return readEnv("NEXT_PUBLIC_TURNSTILE_SITE_KEY") || TURNSTILE_SITE_KEY_DEFAULT;
+};
 
 /** Resuelve una sola URL de backend (sin listas separadas por coma). */
 export function resolveBackendApiUrl(): string {
@@ -67,6 +79,7 @@ export const env = {
   backendApiUrl: resolveBackendApiUrl(),
   fileUploadEndpoint: readEnv("NEXT_PUBLIC_FILE_UPLOAD_ENDPOINT"),
   turnstileSiteKey: resolveTurnstileSiteKey(),
+  turnstileMode: resolveTurnstileMode(),
   showroomAddress: readEnv("NEXT_PUBLIC_SHOWROOM_ADDRESS"),
   googleMapsEmbedSrc: readEnv("NEXT_PUBLIC_GOOGLE_MAPS_EMBED_SRC"),
   metaGraphVersion: readEnv("META_GRAPH_VERSION") || "v22.0",

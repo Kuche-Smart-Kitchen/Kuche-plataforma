@@ -2,14 +2,15 @@
 
 import { useEffect, useRef } from "react";
 import { loadTurnstileScript } from "@/lib/load-turnstile-script";
-import { TURNSTILE_SITE_KEY_DEFAULT } from "@/lib/env";
+import { env } from "@/lib/env";
 
 type CaptchaProps = {
   onVerify: (token: string) => void;
   onExpire?: () => void;
-  onError?: () => void;
+  onError?: (errorCode?: string) => void;
   className?: string;
   siteKey?: string;
+  disabled?: boolean;
 };
 
 declare global {
@@ -23,10 +24,17 @@ declare global {
   }
 }
 
-const resolveSiteKey = (siteKey?: string): string =>
-  siteKey?.trim() ||
-  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim() ||
-  TURNSTILE_SITE_KEY_DEFAULT;
+const resolveSiteKey = (siteKey?: string): string => {
+  if (siteKey?.trim()) return siteKey.trim();
+
+  const isDevelopment =
+    process.env.NODE_ENV !== "production" &&
+    process.env.NEXT_PUBLIC_TURNSTILE_MODE === "development";
+
+  if (isDevelopment) return "1x00000000000000000000AA";
+
+  return process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim() || env.turnstileSiteKey;
+};
 
 export default function Captcha({
   onVerify,
@@ -34,10 +42,16 @@ export default function Captcha({
   onError,
   className,
   siteKey,
+  disabled = false,
 }: CaptchaProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | null>(null);
+  const callbacksRef = useRef({ onVerify, onExpire, onError });
   const resolvedSiteKey = resolveSiteKey(siteKey);
+
+  useEffect(() => {
+    callbacksRef.current = { onVerify, onExpire, onError };
+  }, [onVerify, onExpire, onError]);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,9 +69,9 @@ export default function Captcha({
       widgetIdRef.current = window.turnstile.render(containerRef.current, {
         sitekey: resolvedSiteKey,
         theme: "light",
-        callback: (token: string) => onVerify(token),
-        "expired-callback": () => onExpire?.(),
-        "error-callback": () => onError?.(),
+        callback: (token: string) => callbacksRef.current.onVerify(token),
+        "expired-callback": () => callbacksRef.current.onExpire?.(),
+        "error-callback": (errorCode?: string) => callbacksRef.current.onError?.(errorCode),
       });
     };
 
@@ -74,7 +88,7 @@ export default function Captcha({
         if (!cancelled) tick();
       })
       .catch(() => {
-        onError?.();
+        callbacksRef.current.onError?.("script-load-error");
       });
 
     return () => {
@@ -84,12 +98,13 @@ export default function Captcha({
         widgetIdRef.current = null;
       }
     };
-  }, [resolvedSiteKey, onVerify, onExpire, onError]);
+  }, [resolvedSiteKey]);
 
   return (
     <div
       ref={containerRef}
-      className={className ?? "min-h-[65px] w-full"}
+      aria-disabled={disabled}
+      className={`${className ?? "min-h-[65px] w-full"}${disabled ? " pointer-events-none opacity-60" : ""}`}
       aria-label="Verificación de seguridad Cloudflare Turnstile"
     />
   );

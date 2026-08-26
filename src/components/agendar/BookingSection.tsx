@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import Captcha from "@/components/ui/Captcha";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { agendarCita, obtenerDisponibilidadDia } from "@/lib/axios/citasApi";
 
 const WEEK_DAYS = ["L", "M", "M", "J", "V", "S", "D"];
 const MONTH_NAMES = [
@@ -21,20 +22,106 @@ const MONTH_NAMES = [
   "Noviembre",
   "Diciembre",
 ];
-const TIME_SLOTS = ["10:00", "12:00", "16:00"];
+
+const BUSINESS_START_HOUR = 9;
+const BUSINESS_END_HOUR = 18;
+const SLOT_DURATION_MINUTES = 60;
+const SAME_DAY_BUFFER_MINUTES = 120;
+const BOOKING_GAP_MINUTES = 60;
+
+const buildTimeSlots = () => {
+  const slots: string[] = [];
+  for (let hour = BUSINESS_START_HOUR; hour < BUSINESS_END_HOUR; hour += 1) {
+    slots.push(`${String(hour).padStart(2, "0")}:00`);
+  }
+  return slots;
+};
+
+const getDateKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const parseTimeToMinutes = (time: string) => {
+  const [hourText, minuteText] = time.split(":");
+  const hour = Number(hourText);
+  const minutes = Number(minuteText ?? "0");
+  return hour * 60 + minutes;
+};
+
+const formatMinutesToTime = (minutes: number) => {
+  const hour = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+};
+
+const getDateAtTime = (date: Date, time: string) => {
+  const [hourText, minuteText] = time.split(":");
+  const result = new Date(date);
+  result.setHours(Number(hourText), Number(minuteText ?? "0"), 0, 0);
+  return result;
+};
 
 function getTodayStart() {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 }
 
+type ExistingAppointment = {
+  dateKey: string;
+  startMinutes: number;
+  endMinutes: number;
+};
+
+const getApiErrorMessage = (error: unknown): string => {
+  if (!error || typeof error !== "object") {
+    return "No fue posible guardar la cita. Inténtalo de nuevo.";
+  }
+
+  const response = "response" in error ? (error as { response?: unknown }).response : undefined;
+  const responseData =
+    response && typeof response === "object" && "data" in response
+      ? (response as { data?: unknown }).data
+      : undefined;
+
+  if (responseData && typeof responseData === "object") {
+    const data = responseData as Record<string, unknown>;
+    const message = typeof data.message === "string" ? data.message.trim() : "";
+    const errorValue = data.error;
+    const detail =
+      typeof errorValue === "string"
+        ? errorValue.trim()
+        : errorValue && typeof errorValue === "object" && "message" in errorValue
+          ? typeof (errorValue as { message?: unknown }).message === "string"
+            ? (errorValue as { message: string }).message.trim()
+            : ""
+          : "";
+    const captchaErrors = Array.isArray(data["error-codes"])
+      ? data["error-codes"].filter((item): item is string => typeof item === "string").join(", ")
+      : "";
+
+    if (message || detail || captchaErrors) {
+      return [message, detail, captchaErrors ? `Código captcha: ${captchaErrors}` : ""]
+        .filter(Boolean)
+        .join(". ");
+    }
+  }
+
+  return error instanceof Error && error.message
+    ? error.message
+    : "No fue posible guardar la cita. Inténtalo de nuevo.";
+};
+
 export default function BookingSection() {
   const todayStart = useMemo(() => getTodayStart(), []);
+  const timeSlots = useMemo(() => buildTimeSlots(), []);
   const [currentMonth, setCurrentMonth] = useState(() =>
     new Date(todayStart.getFullYear(), todayStart.getMonth(), 1),
   );
   const [selectedDate, setSelectedDate] = useState<Date | null>(() => todayStart);
-  const [selectedTime, setSelectedTime] = useState<string>("12:00");
+  const [selectedTime, setSelectedTime] = useState<string>("09:00");
   const [location, setLocation] = useState<"capital" | "otro">("capital");
   const [otherLocation, setOtherLocation] = useState("");
   const [fullName, setFullName] = useState("");
@@ -43,6 +130,7 @@ export default function BookingSection() {
   const [formMessage, setFormMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const modalRef = useRef<HTMLDivElement | null>(null);
   const [captchaToken, setCaptchaToken] = useState("");
   const [pendingSummary, setPendingSummary] = useState<{
@@ -51,33 +139,119 @@ export default function BookingSection() {
     locationLabel: string;
     date: Date;
   } | null>(null);
-  const [appointmentsByDate, setAppointmentsByDate] = useState<Record<string, number>>({});
+  const [existingAppointments, setExistingAppointments] = useState<ExistingAppointment[]>([]);
 
-  const MAX_APPOINTMENTS_PER_DAY = 3;
+  const getIsBlockedTime = (date: Date, time: string) => {
+    const selectedStart = getDateAtTime(date, time);
+    const now = new Date();
+    const todayKey = getDateKey(new Date());
+    const dateKey = getDateKey(date);
 
-  const getDateKey = (date: Date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
+    if (selectedStart.getDay() === 0 || selectedStart.getDay() === 6) {
+      return true;
+    }
+
+    const startMinutes = parseTimeToMinutes(time);
+    const endMinutes = startMinutes + SLOT_DURATION_MINUTES;
+
+    if (dateKey === todayKey) {
+      const earliestAllowed = new Date(now.getTime() + SAME_DAY_BUFFER_MINUTES * 60 * 1000);
+      if (selectedStart < earliestAllowed) {
+        return true;
+      }
+    }
+
+    if (date < todayStart) {
+      return true;
+    }
+
+    for (const appointment of existingAppointments) {
+      if (appointment.dateKey !== dateKey) {
+        continue;
+      }
+
+      const hasGapBefore = endMinutes <= appointment.startMinutes - BOOKING_GAP_MINUTES;
+      const hasGapAfter = startMinutes >= appointment.endMinutes + BOOKING_GAP_MINUTES;
+
+      if (!hasGapBefore && !hasGapAfter) {
+        return true;
+      }
+    }
+
+    return false;
   };
 
-  const registerAppointment = (date: Date) => {
-    const key = getDateKey(date);
-    setAppointmentsByDate((prev) => {
-      const currentCount = prev[key] ?? 0;
-      return {
-        ...prev,
-        [key]: currentCount + 1,
-      };
-    });
-  };
+  const availableTimeSlots = useMemo(() => {
+    if (!selectedDate) {
+      return timeSlots;
+    }
+
+    return timeSlots.filter((slot) => !getIsBlockedTime(selectedDate, slot));
+  }, [selectedDate, timeSlots, existingAppointments]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadAvailability = async () => {
+      if (!selectedDate) {
+        setExistingAppointments([]);
+        return;
+      }
+
+      try {
+        const response = await obtenerDisponibilidadDia(getDateKey(selectedDate));
+        if (!isMounted || !response.success) {
+          return;
+        }
+
+        const appointments = (response.horariosOcupados ?? []).reduce<ExistingAppointment[]>(
+          (accumulator, time) => {
+            const startMinutes = parseTimeToMinutes(time);
+            if (!Number.isFinite(startMinutes)) {
+              return accumulator;
+            }
+
+            accumulator.push({
+              dateKey: getDateKey(selectedDate),
+              startMinutes,
+              endMinutes: Math.min(startMinutes + SLOT_DURATION_MINUTES, 24 * 60),
+            });
+
+            return accumulator;
+          },
+          [],
+        );
+
+        if (isMounted) {
+          setExistingAppointments(appointments);
+        }
+      } catch {
+        if (isMounted) {
+          setExistingAppointments([]);
+        }
+      }
+    };
+
+    void loadAvailability();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedDate]);
+
+  useEffect(() => {
+    if (selectedDate && selectedTime && !availableTimeSlots.includes(selectedTime)) {
+      setSelectedTime(availableTimeSlots[0] ?? "09:00");
+    }
+  }, [selectedDate, availableTimeSlots, selectedTime]);
 
   useEscapeClose(isModalOpen, () => setIsModalOpen(false));
   useFocusTrap(isModalOpen, modalRef);
+
   const monthLabel = useMemo(() => {
     return `${MONTH_NAMES[currentMonth.getMonth()]} ${currentMonth.getFullYear()}`;
   }, [currentMonth]);
+
   const calendarDays = useMemo(() => {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
@@ -89,6 +263,50 @@ export default function BookingSection() {
       return day > 0 && day <= totalDays ? day : null;
     });
   }, [currentMonth]);
+
+  const handleConfirmAppointment = async () => {
+    if (!pendingSummary || !selectedTime || !selectedDate) {
+      return;
+    }
+
+    const dateAtTime = getDateAtTime(selectedDate, selectedTime);
+    const payload = {
+      nombreCliente: fullName.trim(),
+      correoCliente: email.trim(),
+      telefonoCliente: phone.trim(),
+      ubicacion: location === "capital" ? "Durango Capital" : otherLocation.trim(),
+      fechaAgendada: dateAtTime.toISOString(),
+      informacionAdicional: `Solicitud de cita desde landing - ${location === "capital" ? "Durango Capital" : otherLocation.trim()}`,
+      estado: "programada",
+    };
+
+    setIsSubmitting(true);
+    setFormError(null);
+    setFormMessage(null);
+
+    try {
+      const response = await agendarCita(payload, captchaToken);
+
+      if (!response.success || !response.data) {
+        throw new Error(response.message || "No fue posible guardar la cita.");
+      }
+
+      setFormMessage("Listo. Te contactaremos para confirmar tu visita.");
+      setIsModalOpen(false);
+      setPendingSummary(null);
+      setSelectedTime(availableTimeSlots[0] ?? "09:00");
+      setFullName("");
+      setPhone("");
+      setEmail("");
+      setOtherLocation("");
+      setCaptchaToken("");
+      setLocation("capital");
+    } catch (error) {
+      setFormError(getApiErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <section id="agendar-cita" className="bg-background px-4 pb-12">
@@ -114,6 +332,12 @@ export default function BookingSection() {
           if (!captchaToken) {
             setFormMessage(null);
             setFormError("Confirma el captcha para continuar.");
+            return;
+          }
+          const slotIsAvailable = !getIsBlockedTime(selectedDate, selectedTime);
+          if (!slotIsAvailable) {
+            setFormMessage(null);
+            setFormError("El horario seleccionado ya no está disponible. Elige otro horario.");
             return;
           }
           const dateLabel = selectedDate
@@ -208,8 +432,8 @@ export default function BookingSection() {
                 const dayOfWeek = dateValue.getDay();
                 const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
                 const dateKey = getDateKey(dateValue);
-                const dayAppointments = appointmentsByDate[dateKey] ?? 0;
-                const isFull = dayAppointments >= MAX_APPOINTMENTS_PER_DAY;
+                const dayAppointments = existingAppointments.filter((appointment) => appointment.dateKey === dateKey).length;
+                const isFull = dayAppointments >= 3;
                 const isSelected =
                   selectedDate &&
                   selectedDate.getDate() === day &&
@@ -248,21 +472,26 @@ export default function BookingSection() {
               Horarios disponibles
             </p>
             <div className="mt-3 grid grid-cols-3 gap-3">
-              {TIME_SLOTS.map((time) => {
+              {timeSlots.map((time) => {
+                const isBlocked = selectedDate ? getIsBlockedTime(selectedDate, time) : true;
                 const isActive = time === selectedTime;
                 return (
                   <button
                     key={time}
                     type="button"
+                    disabled={isBlocked}
                     onClick={() => {
+                      if (isBlocked) return;
                       setSelectedTime(time);
                       setFormMessage(null);
                       setFormError(null);
                     }}
                     className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
-                      isActive
-                        ? "border-accent bg-accent text-white shadow-sm"
-                        : "border-gray-200 text-secondary hover:border-gray-300"
+                      isBlocked
+                        ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400"
+                        : isActive
+                          ? "border-accent bg-accent text-white shadow-sm"
+                          : "border-gray-200 text-secondary hover:border-gray-300"
                     }`}
                   >
                     {time}
@@ -370,8 +599,16 @@ export default function BookingSection() {
                 setFormMessage(null);
                 setFormError(null);
               }}
-              onExpire={() => setCaptchaToken("")}
-              onError={() => setCaptchaToken("")}
+              onExpire={() => {
+                setCaptchaToken("");
+                setFormError("La verificación expiró. Completa nuevamente el captcha.");
+              }}
+              onError={(errorCode) => {
+                setCaptchaToken("");
+                setFormError(
+                  `No se pudo cargar el captcha${errorCode ? ` (${errorCode})` : ""}. Verifica la clave y el dominio configurados en Cloudflare.`,
+                );
+              }}
               className="mt-3"
             />
           </div>
@@ -387,11 +624,13 @@ export default function BookingSection() {
 
           <button
             type="submit"
-            className="mt-5 w-full rounded-2xl bg-accent py-4 text-xs font-semibold uppercase tracking-[0.4em] text-white shadow-lg shadow-accent/30 transition hover:-translate-y-0.5"
+            disabled={isSubmitting}
+            className="mt-5 w-full rounded-2xl bg-accent py-4 text-xs font-semibold uppercase tracking-[0.4em] text-white shadow-lg shadow-accent/30 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            Agendar visita
+            {isSubmitting ? "Enviando..." : "Agendar visita"}
           </button>
         </div>
+
         {isModalOpen && pendingSummary ? (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
@@ -441,19 +680,11 @@ export default function BookingSection() {
                 </button>
                 <button
                   type="button"
-                  className="flex-1 rounded-lg bg-accent px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-white"
-                  onClick={() => {
-                    setIsModalOpen(false);
-                    if (pendingSummary?.date) {
-                      registerAppointment(pendingSummary.date);
-                    }
-                    setFormMessage(
-                      "Listo. Te contactaremos para confirmar tu visita.",
-                    );
-                    setPendingSummary(null);
-                  }}
+                  disabled={isSubmitting}
+                  className="flex-1 rounded-lg bg-accent px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-white disabled:cursor-not-allowed disabled:opacity-70"
+                  onClick={handleConfirmAppointment}
                 >
-                  Confirmar
+                  {isSubmitting ? "Enviando..." : "Confirmar"}
                 </button>
               </div>
             </div>
