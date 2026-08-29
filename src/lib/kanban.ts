@@ -224,11 +224,34 @@ export function stripKanbanTasksForStorage(tasks: KanbanTask[]): KanbanTask[] {
   return tasks;
 }
 
-/** Persiste en memoria la lista vigente del tablero. */
+/** Persiste en memoria y en localStorage la lista vigente del tablero. */
 export function saveKanbanTasksToLocalStorage(tasks: KanbanTask[]): boolean {
   writePersistedKanbanTasks(tasks);
-  return true;
+  if (typeof window === "undefined") return true;
+
+  try {
+    window.localStorage.setItem(
+      kanbanStorageKey,
+      JSON.stringify(stripKanbanTasksForStorage(tasks)),
+    );
+    return true;
+  } catch {
+    return false;
+  }
 }
+
+const readKanbanTasksFromBrowserStorage = (): KanbanTask[] => {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem(kanbanStorageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as KanbanTask[]) : [];
+  } catch {
+    return [];
+  }
+};
 
 export const kanbanTasksUpdatedEventName = "kuche:kanban-tasks-updated";
 
@@ -298,8 +321,17 @@ export function mergeKanbanTaskLists(local: KanbanTask[], incoming: KanbanTask[]
   return Array.from(merged.values());
 }
 
-/** Devuelve la lista vigente del tablero desde memoria. */
+/** Devuelve la lista vigente del tablero desde memoria o localStorage. */
 export function getTasksFromLocalStorage(): KanbanTask[] {
+  if (runtimeKanbanTasks.length > 0) {
+    return runtimeKanbanTasks;
+  }
+
+  const stored = readKanbanTasksFromBrowserStorage();
+  if (stored.length > 0) {
+    runtimeKanbanTasks = stored;
+  }
+
   return runtimeKanbanTasks;
 }
 
@@ -338,9 +370,12 @@ export function taskMatchesKanbanUpdate(task: KanbanTask, criteria: KanbanTaskMa
   return false;
 }
 
-/** Notifica cambios del tablero y los deja disponibles para la UI en memoria. */
+/** Notifica cambios del tablero y los persiste en memoria/localStorage. */
 export function notifyKanbanTasksUpdated(tasks: KanbanTask[]): boolean {
-  writePersistedKanbanTasks(tasks);
-  return true;
+  const ok = saveKanbanTasksToLocalStorage(tasks);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(kanbanTasksUpdatedEventName, { detail: { tasks } }));
+  }
+  return ok;
 }
 

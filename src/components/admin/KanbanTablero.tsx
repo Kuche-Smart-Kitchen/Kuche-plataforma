@@ -20,6 +20,7 @@ import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import {
   fetchBackendKanbanTasks,
+  mergeBackendKanbanWithLocal,
   syncCitaFinishWithBackend,
   syncCitaStartWithBackend,
   syncTaskAssigneesWithBackend,
@@ -29,6 +30,7 @@ import {
 } from "@/lib/admin-workflow";
 import { syncSeguimientoEstadoFromKanbanConfirm } from "@/lib/seguimiento-project";
 import {
+  getTasksFromLocalStorage,
   kanbanColumns,
   initialKanbanTasks,
   notifyKanbanTasksUpdated,
@@ -409,12 +411,19 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     if (typeof window === "undefined") return;
 
     const syncFromBackend = async () => {
+      const localTasks = getTasksFromLocalStorage();
+      if (localTasks.length > 0) {
+        hydrateAndApplyTasks(localTasks, false);
+      }
+
       try {
         const backendTasks = await fetchBackendKanbanTasks();
-        hydrateAndApplyTasks(backendTasks, backendTasks.length > 0);
+        const merged = mergeBackendKanbanWithLocal(backendTasks);
+        hydrateAndApplyTasks(merged, true);
       } catch (error) {
         console.warn("No se pudieron cargar las tareas del kanban desde backend.", error);
-        hydrateAndApplyTasks([], false);
+        const fallback = getTasksFromLocalStorage();
+        hydrateAndApplyTasks(fallback, fallback.length > 0);
       }
     };
 
@@ -441,10 +450,12 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     const refreshFromBackend = async () => {
       try {
         const backendTasks = await fetchBackendKanbanTasks();
-        hydrateAndApplyTasks(backendTasks, backendTasks.length > 0);
+        const merged = mergeBackendKanbanWithLocal(backendTasks);
+        hydrateAndApplyTasks(merged, true);
       } catch (error) {
         console.warn("No se pudo refrescar el kanban desde backend.", error);
-        hydrateAndApplyTasks([], false);
+        const fallback = getTasksFromLocalStorage();
+        hydrateAndApplyTasks(fallback, fallback.length > 0);
       }
     };
 

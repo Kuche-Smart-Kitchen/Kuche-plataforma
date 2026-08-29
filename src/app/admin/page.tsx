@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
@@ -16,7 +16,12 @@ import {
 
 import { dueDateToSortTimestamp } from "@/lib/kanban-due-datetime";
 import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
-import { getTasksFromLocalStorage, type KanbanTask } from "@/lib/kanban";
+import {
+  getTasksFromLocalStorage,
+  kanbanTasksUpdatedEventName,
+  type KanbanTask,
+  type TaskFile,
+} from "@/lib/kanban";
 import { obtenerTodasLasCitas } from "@/lib/axios/citasApi";
 
 type AppointmentLike = {
@@ -116,8 +121,130 @@ type DashboardTask = {
   visitScheduledAt?: string;
   createdAt: number;
   followUpStatus?: string;
+  followUpEnteredAt?: number;
   designApprovedByAdmin?: boolean;
   designApprovedByClient?: boolean;
+  citaStarted?: boolean;
+  citaFinished?: boolean;
+  files?: TaskFile[];
+};
+
+const isActiveKanbanTask = (task: Pick<DashboardTask, "status" | "followUpStatus">) =>
+  !isTaskDiscarded(task) && (task.status ?? "") !== "completada";
+
+const isUnassignedKanbanTask = (task: Pick<DashboardTask, "assignedTo">) => {
+  const assignees = task.assignedTo ?? [];
+  return assignees.length === 0 || assignees.every((name) => !name?.trim() || name === "Sin asignar");
+};
+
+const countPendingCitasTasks = (tasks: DashboardTask[]) =>
+  tasks.filter(
+    (task) => task.stage === "citas" && isActiveKanbanTask(task) && !task.citaFinished,
+  ).length;
+
+const countDesignsPendingApproval = (tasks: DashboardTask[]) =>
+  tasks.filter(
+    (task) => task.stage === "disenos" && task.designApprovedByAdmin !== true && isActiveKanbanTask(task),
+  ).length;
+
+type AttentionItem = {
+  id: string;
+  label: string;
+  href: string;
+};
+
+const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+
+const mapKanbanToDashboardTasks = (workflowTasks: KanbanTask[]): DashboardTask[] =>
+  workflowTasks.map((task) => ({
+    id: task.id,
+    title: task.title,
+    project: task.project,
+    stage: task.stage,
+    status: task.status,
+    assignedTo: task.assignedTo,
+    dueDate: task.dueDate,
+    visitScheduledAt: task.dueDate,
+    createdAt: task.createdAt ?? Date.now(),
+    followUpStatus: task.followUpStatus,
+    followUpEnteredAt: task.followUpEnteredAt,
+    designApprovedByAdmin: task.designApprovedByAdmin,
+    designApprovedByClient: task.designApprovedByClient,
+    citaStarted: task.citaStarted,
+    citaFinished: task.citaFinished,
+    files: task.files,
+  }));
+
+const resolveTaskAttentionHref = (task: DashboardTask): string => {
+  if (task.stage === "disenos") return "/admin/disenos";
+  if (task.stage === "citas") return "/admin/operaciones";
+  if (task.stage === "cotizacion" || task.stage === "contrato") return "/admin/operaciones";
+  return "/admin/operaciones";
+};
+
+const buildAttentionItems = (
+  tasks: DashboardTask[],
+): AttentionItem[] => {
+  const pendingCitas = tasks
+    .filter(
+      (task) =>
+        task.stage === "citas" &&
+        isActiveKanbanTask(task) &&
+        !task.citaFinished &&
+        isUnassignedKanbanTask(task),
+    )
+    .map((task) => ({
+      id: `cita-${task.id}`,
+      label: `Cita sin asignar: ${task.project || task.title || "Cliente sin nombre"}`,
+      href: "/admin/operaciones",
+    }));
+
+  const reviewDesigns = tasks
+    .filter(
+      (task) =>
+        task.stage === "disenos" &&
+        isActiveKanbanTask(task) &&
+        task.designApprovedByAdmin !== true,
+    )
+    .map((task) => ({
+      id: `design-${task.id}`,
+      label: `Diseño listo para aprobar: ${task.project || task.title || "Proyecto sin título"}`,
+      href: "/admin/disenos",
+    }));
+
+  const pendingVisits = tasks
+    .filter((task) => {
+      return (
+        (task.stage === "citas" || task.stage === "cotizacion") &&
+        isActiveKanbanTask(task) &&
+        !isTaskConfirmed(task) &&
+        (!task.citaStarted || !task.citaFinished)
+      );
+    })
+    .map((task) => ({
+      id: `visit-${task.id}`,
+      label: `Visita pendiente de gestión: ${task.project || task.title || "Proyecto sin título"}`,
+      href: resolveTaskAttentionHref(task),
+    }));
+
+  const staleFollowUpTasks = tasks.filter((task) => {
+    if ((task.followUpStatus ?? "").toLowerCase() !== "pendiente") return false;
+    const enteredAt = task.followUpEnteredAt ?? task.createdAt;
+    return Date.now() - enteredAt > THREE_DAYS_MS;
+  });
+
+  const staleFollowUp =
+    staleFollowUpTasks.length > 0
+      ? [
+          {
+            id: "seguimiento-stale",
+            label: `${staleFollowUpTasks.length} proyecto(s) sin cambios por más de 3 días`,
+            href: "/admin/clientes-en-proceso",
+          },
+        ]
+      : [];
+
+  return [...pendingCitas, ...reviewDesigns, ...pendingVisits, ...staleFollowUp].slice(0, 8);
 };
 
 type CalendarEntry = {
@@ -158,11 +285,22 @@ export default function AdminPage() {
   const [totalMaterials, setTotalMaterials] = useState(0);
   const [confirmedClients, setConfirmedClients] = useState(0);
   const [discardedClients, setDiscardedClients] = useState(0);
-  const [staleFollowUpCount, setStaleFollowUpCount] = useState(0);
   const [isHydrated, setIsHydrated] = useState(false);
+
+  const applyDashboardTasks = useCallback((workflowTasks: KanbanTask[]) => {
+    const dashboardTasks = mapKanbanToDashboardTasks(workflowTasks);
+    setTasks(dashboardTasks);
+    setConfirmedClients(dashboardTasks.filter(isTaskConfirmed).length);
+    setDiscardedClients(dashboardTasks.filter(isTaskDiscarded).length);
+  }, []);
 
   useEffect(() => {
     const load = async () => {
+      const localTasks = getTasksFromLocalStorage() as KanbanTask[];
+      if (localTasks.length > 0) {
+        applyDashboardTasks(localTasks);
+      }
+
       try {
         const [citasResponse, backendSync] = await Promise.all([
           obtenerTodasLasCitas(),
@@ -177,76 +315,37 @@ export default function AdminPage() {
         const materiales = getStoredMateriales();
         setTotalMaterials(materiales.length);
 
-        const workflowTasks = (backendSync ? backendSync : getTasksFromLocalStorage()) as KanbanTask[];
-        const dashboardTasks: DashboardTask[] = workflowTasks.map((task) => ({
-          id: task.id,
-          title: task.title,
-          project: task.project,
-          stage: task.stage,
-          status: task.status,
-          assignedTo: task.assignedTo,
-          dueDate: task.dueDate,
-          visitScheduledAt: task.dueDate,
-          createdAt: task.createdAt ?? Date.now(),
-          followUpStatus: task.followUpStatus,
-          designApprovedByAdmin: task.designApprovedByAdmin,
-          designApprovedByClient: task.designApprovedByClient,
-        }));
-
-        setTasks(dashboardTasks);
-        setConfirmedClients(dashboardTasks.filter(isTaskConfirmed).length);
-        setDiscardedClients(dashboardTasks.filter(isTaskDiscarded).length);
-        setStaleFollowUpCount(0);
+        applyDashboardTasks((backendSync ?? getTasksFromLocalStorage()) as KanbanTask[]);
       } catch {
-        const fallbackTasks = getTasksFromLocalStorage() as KanbanTask[];
-        setTasks(fallbackTasks.map((task) => ({
-          id: task.id,
-          title: task.title,
-          project: task.project,
-          stage: task.stage,
-          status: task.status,
-          assignedTo: task.assignedTo,
-          dueDate: task.dueDate,
-          visitScheduledAt: task.dueDate,
-          createdAt: task.createdAt ?? Date.now(),
-          followUpStatus: task.followUpStatus,
-          designApprovedByAdmin: task.designApprovedByAdmin,
-          designApprovedByClient: task.designApprovedByClient,
-        })));
+        applyDashboardTasks(getTasksFromLocalStorage() as KanbanTask[]);
       } finally {
         setIsHydrated(true);
       }
     };
 
     void load();
-  }, []);
+  }, [applyDashboardTasks]);
+
+  useEffect(() => {
+    const refreshTasksFromKanban = () => {
+      applyDashboardTasks(getTasksFromLocalStorage() as KanbanTask[]);
+    };
+
+    window.addEventListener(kanbanTasksUpdatedEventName, refreshTasksFromKanban);
+    return () => {
+      window.removeEventListener(kanbanTasksUpdatedEventName, refreshTasksFromKanban);
+    };
+  }, [applyDashboardTasks]);
 
   const activeTasks = useMemo(
     () =>
-      tasks.filter((task) => {
-        const status = task.status ?? "";
-        return status !== "completada";
-      }).length,
+      tasks.filter((task) => isActiveKanbanTask(task)).length,
     [tasks],
   );
 
-  const designsPending = useMemo(
-    () =>
-      tasks.filter((task) => {
-        const status = task.status ?? "";
-        return task.stage === "disenos" && status === "pendiente";
-      }).length,
-    [tasks],
-  );
+  const designsPending = useMemo(() => countDesignsPendingApproval(tasks), [tasks]);
 
-  const pendingAppointments = useMemo(
-    () =>
-      appointments.filter((appointment) => {
-        const assigned = appointment.assignedTo ?? "";
-        return appointment.status === "Pendiente" || !assigned;
-      }).length,
-    [appointments],
-  );
+  const pendingAppointments = useMemo(() => countPendingCitasTasks(tasks), [tasks]);
 
   const today = useMemo(() => new Date(), []);
   const currentMonth = useMemo(() => new Date(today.getFullYear(), today.getMonth(), 1), [today]);
@@ -350,38 +449,7 @@ export default function AdminPage() {
 
   const calendarMarkedDays = useMemo(() => new Set(calendarEntriesByDay.keys()), [calendarEntriesByDay]);
 
-  const attentionItems = useMemo(() => {
-    const pendingAgenda = appointments
-      .filter((appointment) => appointment.status === "Pendiente" || !appointment.assignedTo)
-      .map((appointment, index) => ({
-        id: `agenda-${appointment.client ?? "sin-cliente"}-${appointment.date ?? "sin-fecha"}-${appointment.time ?? "sin-hora"}-${appointment.assignedTo ?? "sin-asignar"}-${index}`,
-        label: `Cita sin asignar: ${appointment.client ?? "Cliente sin nombre"}`,
-        href: "/admin/agenda",
-      }));
-
-    const reviewDesigns = tasks
-      .filter((task) => {
-        const status = task.status ?? "";
-        return task.stage === "disenos" && status === "pendiente";
-      })
-      .map((task, index) => ({
-        id: `design-${task.title ?? "sin-titulo"}-${task.status ?? "sin-estado"}-${index}`,
-        label: `Diseño listo para aprobar: ${task.title ?? "Proyecto sin título"}`,
-        href: "/admin/disenos",
-      }));
-
-    const staleFollowUp = staleFollowUpCount > 0
-      ? [
-          {
-            id: "seguimiento-stale",
-            label: `${staleFollowUpCount} proyecto(s) sin cambios por más de 3 días`,
-            href: "/admin/clientes-en-proceso",
-          },
-        ]
-      : [];
-
-    return [...pendingAgenda, ...reviewDesigns, ...staleFollowUp].slice(0, 8);
-  }, [appointments, staleFollowUpCount, tasks]);
+  const attentionItems = useMemo(() => buildAttentionItems(tasks), [tasks]);
 
   const overviewCards = [
     {
@@ -403,7 +471,7 @@ export default function AdminPage() {
     {
       title: "Citas pendientes",
       value: isHydrated ? pendingAppointments.toString() : "—",
-      href: "/admin/agenda",
+      href: "/admin/operaciones",
       icon: Calendar,
       accent: "from-[#8B1C1C] to-[#A33B3B]",
       tone: "bg-[#F8EEEE] text-[#8B1C1C]",
@@ -428,7 +496,7 @@ export default function AdminPage() {
     {
       title: "Proyectos inactivos",
       value: isHydrated ? discardedClients.toString() : "—",
-      href: "/admin/proyectos-inactivos",
+      href: "/admin/clientes-descartados",
       icon: XCircle,
       accent: "from-slate-700 to-slate-500",
       tone: "bg-slate-100 text-slate-700",

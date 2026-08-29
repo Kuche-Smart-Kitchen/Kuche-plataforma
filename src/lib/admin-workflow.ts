@@ -14,6 +14,7 @@ import {
 import { actualizarTarea, asignarTrabajadoresTarea, cambiarEtapa } from "@/lib/axios/tareasApi";
 import {
   getTasksFromLocalStorage,
+  kanbanTasksUpdatedEventName,
   mergeKanbanTaskLists,
   saveKanbanTasksToLocalStorage,
   type FollowUpStatus,
@@ -231,17 +232,30 @@ export async function fetchBackendKanbanTasks(): Promise<KanbanTask[]> {
   return Array.from(unique.values());
 }
 
+/** Fusiona tareas del backend con las locales (por id / codigoProyecto) y persiste el resultado. */
+export function mergeBackendKanbanWithLocal(backendTasks: KanbanTask[]): KanbanTask[] {
+  const localTasks = getTasksFromLocalStorage();
+  const merged = mergeKanbanTaskLists(localTasks, backendTasks);
+  saveKanbanTasksToLocalStorage(merged);
+  return merged;
+}
+
 export async function syncKanbanTasksFromBackend(): Promise<KanbanTask[] | null> {
   if (typeof window === "undefined") return null;
-  if (!authApi.isAuthenticated()) return null;
+  if (!authApi.isAuthenticated()) return getTasksFromLocalStorage();
 
   try {
     const backendTasks = await fetchBackendKanbanTasks();
-    saveKanbanTasksToLocalStorage(backendTasks);
-    return backendTasks;
+    const merged = mergeBackendKanbanWithLocal(backendTasks);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent(kanbanTasksUpdatedEventName, { detail: { tasks: merged } }),
+      );
+    }
+    return merged;
   } catch (error) {
     console.warn("No se pudo sincronizar el kanban desde backend.", error);
-    return null;
+    return getTasksFromLocalStorage();
   }
 }
 
