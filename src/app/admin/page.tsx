@@ -137,15 +137,22 @@ const isUnassignedKanbanTask = (task: Pick<DashboardTask, "assignedTo">) => {
   return assignees.length === 0 || assignees.every((name) => !name?.trim() || name === "Sin asignar");
 };
 
+const hasPendingDesignFiles = (task: Pick<DashboardTask, "files">) =>
+  Boolean(task.files && task.files.length > 0);
+
+const isDesignWaitingAdminApproval = (task: DashboardTask) =>
+  task.stage === "disenos" &&
+  hasPendingDesignFiles(task) &&
+  task.designApprovedByAdmin !== true &&
+  isActiveKanbanTask(task);
+
 const countPendingCitasTasks = (tasks: DashboardTask[]) =>
   tasks.filter(
     (task) => task.stage === "citas" && isActiveKanbanTask(task) && !task.citaFinished,
   ).length;
 
 const countDesignsPendingApproval = (tasks: DashboardTask[]) =>
-  tasks.filter(
-    (task) => task.stage === "disenos" && task.designApprovedByAdmin !== true && isActiveKanbanTask(task),
-  ).length;
+  tasks.filter(isDesignWaitingAdminApproval).length;
 
 type AttentionItem = {
   id: string;
@@ -200,12 +207,7 @@ const buildAttentionItems = (
     }));
 
   const reviewDesigns = tasks
-    .filter(
-      (task) =>
-        task.stage === "disenos" &&
-        isActiveKanbanTask(task) &&
-        task.designApprovedByAdmin !== true,
-    )
+    .filter(isDesignWaitingAdminApproval)
     .map((task) => ({
       id: `design-${task.id}`,
       label: `Diseño listo para aprobar: ${task.project || task.title || "Proyecto sin título"}`,
