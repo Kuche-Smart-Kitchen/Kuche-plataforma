@@ -9,7 +9,7 @@ import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { mexicoCityDateTimeToISO, parseFechaAgendadaInMexicoCity, toLocalDateKey } from "@/lib/cita-datetime";
 import { notifyWorkflowOfCitaCreated } from "@/lib/cita-kanban-sync";
-import { actualizarCita, crearCita, obtenerTodasLasCitas } from "@/lib/axios/citasApi";
+import { ADMIN_CITA_CAPTCHA_BYPASS, actualizarCita, crearCita, obtenerTodasLasCitas } from "@/lib/axios/citasApi";
 
 type AppointmentType =
   | "Levantamiento / Medidas"
@@ -257,12 +257,12 @@ export default function AgendaPage() {
     try {
       let persistedId = editingId;
       if (editingId && isMongoObjectId(editingId)) {
-        const updated = await actualizarCita(editingId, payload);
+        const updated = await actualizarCita(editingId, payload, ADMIN_CITA_CAPTCHA_BYPASS);
         if (updated.success === false) {
           throw new Error(updated.message || "No se pudo actualizar la cita.");
         }
       } else {
-        const created = await crearCita(payload);
+        const created = await crearCita(payload, ADMIN_CITA_CAPTCHA_BYPASS);
         if (!created.success || !created.data) {
           throw new Error(created.success === false ? created.message : "No se pudo crear la cita.");
         }

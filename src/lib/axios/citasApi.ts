@@ -159,11 +159,22 @@ export const agendarCita = async (
   return normalizeCreatedCitaResponse(response.data, response.status);
 };
 
+/** Bypass de captcha para acciones internas del panel admin (sesión JWT). */
+export const ADMIN_CITA_CAPTCHA_BYPASS = "admin-session";
+
+const captchaTokenHeaders = (captchaToken?: string) => {
+  const token = captchaToken?.trim() || ADMIN_CITA_CAPTCHA_BYPASS;
+  return { "captcha-token": token };
+};
+
 export const crearCita = async (
   data: Record<string, unknown>,
+  captchaToken: string = ADMIN_CITA_CAPTCHA_BYPASS,
 ): Promise<ApiResponse<Record<string, unknown>>> => {
-  // Creación desde admin: viaja con JWT (sin skipAuthToken).
-  const response = await axiosInstance.post<unknown>("/api/citas/agregarCita", data);
+  // Creación desde admin: JWT + header captcha-token de bypass interno.
+  const response = await axiosInstance.post<unknown>("/api/citas/agregarCita", data, {
+    headers: captchaTokenHeaders(captchaToken),
+  });
   return normalizeCreatedCitaResponse(response.data, response.status);
 };
 
@@ -205,13 +216,17 @@ export const obtenerHorariosOcupados = async (): Promise<string[]> => {
 export const actualizarCita = async (
   id: string,
   data: Record<string, unknown>,
+  captchaToken: string = ADMIN_CITA_CAPTCHA_BYPASS,
 ): Promise<ApiResponse<Record<string, unknown>>> => {
   const endpoints = [`/api/citas/${id}/actualizarDatos`, `/api/citas/actualizarCita/${id}`, `/api/citas/${id}`];
   let lastError: unknown;
+  const headers = captchaTokenHeaders(captchaToken);
 
   for (const endpoint of endpoints) {
     try {
-      const response = await axiosInstance.put<ApiResponse<Record<string, unknown>>>(endpoint, data);
+      const response = await axiosInstance.put<ApiResponse<Record<string, unknown>>>(endpoint, data, {
+        headers,
+      });
       return response.data;
     } catch (error) {
       lastError = error;
