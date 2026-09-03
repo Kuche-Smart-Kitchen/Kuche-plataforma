@@ -29,6 +29,52 @@ const publicCitaRequestConfig: AxiosRequestConfig = {
   skipAuthRedirect: true,
 } as AxiosRequestConfig;
 
+export const extractCitaRecord = (payload: unknown): Record<string, unknown> | null => {
+  if (!payload || typeof payload !== "object") return null;
+
+  const record = payload as Record<string, unknown>;
+  const nestedCandidates = [record.data, record.cita, record.result];
+  for (const candidate of nestedCandidates) {
+    if (Array.isArray(candidate) && candidate[0] && typeof candidate[0] === "object") {
+      return candidate[0] as Record<string, unknown>;
+    }
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+      return candidate as Record<string, unknown>;
+    }
+  }
+
+  if (record._id || record.id || record.nombreCliente || record.fechaAgendada) {
+    return record;
+  }
+
+  return null;
+};
+
+const normalizeCreatedCitaResponse = (
+  payload: unknown,
+  httpStatus: number,
+): ApiResponse<Record<string, unknown>> => {
+  const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : null;
+  const explicitFailure = record?.success === false;
+  const extracted = extractCitaRecord(payload) ?? {};
+  const success = !explicitFailure && (httpStatus === 201 || httpStatus === 200 || record?.success === true);
+
+  if (success) {
+    return {
+      success: true,
+      data: extracted,
+      message: typeof record?.message === "string" ? record.message : undefined,
+    };
+  }
+
+  return {
+    success: false,
+    message:
+      (typeof record?.message === "string" && record.message) ||
+      "No fue posible guardar la cita",
+  };
+};
+
 const normalizeCitaListResponse = (payload: unknown): Record<string, unknown>[] => {
   if (Array.isArray(payload)) {
     return payload as Record<string, unknown>[];
@@ -76,8 +122,20 @@ const requestWithFallback = async <T>(
 };
 
 export const obtenerTodasLasCitas = async (): Promise<ApiResponse<Record<string, unknown>[]>> => {
-  const response = await axiosInstance.get<unknown>("/api/citas/admin/getAllCitas");
-  const normalized = normalizeCitaListResponse(response.data);
+  // Ruta admin autenticada: el interceptor de axios adjunta el JWT (Bearer).
+  const response = await axiosInstance.get<unknown>("/api/citas/getAllCitas");
+  const payload = response.data;
+  const normalized = normalizeCitaListResponse(payload);
+
+  if (payload && typeof payload === "object" && (payload as { success?: boolean }).success === false) {
+    return {
+      success: false,
+      message:
+        (typeof (payload as { message?: unknown }).message === "string" &&
+          (payload as { message: string }).message) ||
+        "No se pudieron cargar las citas",
+    };
+  }
 
   return {
     success: true,
@@ -89,7 +147,7 @@ export const agendarCita = async (
   data: AgendarCitaPayload,
   captchaToken?: string,
 ): Promise<ApiResponse<Record<string, unknown>>> => {
-  const response = await axiosInstance.post<ApiResponse<Record<string, unknown>>>('/api/citas/agregarCita', data, {
+  const response = await axiosInstance.post<unknown>("/api/citas/agregarCita", data, {
     ...publicCitaRequestConfig,
     headers: captchaToken
       ? {
@@ -98,16 +156,15 @@ export const agendarCita = async (
       : undefined,
   });
 
-  return response.data;
+  return normalizeCreatedCitaResponse(response.data, response.status);
 };
 
 export const crearCita = async (
   data: Record<string, unknown>,
 ): Promise<ApiResponse<Record<string, unknown>>> => {
-  const response = await axiosInstance.post<ApiResponse<Record<string, unknown>>>('/api/citas/agregarCita', data, {
-    ...publicCitaRequestConfig,
-  });
-  return response.data as ApiResponse<Record<string, unknown>>;
+  // Creación desde admin: viaja con JWT (sin skipAuthToken).
+  const response = await axiosInstance.post<unknown>("/api/citas/agregarCita", data);
+  return normalizeCreatedCitaResponse(response.data, response.status);
 };
 
 export const obtenerDisponibilidadDia = async (

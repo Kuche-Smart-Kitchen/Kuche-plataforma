@@ -6,6 +6,7 @@ import Captcha from "@/components/ui/Captcha";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { agendarCita, obtenerDisponibilidadDia } from "@/lib/axios/citasApi";
+import { notifyWorkflowOfCitaCreated } from "@/lib/cita-kanban-sync";
 
 const WEEK_DAYS = ["L", "M", "M", "J", "V", "S", "D"];
 const MONTH_NAMES = [
@@ -286,9 +287,55 @@ export default function BookingSection() {
 
     try {
       const response = await agendarCita(payload, captchaToken);
+      const createdCita = response.success ? response.data : undefined;
 
-      if (!response.success || !response.data) {
-        throw new Error(response.message || "No fue posible guardar la cita.");
+      if (!response.success || !createdCita) {
+        throw new Error(
+          (response.success ? undefined : response.message) || "No fue posible guardar la cita.",
+        );
+      }
+
+      const createdId = String(createdCita._id ?? createdCita.id ?? "");
+      notifyWorkflowOfCitaCreated({
+        id: createdId || undefined,
+        nombreCliente: payload.nombreCliente,
+        fechaAgendada: payload.fechaAgendada,
+        ubicacion: payload.ubicacion,
+        notes: payload.informacionAdicional,
+      });
+
+      if (selectedDate) {
+        try {
+          const availability = await obtenerDisponibilidadDia(getDateKey(selectedDate));
+          if (availability.success) {
+            const appointments = (availability.horariosOcupados ?? []).reduce<ExistingAppointment[]>(
+              (accumulator, time) => {
+                const startMinutes = parseTimeToMinutes(time);
+                if (!Number.isFinite(startMinutes)) {
+                  return accumulator;
+                }
+                accumulator.push({
+                  dateKey: getDateKey(selectedDate),
+                  startMinutes,
+                  endMinutes: Math.min(startMinutes + SLOT_DURATION_MINUTES, 24 * 60),
+                });
+                return accumulator;
+              },
+              [],
+            );
+            setExistingAppointments(appointments);
+          }
+        } catch {
+          const startMinutes = parseTimeToMinutes(selectedTime);
+          setExistingAppointments((prev) => [
+            ...prev,
+            {
+              dateKey: getDateKey(selectedDate),
+              startMinutes,
+              endMinutes: Math.min(startMinutes + SLOT_DURATION_MINUTES, 24 * 60),
+            },
+          ]);
+        }
       }
 
       setFormMessage("Listo. Te contactaremos para confirmar tu visita.");

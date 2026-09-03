@@ -1,13 +1,15 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, ChevronLeft, ChevronRight } from "lucide-react";
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
-import { obtenerTodasLasCitas } from "@/lib/axios/citasApi";
 import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
+import { mexicoCityDateTimeToISO, parseFechaAgendadaInMexicoCity, toLocalDateKey } from "@/lib/cita-datetime";
+import { notifyWorkflowOfCitaCreated } from "@/lib/cita-kanban-sync";
+import { actualizarCita, crearCita, obtenerTodasLasCitas } from "@/lib/axios/citasApi";
 
 type AppointmentType =
   | "Levantamiento / Medidas"
@@ -26,6 +28,9 @@ type Appointment = {
   type: AppointmentType;
   assignedTo: string | null;
   status: AppointmentStatus;
+  email?: string;
+  phone?: string;
+  estado?: string;
 };
 
 type TeamMember = {
@@ -47,7 +52,60 @@ const weekDays = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 const formatMonthLabel = (date: Date) =>
   date.toLocaleDateString("es-MX", { month: "long", year: "numeric" });
 
-const toDateInput = (date: Date) => date.toISOString().slice(0, 10);
+const toDateInput = (date: Date) => toLocalDateKey(date);
+
+const isMongoObjectId = (value: string) => /^[a-fA-F0-9]{24}$/.test(value);
+
+const resolveAssignedTo = (value: unknown): string | null => {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (Array.isArray(value) && value.length > 0) {
+    const first = value[0];
+    if (typeof first === "string" && first.trim()) return first.trim();
+    if (first && typeof first === "object" && "nombre" in first) {
+      const nombre = (first as { nombre?: unknown }).nombre;
+      if (typeof nombre === "string" && nombre.trim()) return nombre.trim();
+    }
+    return String(first);
+  }
+  if (value && typeof value === "object" && "nombre" in value) {
+    const nombre = (value as { nombre?: unknown }).nombre;
+    if (typeof nombre === "string" && nombre.trim()) return nombre.trim();
+  }
+  return null;
+};
+
+const mapMongoCitaToAppointment = (cita: Record<string, unknown>, index: number): Appointment => {
+  const { date, time } = parseFechaAgendadaInMexicoCity(cita.fechaAgendada);
+  const estado = typeof cita.estado === "string" ? cita.estado : "programada";
+  const title =
+    typeof cita.informacionAdicional === "string" && cita.informacionAdicional.trim()
+      ? cita.informacionAdicional
+      : "Visita";
+
+  return {
+    id: String(cita._id ?? cita.id ?? `agenda-${index}`),
+    title,
+    client: typeof cita.nombreCliente === "string" ? cita.nombreCliente : "Cliente sin nombre",
+    location: typeof cita.ubicacion === "string" ? cita.ubicacion : "",
+    date,
+    time,
+    type: "Levantamiento / Medidas",
+    assignedTo: resolveAssignedTo(cita.ingenieroAsignado),
+    status: estado === "cancelada" ? "Pendiente" : "Confirmada",
+    email: typeof cita.correoCliente === "string" ? cita.correoCliente : "",
+    phone: typeof cita.telefonoCliente === "string" ? cita.telefonoCliente : "",
+    estado,
+  };
+};
+
+const getPersistErrorMessage = (error: unknown): string => {
+  if (error && typeof error === "object" && "response" in error) {
+    const data = (error as { response?: { data?: { message?: unknown } } }).response?.data;
+    if (typeof data?.message === "string" && data.message.trim()) return data.message;
+  }
+  if (error instanceof Error && error.message) return error.message;
+  return "No fue posible guardar la cita en el backend.";
+};
 
 export default function AgendaPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -60,6 +118,8 @@ export default function AgendaPage() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [formState, setFormState] = useState<Appointment>({
     id: "",
     title: "",
@@ -76,39 +136,33 @@ export default function AgendaPage() {
   useEscapeClose(isModalOpen, () => setIsModalOpen(false));
   useFocusTrap(isModalOpen, modalRef);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [citasResponse] = await Promise.all([obtenerTodasLasCitas(), syncKanbanTasksFromBackend()]);
-        if (citasResponse.success && Array.isArray(citasResponse.data)) {
-          const nextAppointments: Appointment[] = citasResponse.data.map((cita, index) => ({
-            id: String((cita._id as string | undefined) ?? `agenda-${index}`),
-            title: typeof cita.informacionAdicional === "string" ? cita.informacionAdicional : "Visita",
-            client: typeof cita.nombreCliente === "string" ? cita.nombreCliente : "Cliente sin nombre",
-            location: typeof cita.ubicacion === "string" ? cita.ubicacion : "",
-            date: typeof cita.fechaAgendada === "string" ? cita.fechaAgendada.slice(0, 10) : toDateInput(new Date()),
-            time: typeof cita.fechaAgendada === "string" ? cita.fechaAgendada.slice(11, 16) : "09:00",
-            type: "Levantamiento / Medidas",
-            assignedTo:
-              typeof cita.ingenieroAsignado === "string"
-                ? cita.ingenieroAsignado
-                : Array.isArray(cita.ingenieroAsignado) && cita.ingenieroAsignado.length > 0
-                  ? String(cita.ingenieroAsignado[0])
-                  : null,
-            status: typeof cita.estado === "string" && cita.estado === "cancelada" ? "Pendiente" : "Confirmada",
-          }));
-          setAppointments(nextAppointments);
-          if (nextAppointments.length > 0) {
-            setTeamMembers((prev) => prev.length > 0 ? prev : [{ id: "ingeniero", name: "Ingeniero", role: "Asignado" }]);
-          }
-        }
-      } catch {
-        // fallback silencioso
+  const loadAppointments = useCallback(async () => {
+    try {
+      const [citasResponse] = await Promise.all([obtenerTodasLasCitas(), syncKanbanTasksFromBackend()]);
+      if (!citasResponse.success) {
+        console.error("[admin/agenda] obtenerTodasLasCitas respondió sin éxito", citasResponse);
+        return;
       }
-    };
+      if (!Array.isArray(citasResponse.data)) {
+        console.error("[admin/agenda] obtenerTodasLasCitas no devolvió un arreglo de citas", citasResponse);
+        return;
+      }
 
-    void load();
+      const nextAppointments = citasResponse.data.map(mapMongoCitaToAppointment);
+      setAppointments(nextAppointments);
+      if (nextAppointments.length > 0) {
+        setTeamMembers((prev) =>
+          prev.length > 0 ? prev : [{ id: "ingeniero", name: "Ingeniero", role: "Asignado" }],
+        );
+      }
+    } catch (error) {
+      console.error("[admin/agenda] Error de red o autenticación al cargar citas", error);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadAppointments();
+  }, [loadAppointments]);
 
   useEffect(() => {
     if (!isModalOpen) {
@@ -157,6 +211,7 @@ export default function AgendaPage() {
 
   const openNewModal = (date: string) => {
     setEditingId(null);
+    setSaveError(null);
     setFormState({
       id: "",
       title: "",
@@ -173,31 +228,78 @@ export default function AgendaPage() {
 
   const openEditModal = (appointment: Appointment) => {
     setEditingId(appointment.id);
+    setSaveError(null);
     setFormState(appointment);
     setIsModalOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formState.title.trim() || !formState.client.trim() || !formState.date || !formState.time) {
       return;
     }
     const normalizedStatus =
       formState.assignedTo && formState.status === "Pendiente" ? "Confirmada" : formState.status;
-    if (editingId) {
-      setAppointments((prev) =>
-        prev.map((item) =>
-          item.id === editingId ? { ...formState, id: editingId, status: normalizedStatus } : item,
-        ),
-      );
-    } else {
-      const newAppointment: Appointment = {
+    const fechaAgendada = mexicoCityDateTimeToISO(formState.date, formState.time);
+    const payload: Record<string, unknown> = {
+      nombreCliente: formState.client.trim(),
+      correoCliente: formState.email?.trim() || "pendiente@kuche.local",
+      telefonoCliente: formState.phone?.trim() || "0000000000",
+      ubicacion: formState.location.trim() || undefined,
+      fechaAgendada,
+      informacionAdicional: formState.title.trim(),
+      estado: normalizedStatus === "Pendiente" ? "programada" : (formState.estado ?? "programada"),
+      ingenieroAsignado: formState.assignedTo?.trim() || undefined,
+    };
+
+    setIsSaving(true);
+    setSaveError(null);
+
+    try {
+      let persistedId = editingId;
+      if (editingId && isMongoObjectId(editingId)) {
+        const updated = await actualizarCita(editingId, payload);
+        if (updated.success === false) {
+          throw new Error(updated.message || "No se pudo actualizar la cita.");
+        }
+      } else {
+        const created = await crearCita(payload);
+        if (!created.success || !created.data) {
+          throw new Error(created.success === false ? created.message : "No se pudo crear la cita.");
+        }
+        persistedId = String(created.data._id ?? created.data.id ?? `a${Date.now().toString(36)}`);
+      }
+
+      const nextAppointment: Appointment = {
         ...formState,
+        id: persistedId ?? `a${Date.now().toString(36)}`,
         status: normalizedStatus,
-        id: `a${Date.now().toString(36)}`,
       };
-      setAppointments((prev) => [...prev, newAppointment]);
+
+      setAppointments((prev) => {
+        if (editingId) {
+          return prev.map((item) => (item.id === editingId ? nextAppointment : item));
+        }
+        return [...prev, nextAppointment];
+      });
+
+      notifyWorkflowOfCitaCreated({
+        id: nextAppointment.id,
+        nombreCliente: nextAppointment.client,
+        fechaAgendada,
+        ubicacion: nextAppointment.location,
+        notes: nextAppointment.title,
+        assignedTo: nextAppointment.assignedTo ? [nextAppointment.assignedTo] : undefined,
+      });
+
+      void syncKanbanTasksFromBackend();
+      void loadAppointments();
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error("[admin/agenda] No se pudo persistir la cita", error);
+      setSaveError(getPersistErrorMessage(error));
+    } finally {
+      setIsSaving(false);
     }
-    setIsModalOpen(false);
   };
 
   const handleDelete = () => {
@@ -457,7 +559,8 @@ export default function AgendaPage() {
                 <button
                   type="button"
                   onClick={handleDelete}
-                  className="rounded-2xl border border-rose-200 px-4 py-2 text-xs font-semibold text-rose-600"
+                  disabled={isSaving}
+                  className="rounded-2xl border border-rose-200 px-4 py-2 text-xs font-semibold text-rose-600 disabled:opacity-60"
                 >
                   Eliminar cita
                 </button>
@@ -468,19 +571,24 @@ export default function AgendaPage() {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="rounded-2xl border border-gray-200 bg-white px-5 py-2 text-xs font-semibold text-gray-600"
+                  disabled={isSaving}
+                  className="rounded-2xl border border-gray-200 bg-white px-5 py-2 text-xs font-semibold text-gray-600 disabled:opacity-60"
                 >
                   Cancelar
                 </button>
                 <button
                   type="button"
-                  onClick={handleSave}
-                  className="rounded-2xl bg-[#8B1C1C] px-5 py-2 text-xs font-semibold text-white"
+                  onClick={() => void handleSave()}
+                  disabled={isSaving}
+                  className="rounded-2xl bg-[#8B1C1C] px-5 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  {editingId ? "Guardar cambios" : "Guardar cita"}
+                  {isSaving ? "Guardando..." : editingId ? "Guardar cambios" : "Guardar cita"}
                 </button>
               </div>
             </div>
+            {saveError ? (
+              <p className="mt-3 text-xs font-semibold text-red-600">{saveError}</p>
+            ) : null}
           </div>
         </div>
       ) : null}

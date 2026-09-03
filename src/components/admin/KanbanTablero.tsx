@@ -32,6 +32,7 @@ import { syncSeguimientoEstadoFromKanbanConfirm } from "@/lib/seguimiento-projec
 import {
   getTasksFromLocalStorage,
   kanbanColumns,
+  kanbanTasksUpdatedEventName,
   initialKanbanTasks,
   notifyKanbanTasksUpdated,
   syncSeguimientoProjectKanbanStage,
@@ -441,6 +442,17 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     return () => {
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [hydrateAndApplyTasks]);
+
+  useEffect(() => {
+    const refreshFromLocalNotification = () => {
+      hydrateAndApplyTasks(getTasksFromLocalStorage(), false);
+    };
+
+    window.addEventListener(kanbanTasksUpdatedEventName, refreshFromLocalNotification);
+    return () => {
+      window.removeEventListener(kanbanTasksUpdatedEventName, refreshFromLocalNotification);
     };
   }, [hydrateAndApplyTasks]);
 
