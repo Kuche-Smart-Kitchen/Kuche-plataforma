@@ -18,6 +18,7 @@ import { dueDateToSortTimestamp } from "@/lib/kanban-due-datetime";
 import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import {
   getTasksFromLocalStorage,
+  isDesignPendingAdminApproval,
   kanbanTasksUpdatedEventName,
   type KanbanTask,
   type TaskFile,
@@ -137,22 +138,13 @@ const isUnassignedKanbanTask = (task: Pick<DashboardTask, "assignedTo">) => {
   return assignees.length === 0 || assignees.every((name) => !name?.trim() || name === "Sin asignar");
 };
 
-const hasPendingDesignFiles = (task: Pick<DashboardTask, "files">) =>
-  Boolean(task.files && task.files.length > 0);
-
-const isDesignWaitingAdminApproval = (task: DashboardTask) =>
-  task.stage === "disenos" &&
-  hasPendingDesignFiles(task) &&
-  task.designApprovedByAdmin !== true &&
-  isActiveKanbanTask(task);
-
 const countPendingCitasTasks = (tasks: DashboardTask[]) =>
   tasks.filter(
     (task) => task.stage === "citas" && isActiveKanbanTask(task) && !task.citaFinished,
   ).length;
 
 const countDesignsPendingApproval = (tasks: DashboardTask[]) =>
-  tasks.filter(isDesignWaitingAdminApproval).length;
+  tasks.filter(isDesignPendingAdminApproval).length;
 
 type AttentionItem = {
   id: string;
@@ -207,7 +199,7 @@ const buildAttentionItems = (
     }));
 
   const reviewDesigns = tasks
-    .filter(isDesignWaitingAdminApproval)
+    .filter(isDesignPendingAdminApproval)
     .map((task) => ({
       id: `design-${task.id}`,
       label: `Diseño listo para aprobar: ${task.project || task.title || "Proyecto sin título"}`,

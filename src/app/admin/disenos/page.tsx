@@ -21,6 +21,7 @@ import {
   kanbanStorageKey,
   kanbanTasksUpdatedEventName,
   notifyKanbanTasksUpdated,
+  isTaskListedInAdminDisenos,
   type KanbanTask,
   type TaskFile,
 } from "@/lib/kanban";
@@ -84,7 +85,7 @@ function DesignFileDownloadRow({ file }: { file: TaskFile }) {
 
 function designProjectsFromTasks(tasks: KanbanTask[]): DesignProject[] {
   return tasks
-    .filter((t) => t.stage === "disenos" && t.files && t.files.length > 0)
+    .filter(isTaskListedInAdminDisenos)
     .map((task) => {
       const firstImage = task.files!.find((f) => f.type === "render" && f.src);
       const image = firstImage?.src ?? null;

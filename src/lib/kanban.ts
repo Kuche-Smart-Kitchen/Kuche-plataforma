@@ -126,6 +126,28 @@ export function getTaskCardSubtitle(task: Pick<KanbanTask, "project" | "title">)
   return trimmedTitle;
 }
 
+type DesignListableTask = {
+  stage?: string;
+  files?: TaskFile[];
+  designApprovedByAdmin?: boolean;
+};
+
+/**
+ * Misma condición que `/admin/disenos` (`designProjectsFromTasks`):
+ * etapa diseños y al menos un archivo en `files`.
+ */
+export function isTaskListedInAdminDisenos(task: DesignListableTask): boolean {
+  return task.stage === "disenos" && Boolean(task.files && task.files.length > 0);
+}
+
+/**
+ * Misma condición que el filtro "Pendientes" de `/admin/disenos`
+ * (`designApprovedByAdmin` falsy → status "Pendiente").
+ */
+export function isDesignPendingAdminApproval(task: DesignListableTask): boolean {
+  return isTaskListedInAdminDisenos(task) && !task.designApprovedByAdmin;
+}
+
 /** Lista efectiva de cotizaciones preliminares (array nuevo o migrado desde preliminarData). */
 export function getPreliminarList(task: KanbanTask): PreliminarData[] {
   if (task.preliminarCotizaciones && task.preliminarCotizaciones.length > 0) {
