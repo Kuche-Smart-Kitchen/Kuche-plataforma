@@ -19,6 +19,7 @@ import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import {
   getTasksFromLocalStorage,
   isDesignPendingAdminApproval,
+  isKanbanTaskMarkedDeleted,
   kanbanTasksUpdatedEventName,
   type KanbanTask,
   type TaskFile,
@@ -113,6 +114,7 @@ const isTaskDiscarded = (task: { followUpStatus?: string }) => (task.followUpSta
 
 type DashboardTask = {
   id: string;
+  sourceId?: string;
   title: string;
   project: string;
   stage: string;
@@ -130,8 +132,18 @@ type DashboardTask = {
   files?: TaskFile[];
 };
 
-const isActiveKanbanTask = (task: Pick<DashboardTask, "status" | "followUpStatus">) =>
-  !isTaskDiscarded(task) && (task.status ?? "") !== "completada";
+const isFollowUpOpenOnBoard = (task: Pick<DashboardTask, "followUpStatus">) => {
+  const followUp = (task.followUpStatus ?? "pendiente").toLowerCase();
+  return followUp === "pendiente";
+};
+
+const isActiveKanbanTask = (
+  task: Pick<DashboardTask, "id" | "sourceId" | "stage" | "followUpStatus">,
+) => {
+  if (isTaskDiscarded(task) || isKanbanTaskMarkedDeleted(task)) return false;
+  if ((task.stage ?? "") === "contrato") return isFollowUpOpenOnBoard(task);
+  return true;
+};
 
 const isUnassignedKanbanTask = (task: Pick<DashboardTask, "assignedTo">) => {
   const assignees = task.assignedTo ?? [];
@@ -157,6 +169,7 @@ const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 const mapKanbanToDashboardTasks = (workflowTasks: KanbanTask[]): DashboardTask[] =>
   workflowTasks.map((task) => ({
     id: task.id,
+    sourceId: task.sourceId,
     title: task.title,
     project: task.project,
     stage: task.stage,
