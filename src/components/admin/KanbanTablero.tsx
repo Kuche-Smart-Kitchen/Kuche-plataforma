@@ -24,6 +24,7 @@ import {
   syncCitaFinishWithBackend,
   syncCitaStartWithBackend,
   syncTaskAssigneesWithBackend,
+  syncTaskDeleteWithBackend,
   syncTaskFollowUpWithBackend,
   syncTaskPatchWithBackend,
   syncTaskStageWithBackend,
@@ -34,7 +35,10 @@ import {
   kanbanColumns,
   kanbanTasksUpdatedEventName,
   initialKanbanTasks,
+  mergeKanbanTaskLists,
   notifyKanbanTasksUpdated,
+  rememberDeletedKanbanTask,
+  filterDeletedKanbanTasks,
   syncSeguimientoProjectKanbanStage,
   type KanbanTask,
   type TaskFile,
@@ -289,10 +293,11 @@ const hydrateKanbanTasksFromLocalStorage = (
   if (!Array.isArray(rawTasks) || rawTasks.length === 0) {
     return { tasks: rawTasks, changed: false };
   }
-  const normalized = rawTasks.map((task) => normalizeTask(task));
-  const merged = mergeTasks(normalized);
+  const filtered = filterDeletedKanbanTasks(rawTasks);
+  const normalized = filtered.map((task) => normalizeTask(task));
+  const merged = mergeKanbanTaskLists(mergeTasks(normalized), []);
   const { tasks, changed } = autoAdvanceCompletedTasks(merged);
-  return { tasks, changed };
+  return { tasks, changed: changed || filtered.length !== rawTasks.length };
 };
 
 const KANBAN_PERSIST_ERROR =
@@ -816,6 +821,11 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   };
 
   const deleteTask = (taskId: string) => {
+    const taskSnapshot = kanbanTasksRef.current.find((task) => task.id === taskId);
+    if (taskSnapshot) {
+      rememberDeletedKanbanTask(taskSnapshot);
+      void syncTaskDeleteWithBackend(taskSnapshot);
+    }
     removeTask(taskId);
   };
 

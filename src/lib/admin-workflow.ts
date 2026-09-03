@@ -1,6 +1,7 @@
 import { authApi } from "@/lib/axios";
 import {
   asignarIngenierosCita,
+  eliminarCita,
   finalizarCita,
   iniciarCita,
 } from "@/lib/axios/citasApi";
@@ -12,7 +13,9 @@ import {
   type KanbanItem,
 } from "@/lib/axios/kanbanApi";
 import { actualizarTarea, asignarTrabajadoresTarea, cambiarEtapa } from "@/lib/axios/tareasApi";
+import { fechaAgendadaToKanbanDueDate } from "@/lib/cita-datetime";
 import {
+  filterDeletedKanbanTasks,
   getTasksFromLocalStorage,
   kanbanTasksUpdatedEventName,
   mergeKanbanTaskLists,
@@ -50,9 +53,9 @@ const toTimestamp = (value: unknown): number | undefined => {
 
 const toDueDateString = (value: unknown): string | undefined => {
   if (typeof value !== "string") return undefined;
-  const parsed = Date.parse(value);
-  if (!Number.isFinite(parsed)) return value;
-  return new Date(parsed).toISOString().slice(0, 16);
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return fechaAgendadaToKanbanDueDate(trimmed);
 };
 
 const normalizeStage = (value: unknown): TaskStage => {
@@ -224,20 +227,16 @@ export async function fetchBackendKanbanTasks(): Promise<KanbanTask[]> {
     .flatMap((response) => response.data)
     .map(mapKanbanItemToTask);
 
-  const unique = new Map<string, KanbanTask>();
-  for (const task of mapped) {
-    unique.set(task.id, task);
-  }
-
-  return Array.from(unique.values());
+  return filterDeletedKanbanTasks(mergeKanbanTaskLists([], mapped));
 }
 
 /** Fusiona tareas del backend con las locales (por id / codigoProyecto) y persiste el resultado. */
 export function mergeBackendKanbanWithLocal(backendTasks: KanbanTask[]): KanbanTask[] {
   const localTasks = getTasksFromLocalStorage();
   const merged = mergeKanbanTaskLists(localTasks, backendTasks);
-  saveKanbanTasksToLocalStorage(merged);
-  return merged;
+  const visible = filterDeletedKanbanTasks(merged);
+  saveKanbanTasksToLocalStorage(visible);
+  return visible;
 }
 
 export async function syncKanbanTasksFromBackend(): Promise<KanbanTask[] | null> {
@@ -409,6 +408,21 @@ export async function syncCitaFinishWithBackend(task: KanbanTask): Promise<boole
     return true;
   } catch (error) {
     console.warn("No se pudo sincronizar finalizacion de cita en backend", { citaId, error });
+    return false;
+  }
+}
+
+/** Notifica borrado al backend cuando hay cita de origen; el tombstone local es la barrera estricta. */
+export async function syncTaskDeleteWithBackend(task: KanbanTask): Promise<boolean> {
+  const sourceType = (task.sourceType ?? "").toLowerCase();
+  const citaId = (task.sourceId ?? task.id)?.trim();
+  if (sourceType !== "cita" || !citaId || !isObjectId(citaId)) return false;
+
+  try {
+    await eliminarCita(citaId);
+    return true;
+  } catch (error) {
+    console.warn("No se pudo eliminar la cita en backend; se mantiene exclusión local.", { citaId, error });
     return false;
   }
 }

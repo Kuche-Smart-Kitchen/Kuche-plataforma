@@ -1,5 +1,6 @@
 import type { LevantamientoDetalle } from "@/lib/levantamiento-catalog";
 import { parseDeliveryWeeksRangeFromLabel } from "@/lib/delivery-weeks";
+import { fechaAgendadaToKanbanDueDate } from "@/lib/cita-datetime";
 
 export type TaskStage = "citas" | "disenos" | "cotizacion" | "contrato";
 
@@ -206,6 +207,7 @@ export const kanbanColumns = [
 export const initialKanbanTasks: KanbanTask[] = [];
 
 export const kanbanStorageKey = "kuche-kanban-tasks";
+export const deletedKanbanTaskIdsStorageKey = "kuche-deleted-task-ids";
 export const activeCitaTaskStorageKey = "kuche-active-cita-task";
 export const citaReturnUrlStorageKey = "kuche-cita-return-url";
 export const activeCotizacionFormalTaskStorageKey = "kuche-active-cotizacion-formal-task";
@@ -226,18 +228,68 @@ export function stripKanbanTasksForStorage(tasks: KanbanTask[]): KanbanTask[] {
 
 /** Persiste en memoria y en localStorage la lista vigente del tablero. */
 export function saveKanbanTasksToLocalStorage(tasks: KanbanTask[]): boolean {
-  writePersistedKanbanTasks(tasks);
+  const visible = filterDeletedKanbanTasks(tasks);
+  writePersistedKanbanTasks(visible);
   if (typeof window === "undefined") return true;
 
   try {
     window.localStorage.setItem(
       kanbanStorageKey,
-      JSON.stringify(stripKanbanTasksForStorage(tasks)),
+      JSON.stringify(stripKanbanTasksForStorage(visible)),
     );
     return true;
   } catch {
     return false;
   }
+}
+
+const readDeletedKanbanTaskIds = (): string[] => {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(deletedKanbanTaskIdsStorageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  } catch {
+    return [];
+  }
+};
+
+const persistDeletedKanbanTaskIds = (ids: string[]) => {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(deletedKanbanTaskIdsStorageKey, JSON.stringify(ids));
+  } catch {
+    // Si el almacenamiento está lleno, la exclusión en memoria del tablero sigue aplicando en esta sesión.
+  }
+};
+
+export function getDeletedKanbanTaskIdSet(): Set<string> {
+  return new Set(readDeletedKanbanTaskIds().map((id) => id.trim()).filter(Boolean));
+}
+
+export function isKanbanTaskMarkedDeleted(task: Pick<KanbanTask, "id" | "sourceId">): boolean {
+  const deleted = getDeletedKanbanTaskIdSet();
+  const id = task.id?.trim();
+  const sourceId = task.sourceId?.trim();
+  if (id && deleted.has(id)) return true;
+  if (sourceId && deleted.has(sourceId)) return true;
+  return false;
+}
+
+export function filterDeletedKanbanTasks(tasks: KanbanTask[]): KanbanTask[] {
+  return tasks.filter((task) => !isKanbanTaskMarkedDeleted(task));
+}
+
+/** Marca una tarjeta como eliminada para que el backend no la resucite en F5/merge. */
+export function rememberDeletedKanbanTask(task: Pick<KanbanTask, "id" | "sourceId">): void {
+  const deleted = getDeletedKanbanTaskIdSet();
+  const id = task.id?.trim();
+  const sourceId = task.sourceId?.trim();
+  if (id) deleted.add(id);
+  if (sourceId) deleted.add(sourceId);
+  persistDeletedKanbanTaskIds(Array.from(deleted));
 }
 
 const readKanbanTasksFromBrowserStorage = (): KanbanTask[] => {
@@ -255,8 +307,48 @@ const readKanbanTasksFromBrowserStorage = (): KanbanTask[] => {
 
 export const kanbanTasksUpdatedEventName = "kuche:kanban-tasks-updated";
 
+const GENERIC_CLIENT_NAMES = new Set([
+  "",
+  "proyecto sin nombre",
+  "cliente sin nombre",
+  "sin nombre",
+  "tarea",
+]);
+
+const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+
 function normalizeProjectCodeForMatch(code: string): string {
   return code.trim().toUpperCase().replace(/^K-?/, "");
+}
+
+function normalizeClientName(value?: string): string {
+  return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function dueDateTimestamp(value?: string): number | null {
+  if (!value?.trim()) return null;
+  const parsed = Date.parse(value);
+  if (Number.isFinite(parsed)) return parsed;
+  const fallback = new Date(value);
+  return Number.isNaN(fallback.getTime()) ? null : fallback.getTime();
+}
+
+/** Misma cita si las fechas distan ≤ 6 h (UTC vs America/Mexico_City). */
+function dueDatesLikelySameAppointment(left?: string, right?: string): boolean {
+  const leftTs = dueDateTimestamp(left);
+  const rightTs = dueDateTimestamp(right);
+  if (leftTs == null || rightTs == null) return false;
+  return Math.abs(leftTs - rightTs) <= SIX_HOURS_MS + 60_000;
+}
+
+function namesLikelySameClient(left: KanbanTask, right: KanbanTask): boolean {
+  const leftNames = [left.project, left.title]
+    .map(normalizeClientName)
+    .filter((name) => name && !GENERIC_CLIENT_NAMES.has(name));
+  const rightNames = [right.project, right.title]
+    .map(normalizeClientName)
+    .filter((name) => name && !GENERIC_CLIENT_NAMES.has(name));
+  return leftNames.some((name) => rightNames.includes(name));
 }
 
 export function kanbanTaskMergeKey(task: KanbanTask): string {
@@ -267,6 +359,66 @@ export function kanbanTaskMergeKey(task: KanbanTask): string {
   return `id:${task.id}`;
 }
 
+function collectKanbanIdentityKeys(task: KanbanTask): string[] {
+  const keys = new Set<string>();
+  const id = task.id?.trim();
+  const sourceId = task.sourceId?.trim();
+  const code = task.codigoProyecto?.trim();
+  if (id) {
+    keys.add(`id:${id}`);
+    keys.add(`src:${id}`);
+  }
+  if (sourceId) {
+    keys.add(`src:${sourceId}`);
+    keys.add(`id:${sourceId}`);
+  }
+  if (code) keys.add(`code:${normalizeProjectCodeForMatch(code)}`);
+  return Array.from(keys);
+}
+
+function uniqueTasksFromIndex(index: Map<string, KanbanTask>): KanbanTask[] {
+  const seen = new Set<KanbanTask>();
+  const unique: KanbanTask[] = [];
+  for (const task of index.values()) {
+    if (seen.has(task)) continue;
+    seen.add(task);
+    unique.push(task);
+  }
+  return unique;
+}
+
+function findMatchingKanbanTask(
+  index: Map<string, KanbanTask>,
+  task: KanbanTask,
+): KanbanTask | undefined {
+  for (const key of collectKanbanIdentityKeys(task)) {
+    const found = index.get(key);
+    if (found) return found;
+  }
+
+  for (const existing of uniqueTasksFromIndex(index)) {
+    if (!namesLikelySameClient(existing, task)) continue;
+    if (dueDatesLikelySameAppointment(existing.dueDate, task.dueDate)) {
+      return existing;
+    }
+  }
+
+  return undefined;
+}
+
+function registerKanbanTask(index: Map<string, KanbanTask>, task: KanbanTask) {
+  for (const key of collectKanbanIdentityKeys(task)) {
+    index.set(key, task);
+  }
+}
+
+function replaceKanbanTask(index: Map<string, KanbanTask>, previous: KanbanTask, next: KanbanTask) {
+  for (const [key, value] of Array.from(index.entries())) {
+    if (value === previous) index.delete(key);
+  }
+  registerKanbanTask(index, next);
+}
+
 const STAGE_RANK: Record<TaskStage, number> = {
   citas: 0,
   disenos: 1,
@@ -274,65 +426,88 @@ const STAGE_RANK: Record<TaskStage, number> = {
   contrato: 3,
 };
 
+function toLocalDueDate(value?: string): string | undefined {
+  if (!value?.trim()) return undefined;
+  return fechaAgendadaToKanbanDueDate(value.trim());
+}
+
+function unifyKanbanTasks(local: KanbanTask, remote: KanbanTask): KanbanTask {
+  const stage =
+    STAGE_RANK[local.stage] >= STAGE_RANK[remote.stage] ? local.stage : remote.stage;
+  const remoteAssigned = (remote.assignedTo ?? []).filter((name) => name && name !== "Sin asignar");
+
+  return {
+    ...local,
+    ...remote,
+    id: remote.id || local.id,
+    sourceId: remote.sourceId ?? local.sourceId,
+    sourceType: remote.sourceType ?? local.sourceType,
+    assignedToIds: remote.assignedToIds?.length ? remote.assignedToIds : local.assignedToIds,
+    assignedTo: remoteAssigned.length > 0 ? remote.assignedTo : local.assignedTo?.length ? local.assignedTo : remote.assignedTo,
+    stage,
+    files: local.files?.length ? local.files : remote.files,
+    notes: local.notes?.trim() ? local.notes : remote.notes,
+    preliminarData: local.preliminarData ?? remote.preliminarData,
+    preliminarCotizaciones: local.preliminarCotizaciones?.length
+      ? local.preliminarCotizaciones
+      : remote.preliminarCotizaciones,
+    cotizacionFormalData: local.cotizacionFormalData ?? remote.cotizacionFormalData,
+    cotizacionesFormales: local.cotizacionesFormales?.length
+      ? local.cotizacionesFormales
+      : remote.cotizacionesFormales,
+    citaStarted: Boolean(local.citaStarted || remote.citaStarted),
+    citaFinished: Boolean(local.citaFinished || remote.citaFinished),
+    codigoProyecto: local.codigoProyecto ?? remote.codigoProyecto,
+    location: local.location?.trim() ? local.location : remote.location,
+    mapsUrl: local.mapsUrl?.trim() ? local.mapsUrl : remote.mapsUrl,
+    followUpStatus: local.followUpStatus ?? remote.followUpStatus,
+    followUpEnteredAt: local.followUpEnteredAt ?? remote.followUpEnteredAt,
+    designApprovedByAdmin: Boolean(local.designApprovedByAdmin || remote.designApprovedByAdmin),
+    designApprovedByClient: Boolean(local.designApprovedByClient || remote.designApprovedByClient),
+    dueDate: toLocalDueDate(remote.dueDate ?? local.dueDate),
+    createdAt: local.createdAt ?? remote.createdAt,
+  };
+}
+
+function upsertKanbanTask(
+  index: Map<string, KanbanTask>,
+  task: KanbanTask,
+  preferIncoming: boolean,
+) {
+  const visible = isKanbanTaskMarkedDeleted(task) ? null : task;
+  if (!visible) return;
+
+  const match = findMatchingKanbanTask(index, visible);
+  if (!match) {
+    registerKanbanTask(index, { ...visible, dueDate: toLocalDueDate(visible.dueDate) ?? visible.dueDate });
+    return;
+  }
+
+  const unified = preferIncoming ? unifyKanbanTasks(match, visible) : unifyKanbanTasks(visible, match);
+  replaceKanbanTask(index, match, unified);
+}
+
 /** Combina tarjetas locales con datos del backend sin perder trabajo offline. */
 export function mergeKanbanTaskLists(local: KanbanTask[], incoming: KanbanTask[]): KanbanTask[] {
-  const merged = new Map<string, KanbanTask>();
+  const index = new Map<string, KanbanTask>();
 
-  for (const task of local) {
-    merged.set(kanbanTaskMergeKey(task), task);
+  for (const task of filterDeletedKanbanTasks(local)) {
+    upsertKanbanTask(index, task, false);
+  }
+  for (const task of filterDeletedKanbanTasks(incoming)) {
+    upsertKanbanTask(index, task, true);
   }
 
-  for (const task of incoming) {
-    const key = kanbanTaskMergeKey(task);
-    const existing = merged.get(key);
-    if (!existing) {
-      merged.set(key, task);
-      continue;
-    }
-
-    const stage =
-      STAGE_RANK[existing.stage] >= STAGE_RANK[task.stage] ? existing.stage : task.stage;
-
-    merged.set(key, {
-      ...task,
-      ...existing,
-      sourceId: task.sourceId ?? existing.sourceId,
-      sourceType: task.sourceType ?? existing.sourceType,
-      assignedToIds: task.assignedToIds?.length ? task.assignedToIds : existing.assignedToIds,
-      stage,
-      preliminarData: existing.preliminarData ?? task.preliminarData,
-      preliminarCotizaciones: existing.preliminarCotizaciones?.length
-        ? existing.preliminarCotizaciones
-        : task.preliminarCotizaciones,
-      cotizacionFormalData: existing.cotizacionFormalData ?? task.cotizacionFormalData,
-      cotizacionesFormales: existing.cotizacionesFormales?.length
-        ? existing.cotizacionesFormales
-        : task.cotizacionesFormales,
-      citaStarted: Boolean(existing.citaStarted || task.citaStarted),
-      citaFinished: Boolean(existing.citaFinished || task.citaFinished),
-      codigoProyecto: existing.codigoProyecto ?? task.codigoProyecto,
-      location: existing.location?.trim() ? existing.location : task.location,
-      followUpStatus: existing.followUpStatus ?? task.followUpStatus,
-      designApprovedByAdmin: existing.designApprovedByAdmin || task.designApprovedByAdmin,
-      designApprovedByClient: existing.designApprovedByClient || task.designApprovedByClient,
-    });
-  }
-
-  return Array.from(merged.values());
+  return filterDeletedKanbanTasks(uniqueTasksFromIndex(index));
 }
 
 /** Devuelve la lista vigente del tablero desde memoria o localStorage. */
 export function getTasksFromLocalStorage(): KanbanTask[] {
-  if (runtimeKanbanTasks.length > 0) {
-    return runtimeKanbanTasks;
-  }
-
-  const stored = readKanbanTasksFromBrowserStorage();
-  if (stored.length > 0) {
-    runtimeKanbanTasks = stored;
-  }
-
-  return runtimeKanbanTasks;
+  const source =
+    runtimeKanbanTasks.length > 0 ? runtimeKanbanTasks : readKanbanTasksFromBrowserStorage();
+  const visible = filterDeletedKanbanTasks(source);
+  runtimeKanbanTasks = visible;
+  return visible;
 }
 
 /** Sin persistencia: no-op, se mantiene la firma para no romper llamadores. */
