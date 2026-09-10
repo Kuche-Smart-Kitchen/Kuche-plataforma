@@ -87,3 +87,55 @@ export const obtenerArchivosCliente = async (
     };
   }
 };
+
+export interface SubirArchivoClienteOpciones {
+  tareasId?: string;
+  relacionadoA?: "tarea" | "proyecto";
+  relacionadoId?: string;
+  nivel?: "preliminar" | "final";
+}
+
+export const subirArchivoCliente = async (
+  file: File,
+  clienteId: string,
+  tipo: string,
+  opciones: SubirArchivoClienteOpciones = {},
+): Promise<ApiResponse<ClienteArchivo>> => {
+  const normalizedClienteId = clienteId.trim();
+  if (!normalizedClienteId) {
+    return { success: false, message: "Falta el identificador del cliente para subir el archivo." };
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("tipo", tipo);
+  formData.append("clienteId", normalizedClienteId);
+  if (opciones.tareasId) formData.append("tareasId", opciones.tareasId);
+  if (opciones.relacionadoA) formData.append("relacionadoA", opciones.relacionadoA);
+  if (opciones.relacionadoId) formData.append("relacionadoId", opciones.relacionadoId);
+  if (opciones.nivel) formData.append("nivel", opciones.nivel);
+
+  try {
+    const response = await axiosInstance.post<ApiResponse<ClienteArchivo> & { archivo?: ClienteArchivo }>(
+      "/api/archivos/upload",
+      formData,
+      { headers: { "Content-Type": "multipart/form-data" } } as never,
+    );
+    const payload = response.data;
+    if (!payload.success) return payload;
+
+    const archivo = (payload as { archivo?: ClienteArchivo }).archivo ?? (payload as { data?: ClienteArchivo }).data;
+    if (!archivo) {
+      return { success: false, message: payload.message || "El backend no devolvió el archivo subido." };
+    }
+    return { success: true, message: payload.message, data: archivo };
+  } catch (error) {
+    const axiosError = error as { response?: { data?: { message?: string } } };
+    return {
+      success: false,
+      message:
+        axiosError.response?.data?.message ||
+        (error instanceof Error ? error.message : "No se pudo subir el archivo."),
+    };
+  }
+};

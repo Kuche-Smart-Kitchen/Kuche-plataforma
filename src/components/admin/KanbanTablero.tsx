@@ -18,11 +18,11 @@ import {
 import { DueDateInput } from "@/components/ui/DueDateInput";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { useTareasContext } from "@/contexts/TareasContext";
 import {
   fetchBackendKanbanTasks,
   syncCitaFinishWithBackend,
   syncCitaStartWithBackend,
-  syncTaskAssigneesWithBackend,
   syncTaskFollowUpWithBackend,
   syncTaskPatchWithBackend,
   syncTaskStageWithBackend,
@@ -45,6 +45,7 @@ import {
   getCotizacionesFormalesList,
 } from "@/lib/kanban";
 import { dueDateToSortTimestamp, formatDueDateTimeDisplay } from "@/lib/kanban-due-datetime";
+import { subirArchivoCliente } from "@/lib/axios/archivosClienteApi";
 
 const currentUser = "Valeria";
 
@@ -192,6 +193,8 @@ const normalizeTask = (task: Partial<KanbanTask> & Record<string, unknown>): Kan
     assignedTo,
     assignedToIds,
     project: typeof task.project === "string" ? task.project : "General",
+    clientEmail: typeof task.clientEmail === "string" ? task.clientEmail : undefined,
+    clientPhone: typeof task.clientPhone === "string" ? task.clientPhone : undefined,
     notes: typeof task.notes === "string" ? task.notes : "",
     files: Array.isArray(task.files) ? (task.files as TaskFile[]) : [],
     priority,
@@ -319,6 +322,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     allowDeleteTask = true,
     onAfterDiscard,
   } = props;
+  const { actualizar: actualizarTareaEnBackend, asignarTrabajadores } = useTareasContext();
   const router = useRouter();
   const [viewMode, setViewMode] = useState<"all" | "mine">("all");
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
@@ -331,6 +335,9 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const [dragErrorMessage, setDragErrorMessage] = useState<string | null>(null);
   const [kanbanPersistError, setKanbanPersistError] = useState<string | null>(null);
   const [backendSyncMessage, setBackendSyncMessage] = useState<string | null>(null);
+  const [uploadToast, setUploadToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [savingTask, setSavingTask] = useState(false);
+  const [taskSaveMessage, setTaskSaveMessage] = useState<string | null>(null);
   const [uploadAcceptedDesignsTaskId, setUploadAcceptedDesignsTaskId] = useState<string | null>(null);
   const [dropboxStagingFile, setDropboxStagingFile] = useState<File | null>(null);
   const [dropboxUploading, setDropboxUploading] = useState(false);
@@ -374,6 +381,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     setDropboxStagingFile(null);
     setCotizacionEntregadaTaskId(null);
     setDragErrorMessage(null);
+    setTaskSaveMessage(null);
   }, []);
 
   useEscapeClose(Boolean(activeTaskId), () => setActiveTaskId(null));
@@ -526,8 +534,9 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
     if (!taskSnapshot) return;
 
-    const ok = await syncTaskPatchWithBackend(taskSnapshot, patch);
-    if (!ok) {
+    try {
+      await actualizarTareaEnBackend(taskSnapshot, patch);
+    } catch {
       setBackendSyncMessage("Los cambios se guardaron localmente, pero no se pudo sincronizar con backend.");
       window.setTimeout(() => setBackendSyncMessage(null), 4500);
     }
@@ -679,17 +688,25 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const startCita = async (taskId: string) => {
     const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
     updateTask(taskId, (task) => ({ ...task, citaStarted: true }));
+    let canContinue = true;
     if (taskSnapshot) {
-      const [citaOk, patchOk] = await Promise.all([
-        syncCitaStartWithBackend(taskSnapshot),
-        syncTaskPatchWithBackend(taskSnapshot, { citaStarted: true }),
-      ]);
-      if ((!citaOk && taskSnapshot.sourceType?.toLowerCase() === "cita") || !patchOk) {
+      const isCita = taskSnapshot.sourceType?.toLowerCase() === "cita";
+      const citaOk = isCita ? await syncCitaStartWithBackend(taskSnapshot) : true;
+      const patchOk = isCita
+        ? true
+        : await syncTaskPatchWithBackend(taskSnapshot, { citaStarted: true });
+      if (!citaOk || !patchOk) {
+        canContinue = false;
+        updateTask(taskId, (task) => ({ ...task, citaStarted: taskSnapshot.citaStarted ?? false }));
         setBackendSyncMessage("No se pudo sincronizar el inicio de cita en backend.");
         window.setTimeout(() => setBackendSyncMessage(null), 4500);
       }
     }
-    router.push("/dashboard/Levantamiento-detallado");
+    if (canContinue) router.push(`/dashboard/Levantamiento-detallado?taskId=${encodeURIComponent(taskId)}`);
+  };
+
+  const resumeCita = (taskId: string) => {
+    router.push(`/dashboard/Levantamiento-detallado?taskId=${encodeURIComponent(taskId)}`);
   };
 
   const finishCita = async (taskId: string) => {
@@ -708,12 +725,11 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     }
 
     if (taskSnapshot) {
-      const [finishOk, stageOk, patchOk] = await Promise.all([
-        syncCitaFinishWithBackend(taskSnapshot),
-        syncTaskStageWithBackend(taskSnapshot, "disenos"),
-        syncTaskPatchWithBackend(taskSnapshot, patch),
-      ]);
-      if ((!finishOk && taskSnapshot.sourceType?.toLowerCase() === "cita") || !stageOk || !patchOk) {
+      const isCita = taskSnapshot.sourceType?.toLowerCase() === "cita";
+      const finishOk = isCita ? await syncCitaFinishWithBackend(taskSnapshot) : true;
+      const stageOk = isCita ? true : await syncTaskStageWithBackend(taskSnapshot, "disenos");
+      const patchOk = isCita ? true : await syncTaskPatchWithBackend(taskSnapshot, patch);
+      if (!finishOk || !stageOk || !patchOk) {
         setBackendSyncMessage("La cita terminó localmente, pero no se sincronizó completamente con backend.");
         window.setTimeout(() => setBackendSyncMessage(null), 4500);
       }
@@ -738,30 +754,51 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     }
   };
 
+  const showUploadToast = (type: "success" | "error", message: string) => {
+    setUploadToast({ type, message });
+    window.setTimeout(() => setUploadToast(null), 4500);
+  };
+
   const handleDropboxUpload = async (taskId: string, file: File) => {
-    // TODO: Implementar llamada real a API de Dropbox (subir `file` y validar respuesta).
     const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
-    const patch: Partial<KanbanTask> = {
-      designApprovedByClient: true,
-      stage: "cotizacion",
-      status: "pendiente",
-      citaStarted: false,
-      citaFinished: false,
-    };
+    const clienteId = taskSnapshot?.codigoProyecto?.trim();
+
+    if (!clienteId) {
+      showUploadToast("error", "No se pudo subir el archivo: falta el código de cliente/proyecto de la tarea.");
+      return;
+    }
 
     setDropboxUploading(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 700));
+      const result = await subirArchivoCliente(file, clienteId, "diseno", {
+        tareasId: taskSnapshot?.id,
+        nivel: "final",
+      });
+
+      if (!result.success) {
+        showUploadToast("error", result.message || "No se pudo subir el archivo a Dropbox.");
+        return;
+      }
+
+      const patch: Partial<KanbanTask> = {
+        designApprovedByClient: true,
+        stage: "cotizacion",
+        status: "pendiente",
+        citaStarted: false,
+        citaFinished: false,
+      };
+
       updateTask(taskId, (task) => ({ ...task, ...patch }));
       if (taskSnapshot) {
-        const [patchOk] = await Promise.all([
-          syncTaskPatchWithBackend(taskSnapshot, patch),
-        ]);
+        const patchOk = await syncTaskPatchWithBackend(taskSnapshot, patch);
         if (!patchOk) {
-          setBackendSyncMessage("El diseño fue aceptado localmente, pero no se persistió en backend.");
-          window.setTimeout(() => setBackendSyncMessage(null), 4500);
+          showUploadToast("error", "El diseño se subió, pero no se persistió el avance de la tarea en backend.");
+          setUploadAcceptedDesignsTaskId(null);
+          setDropboxStagingFile(null);
+          return;
         }
       }
+      showUploadToast("success", "Diseño subido a Dropbox correctamente.");
       setUploadAcceptedDesignsTaskId(null);
       setDropboxStagingFile(null);
     } finally {
@@ -819,6 +856,47 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     [activeTaskId, kanbanTasks],
   );
 
+  const activeTaskAssignedNames = useMemo(() => {
+    if (!activeTask) return [];
+    const assignedIds = new Set(activeTask.assignedToIds ?? []);
+    const assignedNames = new Set(activeTask.assignedTo ?? []);
+    return (teamMembers ?? [])
+      .filter((member) => assignedIds.has(member.id) || assignedNames.has(member.name))
+      .map((member) => member.name);
+  }, [activeTask, teamMembers]);
+
+  const saveActiveTask = async () => {
+    if (!activeTask || savingTask) return;
+    setSavingTask(true);
+    setTaskSaveMessage(null);
+
+    const latestTask = kanbanTasksRef.current.find((task) => task.id === activeTask.id) ?? activeTask;
+    let patchResult = true;
+    try {
+      await actualizarTareaEnBackend(latestTask, latestTask);
+    } catch {
+      patchResult = false;
+    }
+    const assignmentResult = teamMembers?.length && (latestTask.assignedToIds ?? []).length > 0
+      ? await (async () => {
+          try {
+            await asignarTrabajadores(latestTask.id, latestTask.assignedToIds ?? []);
+            return true;
+          } catch {
+            return false;
+          }
+        })()
+      : true;
+
+    setSavingTask(false);
+    if (patchResult && assignmentResult) {
+      setTaskSaveMessage("Cambios guardados en la base de datos.");
+      return;
+    }
+
+    setTaskSaveMessage("No se pudieron guardar todos los cambios. Revisa la conexión e inténtalo de nuevo.");
+  };
+
   useEffect(() => {
     if (activeTaskId && !activeTask) {
       setActiveTaskId(null);
@@ -845,38 +923,59 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     return "otro";
   };
 
-  const readFileAsDataUrl = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-
   const handleFilesUpload = async (taskId: string, fileList: FileList | null) => {
     if (!fileList?.length) return;
+    const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
+    const clienteId = taskSnapshot?.codigoProyecto?.trim();
+
+    if (!clienteId) {
+      showUploadToast("error", "No se pudo subir el archivo: falta el código de cliente/proyecto de la tarea.");
+      return;
+    }
+
+    const tipo = taskSnapshot?.stage === "contrato" ? "fotos_proyecto" : "diseno";
     const files = Array.from(fileList);
     const nextFiles: TaskFile[] = [];
+    const failedNames: string[] = [];
+
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const type = inferFileType(file.name);
-      let src: string | undefined;
-      try {
-        src = await readFileAsDataUrl(file);
-      } catch {
-        // sin src no habrá vista previa ni descarga desde admin
+      const result = await subirArchivoCliente(file, clienteId, tipo, { tareasId: taskSnapshot?.id });
+
+      if (!result.success || !result.data) {
+        failedNames.push(file.name);
+        continue;
       }
+
       nextFiles.push({
-        id: `file-${Date.now()}-${i}-${file.name}`,
-        name: file.name,
+        id: result.data._id ?? `file-${Date.now()}-${i}-${file.name}`,
+        name: result.data.nombre ?? file.name,
         type,
-        ...(src ? { src } : {}),
+        src: result.data.url,
       });
     }
-    updateTask(taskId, (task) => ({
-      ...task,
-      files: [...(task.files ?? []), ...nextFiles],
-    }));
+
+    if (nextFiles.length > 0) {
+      updateTask(taskId, (task) => ({
+        ...task,
+        files: [...(task.files ?? []), ...nextFiles],
+      }));
+    }
+
+    if (failedNames.length > 0) {
+      showUploadToast(
+        "error",
+        nextFiles.length > 0
+          ? `Se subieron ${nextFiles.length} archivo(s), pero falló: ${failedNames.join(", ")}.`
+          : "No se pudo subir el archivo. Revisa la conexión e inténtalo de nuevo.",
+      );
+    } else if (nextFiles.length > 0) {
+      showUploadToast(
+        "success",
+        nextFiles.length === 1 ? "Archivo subido correctamente." : `${nextFiles.length} archivos subidos correctamente.`,
+      );
+    }
   };
 
   return (
@@ -1136,16 +1235,28 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                                 </button>
                               ) : null}
                               {task.stage === "citas" && task.citaStarted && !task.citaFinished ? (
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    void finishCita(task.id);
-                                  }}
-                                  className="inline-flex w-auto items-center rounded-full bg-emerald-600 px-3 py-1 text-[11px] font-semibold text-white"
-                                >
-                                  Terminar cita
-                                </button>
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      resumeCita(task.id);
+                                    }}
+                                    className="inline-flex w-auto items-center rounded-full bg-primary px-3 py-1 text-[11px] font-semibold text-white"
+                                  >
+                                    Completar cita
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      void finishCita(task.id);
+                                    }}
+                                    className="inline-flex w-auto items-center rounded-full bg-emerald-600 px-3 py-1 text-[11px] font-semibold text-white"
+                                  >
+                                    Terminar cita
+                                  </button>
+                                </>
                               ) : null}
                               {task.stage === "citas" && task.citaFinished ? (
                                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-semibold text-emerald-700">
@@ -1326,14 +1437,30 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                     </p>
                   ) : null}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveTaskId(null)}
-                  className="rounded-full border border-primary/10 px-3 py-2 text-xs font-semibold text-secondary"
-                >
-                  Cerrar
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void saveActiveTask()}
+                    disabled={savingTask}
+                    className="rounded-full bg-primary px-3 py-2 text-xs font-semibold text-white disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {savingTask ? "Guardando..." : "Guardar cambios"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTaskId(null)}
+                    className="rounded-full border border-primary/10 px-3 py-2 text-xs font-semibold text-secondary"
+                  >
+                    Cerrar
+                  </button>
+                </div>
               </div>
+
+              {taskSaveMessage ? (
+                <p className={`mt-3 text-sm ${taskSaveMessage.startsWith("Cambios") ? "text-emerald-700" : "text-rose-600"}`}>
+                  {taskSaveMessage}
+                </p>
+              ) : null}
 
               <div className="mt-6 space-y-6">
                 <div>
@@ -1343,7 +1470,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                       : "Responsables"}
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {(Array.isArray(activeTask.assignedTo) ? activeTask.assignedTo : []).map(
+                    {activeTaskAssignedNames.map(
                       (name) => (
                         <span
                           key={name}
@@ -1357,6 +1484,13 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                             <button
                               type="button"
                               onClick={() => {
+                                const currentNames = Array.isArray(activeTask.assignedTo)
+                                  ? activeTask.assignedTo
+                                  : [];
+                                if (currentNames.length <= 1) {
+                                  setTaskSaveMessage("La API exige al menos un trabajador asignado.");
+                                  return;
+                                }
                                 const nextAssigned = (Array.isArray(activeTask.assignedTo)
                                   ? activeTask.assignedTo
                                   : []
@@ -1370,16 +1504,9 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                                   assignedTo: nextAssigned,
                                   assignedToIds: nextAssignedIds,
                                 }));
-                                void syncTaskAssigneesWithBackend(
-                                  { ...taskSnapshot, assignedToIds: nextAssignedIds },
-                                  nextAssigned,
-                                ).then((ok) => {
-                                  if (!ok) {
-                                    setBackendSyncMessage(
-                                      "Responsables actualizados localmente, pero no se pudo sincronizar asignación con backend.",
-                                    );
-                                    window.setTimeout(() => setBackendSyncMessage(null), 4500);
-                                  }
+                                void asignarTrabajadores(taskSnapshot.id, nextAssignedIds).catch(() => {
+                                  setBackendSyncMessage("No se pudo sincronizar la asignación con la base de datos.");
+                                  window.setTimeout(() => setBackendSyncMessage(null), 4500);
                                 });
                               }}
                               className="ml-1 rounded-full p-0.5 text-secondary hover:bg-rose-100 hover:text-rose-600"
@@ -1411,16 +1538,9 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                             assignedTo: nextAssigned,
                             assignedToIds: nextAssignedIds,
                           }));
-                          void syncTaskAssigneesWithBackend(
-                            { ...taskSnapshot, assignedToIds: nextAssignedIds },
-                            nextAssigned,
-                          ).then((ok) => {
-                            if (!ok) {
-                              setBackendSyncMessage(
-                                "Responsables actualizados localmente, pero no se pudo sincronizar asignación con backend.",
-                              );
-                              window.setTimeout(() => setBackendSyncMessage(null), 4500);
-                            }
+                          void asignarTrabajadores(taskSnapshot.id, nextAssignedIds).catch(() => {
+                            setBackendSyncMessage("No se pudo sincronizar la asignación con la base de datos.");
+                            window.setTimeout(() => setBackendSyncMessage(null), 4500);
                           });
                           e.target.value = "";
                         }}
@@ -1608,13 +1728,22 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                           Iniciar cita
                         </button>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => void finishCita(activeTask.id)}
-                          className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white"
-                        >
-                          Terminar cita
-                        </button>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => resumeCita(activeTask.id)}
+                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white"
+                          >
+                            Completar cita
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void finishCita(activeTask.id)}
+                            className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white"
+                          >
+                            Terminar cita
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -2195,6 +2324,42 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                 <p className="mt-1 text-sm font-medium text-rose-800">{dragErrorMessage}</p>
               </div>
             </div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>,
+            document.body,
+          )
+        : null}
+
+      {mounted
+        ? createPortal(
+            <AnimatePresence mode="sync">
+              {uploadToast ? (
+                <motion.div
+                  key="kanban-upload-toast"
+                  initial={{ opacity: 0, y: -20, x: "-50%" }}
+                  animate={{ opacity: 1, y: 0, x: "-50%" }}
+                  exit={{ opacity: 0, y: -20, x: "-50%" }}
+                  transition={{ duration: 0.25 }}
+                  role="status"
+                  className={`pointer-events-auto fixed left-1/2 top-6 z-[100] flex items-center gap-3 rounded-2xl border-2 px-5 py-3 shadow-xl ${
+                    uploadToast.type === "success"
+                      ? "border-emerald-300 bg-emerald-50"
+                      : "border-rose-300 bg-rose-50"
+                  }`}
+                >
+                  {uploadToast.type === "success" ? (
+                    <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
+                  ) : (
+                    <XCircle className="h-5 w-5 shrink-0 text-rose-600" />
+                  )}
+                  <p
+                    className={`text-sm font-medium ${
+                      uploadToast.type === "success" ? "text-emerald-800" : "text-rose-800"
+                    }`}
+                  >
+                    {uploadToast.message}
+                  </p>
                 </motion.div>
               ) : null}
             </AnimatePresence>,

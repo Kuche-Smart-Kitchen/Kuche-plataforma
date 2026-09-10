@@ -22,6 +22,7 @@ import {
 import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { generatePublicProjectCode } from "@/lib/project-code";
 import { EMPLEADO_DASHBOARD_USER as CURRENT_USER } from "@/lib/empleado-dashboard-user";
+import { fetchAssignableUsers } from "@/lib/axios/usuariosApi";
 
 function isAssignedToCurrentUser(t: KanbanTask, currentUserName: string): boolean {
   return (t.assignedTo ?? []).some((n) => n === currentUserName);
@@ -47,22 +48,11 @@ function taskIsInactivo(t: KanbanTask): boolean {
   return t.followUpStatus === "descartado";
 }
 
-const defaultTeamMembers = [
-  { id: "e1", name: "Valeria" },
-  { id: "e2", name: "Luis" },
-  { id: "e3", name: "Majo" },
-  { id: "e4", name: "Carlos" },
-];
-
-function loadTeamMembers(): { id: string; name: string }[] {
-  return defaultTeamMembers;
-}
-
 export default function EmpleadoDashboard() {
   const router = useRouter();
   const { user } = useAuthContext();
   const currentUserName = user?.nombre?.trim() || CURRENT_USER;
-  const [teamMembers] = useState<{ id: string; name: string }[]>(() => loadTeamMembers());
+  const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>([]);
   const [viewMode, setViewMode] = useState<"all" | "mine">("mine");
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isPublicEditorOpen, setIsPublicEditorOpen] = useState(false);
@@ -73,6 +63,12 @@ export default function EmpleadoDashboard() {
   const [newTaskStage, setNewTaskStage] = useState<TaskStage>("citas");
   const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>("media");
   const [newTaskDueDate, setNewTaskDueDate] = useState("");
+
+  useEffect(() => {
+    void fetchAssignableUsers()
+      .then((users) => setTeamMembers(users.map((user) => ({ id: user.id ?? user._id ?? user.correo, name: user.nombre }))))
+      .catch(() => setTeamMembers([]));
+  }, []);
   const [newTaskLocation, setNewTaskLocation] = useState("");
   const [newTaskMapsUrl, setNewTaskMapsUrl] = useState("");
   const [taskError, setTaskError] = useState("");

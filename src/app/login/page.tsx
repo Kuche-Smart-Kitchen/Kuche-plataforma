@@ -49,8 +49,14 @@ export default function LoginPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-background pt-28 text-primary md:pt-32">
-        <div className="mx-auto max-w-6xl px-4 py-10 text-sm text-secondary">Cargando acceso...</div>
+      <main className="flex min-h-screen items-center justify-center bg-background text-primary">
+        <div className="flex flex-col items-center gap-4" role="status" aria-live="polite">
+          <span
+            className="h-12 w-12 animate-spin rounded-full border-4 border-primary/15 border-t-accent"
+            aria-hidden="true"
+          />
+          <span className="text-sm font-medium text-secondary">Cargando</span>
+        </div>
       </main>
     );
   }
@@ -111,7 +117,7 @@ export default function LoginPage() {
                   <input
                     value={correo}
                     onChange={(event) => setCorreo(event.target.value)}
-                    placeholder="correo@empresa.com"
+                    placeholder="Correo electrónico"
                     className="w-full bg-transparent text-sm text-primary outline-none placeholder:text-secondary/60"
                     autoComplete="username"
                   />
@@ -126,7 +132,7 @@ export default function LoginPage() {
                     type="password"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
-                    placeholder="⬢⬢⬢⬢⬢⬢⬢⬢"
+                    placeholder="Contraseña"
                     className="w-full bg-transparent text-sm text-primary outline-none placeholder:text-secondary/60"
                     autoComplete="current-password"
                   />

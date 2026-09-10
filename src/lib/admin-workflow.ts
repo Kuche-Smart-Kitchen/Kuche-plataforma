@@ -164,6 +164,14 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     toStringValue(raw.notas) ??
     toStringValue(cita?.informacionAdicional) ??
     "";
+  const clientEmail =
+    toStringValue(cliente?.correo) ??
+    toStringValue(cita?.correoCliente) ??
+    toStringValue(raw.correoCliente);
+  const clientPhone =
+    toStringValue(cliente?.telefono) ??
+    toStringValue(cita?.telefonoCliente) ??
+    toStringValue(raw.telefonoCliente);
   const scheduledAt =
     toStringValue(raw.fechaLimite) ??
     toStringValue(raw.scheduledAt) ??
@@ -181,6 +189,8 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     assignedTo: assignedTo.length > 0 ? assignedTo : ["Sin asignar"],
     assignedToIds: getAssignedIds(raw),
     project: clientName,
+    clientEmail,
+    clientPhone,
     notes,
     files: filesRaw
       .map((value) => toRecord(value))
@@ -212,16 +222,16 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
 
 export async function fetchBackendKanbanTasks(): Promise<KanbanTask[]> {
   const responses = await Promise.all([
-    obtenerKanbanCitas(),
-    obtenerKanbanDisenos(),
-    obtenerKanbanCotizacion(),
-    obtenerKanbanContrato(),
+    obtenerKanbanCitas().then((response) => ({ response, sourceType: "cita" })),
+    obtenerKanbanDisenos().then((response) => ({ response, sourceType: "tarea" })),
+    obtenerKanbanCotizacion().then((response) => ({ response, sourceType: "tarea" })),
+    obtenerKanbanContrato().then((response) => ({ response, sourceType: "tarea" })),
   ]);
 
-  const mapped = responses
-    .filter((response) => response.success)
-    .flatMap((response) => response.data)
-    .map(mapKanbanItemToTask);
+  const mapped = responses.flatMap(({ response, sourceType }) => {
+    if (!response.success || !response.data) return [];
+    return response.data.map((item) => ({ ...mapKanbanItemToTask(item), sourceType }));
+  });
 
   const unique = new Map<string, KanbanTask>();
   for (const task of mapped) {
@@ -305,7 +315,7 @@ export async function syncTaskAssigneesWithBackend(task: KanbanTask, assignedTo:
   const citaSourceId = task.sourceId?.trim();
 
   try {
-    if (validForCita && citaSourceId && assignedIds.length > 0) {
+    if (validForCita && citaSourceId) {
       await asignarIngenierosCita(citaSourceId, { ingenieroIds: assignedIds });
       return true;
     }
@@ -373,8 +383,8 @@ export async function syncCitaStartWithBackend(task: KanbanTask): Promise<boolea
   if (sourceType !== "cita" || !citaId) return false;
 
   try {
-    await iniciarCita(citaId);
-    return true;
+    const response = await iniciarCita(citaId);
+    return response.success;
   } catch (error) {
     console.warn("No se pudo sincronizar inicio de cita en backend", { citaId, error });
     return false;
@@ -388,7 +398,8 @@ export async function syncCitaFinishWithBackend(task: KanbanTask): Promise<boole
   if (sourceType !== "cita" || !citaId) return false;
 
   try {
-    await finalizarCita(citaId);
+    const response = await finalizarCita(citaId);
+    if (!response.success) return false;
     if (taskId) {
       await syncTaskStageWithBackend({ ...task, stage: "disenos" }, "disenos");
     }

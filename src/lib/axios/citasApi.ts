@@ -63,6 +63,9 @@ const requestWithFallback = async <T>(
       const response = await (method === "put"
         ? axiosInstance.put<ApiResponse<T>>(endpoint, data)
         : axiosInstance.patch<ApiResponse<T>>(endpoint, data));
+      if (response.data && response.data.success === false) {
+        throw new Error(response.data.message || `El backend rechazo ${method.toUpperCase()} ${endpoint}`);
+      }
       return response.data;
     } catch (error) {
       lastError = error;

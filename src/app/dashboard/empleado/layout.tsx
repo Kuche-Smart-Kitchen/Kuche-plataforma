@@ -24,7 +24,11 @@ export default function EmpleadoLayout({ children }: { children: React.ReactNode
     }
   }, [loading, pathname, router, user?.rol]);
 
-  if (loading || !user || (user.rol !== "empleado" && user.rol !== "arquitecto")) {
+  if (
+    loading ||
+    !user ||
+    !["ingeniero", "arquitecto", "empleado", "empleado_general"].includes(user.rol)
+  ) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />

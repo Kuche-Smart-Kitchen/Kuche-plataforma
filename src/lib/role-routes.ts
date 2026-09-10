@@ -1,4 +1,4 @@
-import { authApi, type User } from "@/lib/axios";
+import { authApi, type User, type UserRole } from "@/lib/axios";
 
 export type AppRole = User["rol"] | null | undefined;
 
@@ -15,11 +15,17 @@ export const PUBLIC_ROUTES = [
 
 const ROUTE_POLICIES: Array<{
   prefix: string;
-  allowedRoles: Array<"admin" | "empleado" | "arquitecto">;
+  allowedRoles: UserRole[];
 }> = [
   { prefix: "/admin", allowedRoles: ["admin"] },
-  { prefix: "/dashboard/empleado", allowedRoles: ["empleado", "arquitecto"] },
-  { prefix: "/dashboard", allowedRoles: ["empleado", "arquitecto"] },
+  {
+    prefix: "/dashboard/empleado",
+    allowedRoles: ["ingeniero", "arquitecto", "empleado", "empleado_general"],
+  },
+  {
+    prefix: "/dashboard",
+    allowedRoles: ["ingeniero", "arquitecto", "empleado", "empleado_general"],
+  },
 ];
 
 export const normalizePathname = (pathname: string): string => {
@@ -28,7 +34,9 @@ export const normalizePathname = (pathname: string): string => {
 
 export const getDashboardRouteForRole = (role: AppRole): string => {
   if (role === "admin") return "/admin";
-  if (role === "empleado" || role === "arquitecto") return "/dashboard/empleado";
+  if (role === "ingeniero" || role === "arquitecto" || role === "empleado" || role === "empleado_general") {
+    return "/dashboard/empleado";
+  }
   return "/login";
 };
 

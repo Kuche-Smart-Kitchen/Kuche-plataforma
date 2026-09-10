@@ -20,22 +20,11 @@ import {
 import { generatePublicProjectCode } from "@/lib/project-code";
 import { fetchBackendKanbanTasks } from "@/lib/admin-workflow";
 import { crearTarea } from "@/lib/axios/tareasApi";
-
-
-const defaultTeamMembers = [
-  { id: "e1", name: "Valeria" },
-  { id: "e2", name: "Luis" },
-  { id: "e3", name: "Majo" },
-  { id: "e4", name: "Carlos" },
-];
-
-function loadTeamMembers(): { id: string; name: string }[] {
-  return defaultTeamMembers;
-}
+import { fetchAssignableUsers } from "@/lib/axios/usuariosApi";
 
 export default function OperacionesPage() {
   const router = useRouter();
-  const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>(defaultTeamMembers);
+  const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>([]);
   const [selectedEmployeeFilter, setSelectedEmployeeFilter] = useState<string>("Todos");
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
@@ -63,7 +52,9 @@ export default function OperacionesPage() {
   useFocusTrap(isTeamModalOpen, teamModalRef);
 
   useEffect(() => {
-    setTeamMembers(loadTeamMembers());
+    void fetchAssignableUsers()
+      .then((users) => setTeamMembers(users.map((user) => ({ id: user.id ?? user._id ?? user.correo, name: user.nombre }))))
+      .catch(() => setTeamMembers([]));
   }, []);
 
   useEffect(() => {

@@ -25,6 +25,7 @@ import {
   type TaskFile,
 } from "@/lib/kanban";
 import { downloadTaskFile } from "@/lib/task-file-download";
+import { toDropboxDirectImageUrl } from "@/lib/dropbox-url";
 
 type ProjectStatus = "Pendiente" | "Aprobado" | "Revisión";
 
@@ -52,6 +53,49 @@ function formatDesignDate(ts?: number): string {
   if (ts == null) return "—";
   const d = new Date(ts);
   return d.toLocaleDateString("es-MX", { year: "numeric", month: "short", day: "numeric" });
+}
+
+function ProjectThumbnail({
+  image,
+  alt,
+  hasPdf,
+  fileCount,
+  onClick,
+  className,
+}: {
+  image: string | null;
+  alt: string;
+  hasPdf: boolean;
+  fileCount: number;
+  onClick: () => void;
+  className: string;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  if (!image || failed) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex h-full w-full flex-col items-center justify-center gap-2 text-gray-400"
+      >
+        {hasPdf ? <FileText className="h-12 w-12" /> : <ImageIcon className="h-12 w-12" />}
+        <span className="text-xs font-medium">
+          {fileCount} archivo{fileCount !== 1 ? "s" : ""}
+        </span>
+      </button>
+    );
+  }
+
+  return (
+    <img
+      src={image}
+      alt={alt}
+      className={className}
+      onClick={onClick}
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 function DesignFileDownloadRow({ file }: { file: TaskFile }) {
@@ -87,7 +131,7 @@ function designProjectsFromTasks(tasks: KanbanTask[]): DesignProject[] {
     .filter((t) => t.stage === "disenos" && t.files && t.files.length > 0)
     .map((task) => {
       const firstImage = task.files!.find((f) => f.type === "render" && f.src);
-      const image = firstImage?.src ?? null;
+      const image = toDropboxDirectImageUrl(firstImage?.src ?? null);
       return {
         id: task.id,
         taskId: task.id,
@@ -108,6 +152,7 @@ export default function DisenosPage() {
   const [feedbackDrafts, setFeedbackDrafts] = useState<Record<string, string>>({});
   const [activePreview, setActivePreview] = useState<DesignProject | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [confirmingClientId, setConfirmingClientId] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
 
   const loadProjects = useCallback(async () => {
@@ -207,6 +252,38 @@ export default function DisenosPage() {
     setActiveFeedbackId(null);
   };
 
+  const handleConfirmClientApproval = async (taskId: string) => {
+    setConfirmingClientId(taskId);
+    const patch = {
+      designApprovedByClient: true,
+      stage: "cotizacion" as const,
+      status: "pendiente" as const,
+      citaStarted: false,
+      citaFinished: false,
+    };
+
+    try {
+      const currentTasks = getTasksFromLocalStorage();
+      const taskSnapshot = currentTasks.find((task) => task.id === taskId);
+      const nextTasks = currentTasks.map((task) => (task.id === taskId ? { ...task, ...patch } : task));
+
+      const persisted = notifyKanbanTasksUpdated(nextTasks);
+      if (persisted) {
+        setProjects(designProjectsFromTasks(nextTasks));
+        window.dispatchEvent(new CustomEvent(kanbanTasksUpdatedEventName, { detail: { tasks: nextTasks } }));
+      }
+
+      if (taskSnapshot) {
+        const ok = await syncTaskPatchWithBackend(taskSnapshot, patch);
+        if (!ok) {
+          console.warn("No se pudo sincronizar la aprobación del cliente con el backend.");
+        }
+      }
+    } finally {
+      setConfirmingClientId(null);
+    }
+  };
+
   const handleSendFeedback = (projectId: string) => {
     setFeedbackDrafts((prev) => ({ ...prev, [projectId]: "" }));
     setActiveFeedbackId(projectId);
@@ -261,29 +338,14 @@ export default function DisenosPage() {
                 className="flex flex-col overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm"
               >
                 <div className="relative h-60 overflow-hidden bg-gray-100">
-                  {project.image ? (
-                    <img
-                      src={project.image}
-                      alt={`Diseño ${project.clientName}`}
-                      className="h-full w-full cursor-zoom-in object-cover transition-transform duration-500 hover:scale-105"
-                      onClick={() => setActivePreview(project)}
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setActivePreview(project)}
-                      className="flex h-full w-full flex-col items-center justify-center gap-2 text-gray-400"
-                    >
-                      {project.files.some((f) => f.type === "pdf") ? (
-                        <FileText className="h-12 w-12" />
-                      ) : (
-                        <ImageIcon className="h-12 w-12" />
-                      )}
-                      <span className="text-xs font-medium">
-                        {project.files.length} archivo{project.files.length !== 1 ? "s" : ""}
-                      </span>
-                    </button>
-                  )}
+                  <ProjectThumbnail
+                    image={project.image}
+                    alt={`Diseño ${project.clientName}`}
+                    hasPdf={project.files.some((f) => f.type === "pdf")}
+                    fileCount={project.files.length}
+                    onClick={() => setActivePreview(project)}
+                    className="h-full w-full cursor-zoom-in object-cover transition-transform duration-500 hover:scale-105"
+                  />
                   <span
                     className={`absolute left-4 top-4 rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[project.status]}`}
                   >
@@ -362,7 +424,17 @@ export default function DisenosPage() {
                         </button>
                       </div>
                     ) : (
-                      <p className="text-xs text-gray-400">Diseño aprobado. Pendiente de aceptación del cliente.</p>
+                      <button
+                        type="button"
+                        disabled={confirmingClientId === project.taskId}
+                        onClick={() => handleConfirmClientApproval(project.taskId)}
+                        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Check className="h-4 w-4" />
+                        {confirmingClientId === project.taskId
+                          ? "Confirmando…"
+                          : "Confirmar aprobación del cliente"}
+                      </button>
                     )}
                   </div>
                 </div>
@@ -426,6 +498,9 @@ export default function DisenosPage() {
                     src={activePreview.image}
                     alt={`Diseño ${activePreview.clientName}`}
                     className="mx-auto max-h-[50vh] w-full object-contain"
+                    onError={(e) => {
+                      e.currentTarget.style.display = "none";
+                    }}
                   />
                 ) : (
                   <div className="flex flex-col items-center justify-center gap-4 py-8">

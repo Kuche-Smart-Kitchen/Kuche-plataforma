@@ -4,6 +4,8 @@ import "./globals.css";
 import NumberInputWheelGuard from "@/components/layout/NumberInputWheelGuard";
 import Navbar from "@/components/layout/Navbar";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { TareasProvider } from "@/contexts/TareasContext";
+import { LevantamientoCatalogoProvider } from "@/contexts/LevantamientoCatalogoContext";
 import { runtimeConfigWarnings } from "@/lib/runtime-config-guard";
 
 const manrope = Manrope({
@@ -29,9 +31,13 @@ export default function RootLayout({
     <html lang="es">
       <body className={`${manrope.variable} font-sans antialiased`}>
         <AuthProvider>
-          <NumberInputWheelGuard />
-          <Navbar />
-          {children}
+          <TareasProvider>
+            <LevantamientoCatalogoProvider>
+              <NumberInputWheelGuard />
+              <Navbar />
+              {children}
+            </LevantamientoCatalogoProvider>
+          </TareasProvider>
         </AuthProvider>
       </body>
     </html>

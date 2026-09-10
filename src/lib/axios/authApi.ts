@@ -79,11 +79,13 @@ export interface LoginCredentials {
   password: string;
 }
 
+export type UserRole = "admin" | "ingeniero" | "arquitecto" | "empleado" | "empleado_general";
+
 export interface RegisterData {
   nombre: string;
   correo: string;
   password: string;
-  rol?: "admin" | "arquitecto" | "empleado";
+  rol?: UserRole;
 }
 
 export interface User {
@@ -91,7 +93,7 @@ export interface User {
   id?: string;
   nombre: string;
   correo: string;
-  rol: "admin" | "arquitecto" | "empleado";
+  rol: UserRole;
   activo?: boolean;
   telefono?: string;
   createdAt?: string;

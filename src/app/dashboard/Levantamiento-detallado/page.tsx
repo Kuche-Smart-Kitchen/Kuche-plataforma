@@ -10,6 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useRouter } from "next/navigation";
 import {
   Check,
   CheckCircle2,
@@ -22,6 +23,8 @@ import {
 } from "lucide-react";
 import {
   type PreliminarData,
+  getTasksFromLocalStorage,
+  type KanbanTask,
 } from "@/lib/kanban";
 import { CatalogProjectTypeField } from "@/components/catalogo/CatalogProjectTypeField";
 import {
@@ -42,9 +45,7 @@ import {
   type ShowroomMaterialOption as MaterialOption,
 } from "./logica_Levantamiento_y_cotizacion/showroomCatalog";
 import {
-  APPLIANCE_CATEGORIAS,
-  APPLIANCE_ITEMS,
-  APPLIANCE_OTRO_STEP_INDEX,
+  APPLIANCE_CATALOGO_IMAGE_FALLBACK,
   emptyMedidas,
   emptyOtro,
   emptyWallMeasuresForId,
@@ -55,8 +56,6 @@ import {
   defaultLightingQty,
   getLightingEffectiveQty,
   isWallSlotKey,
-  LIGHTING_ITEMS,
-  SPECIAL_ACCESSORIES_ITEMS,
   wallMeasuresTieneValor,
   WALL_SLOT_META_TYPE,
   WALL_SLOT_META_ALIAS,
@@ -88,10 +87,11 @@ import {
   getLevantamientoConfig,
   resolvePrecioPorMetroForShowroomSelection,
   type LevantamientoConfig,
-  DEFAULT_LEVANTAMIENTO_MATERIALES,
   type MaterialCategoria,
 } from "@/lib/config-levantamiento";
 import { DashboardBackButton } from "@/components/dashboard/DashboardBackButton";
+import { useTareasContext } from "@/contexts/TareasContext";
+import { useLevantamientoCatalogo } from "@/contexts/LevantamientoCatalogoContext";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("es-MX", {
@@ -479,11 +479,81 @@ const MaterialGrid = ({
   );
 };
 
-const materialCatalog = buildMaterialShowroomCatalog(DEFAULT_LEVANTAMIENTO_MATERIALES);
 type AutoScenarioId = LevantamientoScenarioId;
 
 export default function CotizadorPreliminarPage() {
+    const router = useRouter();
+    const { terminarCita } = useTareasContext();
+  const { materiales: dbMateriales, herrajes: dbHerrajes, electrodomesticos, extras } = useLevantamientoCatalogo();
+  const databaseMateriales = useMemo(
+    () => [
+      ...dbMateriales.map((material) => ({
+        id: material.idCotizador ?? material.id ?? material._id,
+        nombre: material.nombre,
+        categoria: (material.seccion === "herrajes" ? "herraje" : material.seccion === "frente" || material.seccion === "estructura" || material.seccion === "vistas" ? "frente" : "cubierta") as MaterialCategoria,
+        precioPorMetro: Number(material.precioPorMetro ?? material.precioMetroLineal ?? material.precioUnitario ?? 0),
+      })),
+      ...dbHerrajes.map((material) => ({
+        id: material.idCotizador ?? material.id ?? material._id,
+        nombre: material.nombre,
+        categoria: "herraje" as MaterialCategoria,
+        precioPorMetro: Number(material.precioPorMetro ?? material.precioMetroLineal ?? material.precioUnitario ?? 0),
+      })),
+    ],
+    [dbHerrajes, dbMateriales],
+  );
+  const databaseMaterialCatalog = useMemo(
+    () => buildMaterialShowroomCatalog(databaseMateriales),
+    [databaseMateriales],
+  );
+  const materialCatalog = databaseMaterialCatalog;
+  const databaseAppliances = useMemo<ItemCatalogo[]>(
+    () => electrodomesticos.map((item) => ({
+      id: item._id,
+      label: item.nombre,
+      categoria: item.categoria ?? "Electrodomésticos",
+      hint: item.descripcion,
+      image: item.imagenUrl ?? item.thumbnailUrl ?? APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+    })),
+    [electrodomesticos],
+  );
+  const databaseLighting = useMemo<ItemCatalogo[]>(
+    () => extras
+      .filter((item) => /luz|ilum|led|lampara|lámpara/i.test(`${item.categoria ?? ""} ${item.nombre}`))
+      .map((item) => ({
+        id: item._id,
+        label: item.nombre,
+        categoria: item.categoria ?? "Iluminación",
+        hint: item.descripcion,
+        image: item.imagenUrl ?? item.thumbnailUrl ?? APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+        precioFijo: item.precio,
+      })),
+    [extras],
+  );
+  const databaseAccessories = useMemo<ItemCatalogo[]>(
+    () => extras
+      .filter((item) => !/luz|ilum|led|lampara|lámpara/i.test(`${item.categoria ?? ""} ${item.nombre}`))
+      .map((item) => ({
+        id: item._id,
+        label: item.nombre,
+        categoria: item.categoria ?? "Accesorios especiales",
+        hint: item.descripcion,
+        image: item.imagenUrl ?? item.thumbnailUrl ?? APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+        precioBase: item.precio,
+      })),
+    [extras],
+  );
+  const APPLIANCE_ITEMS = databaseAppliances;
+  const LIGHTING_ITEMS = databaseLighting;
+  const SPECIAL_ACCESSORIES_ITEMS = databaseAccessories;
+  const APPLIANCE_CATEGORIAS = Array.from(new Set(APPLIANCE_ITEMS.map((item) => item.categoria).filter(Boolean))) as string[];
+  const APPLIANCE_OTRO_STEP_INDEX = APPLIANCE_ITEMS.length;
   const [clientName, setClientName] = useState("");
+  const [clientEmail, setClientEmail] = useState("");
+  const [clientPhone, setClientPhone] = useState("");
+    const [activeTask, setActiveTask] = useState<KanbanTask | null>(null);
+    const [finishingCita, setFinishingCita] = useState(false);
+    const [finishCitaError, setFinishCitaError] = useState<string | null>(null);
   const [projectType, setProjectType] = useState<string>(CATALOG_PROJECT_TYPES[0]);
   const [location, setLocation] = useState("");
   const [deliveryWeeksMin, setDeliveryWeeksMin] = useState("");
@@ -526,6 +596,46 @@ export default function CotizadorPreliminarPage() {
   const applianceSectionRef = useRef<HTMLDivElement | null>(null);
   const lightingSectionRef = useRef<HTMLDivElement | null>(null);
   const catalogScrollPositions = useRef({ appliance: 0, lighting: 0, specialAccessories: 0 });
+
+  useEffect(() => {
+    if (!databaseMateriales.length) return;
+    setLevantamientoConfig((previous) => ({
+      ...previous,
+      materiales: databaseMateriales,
+      extrasPrecios: {
+        ...previous.extrasPrecios,
+        iluminacion: Object.fromEntries(databaseLighting.map((item) => [item.id, Math.max(0, Number(item.precioFijo) || 0)])),
+        accesoriosEspeciales: Object.fromEntries(databaseAccessories.map((item) => [item.id, Math.max(0, Number(item.precioBase) || 0)])),
+      },
+    }));
+  }, [databaseAccessories, databaseLighting, databaseMateriales]);
+
+  useEffect(() => {
+    const taskId = new URLSearchParams(window.location.search).get("taskId");
+    if (!taskId) return;
+
+    const task = getTasksFromLocalStorage().find((candidate) => candidate.id === taskId);
+    if (!task) return;
+
+    setActiveTask(task);
+    setClientName((current) => current || task.project || task.title || "");
+    setLocation((current) => current || task.location || "");
+
+  }, []);
+
+  const handleFinishCita = async () => {
+    if (!activeTask || finishingCita) return;
+    setFinishingCita(true);
+    setFinishCitaError(null);
+    try {
+      await terminarCita(activeTask);
+      router.push("/admin/operaciones");
+    } catch (error) {
+      setFinishCitaError(error instanceof Error ? error.message : "No se pudo terminar la cita");
+    } finally {
+      setFinishingCita(false);
+    }
+  };
 
   useEffect(() => {
     setFocusedWallGroup(null);
@@ -1263,6 +1373,7 @@ export default function CotizadorPreliminarPage() {
                     className="w-full rounded-xl border border-primary/10 bg-white/90 px-3 py-2 text-sm outline-none"
                   />
                 </div>
+
 
                 {/* Fila md: Cocina (isla + techo) | Medidas | Tiempo (3+5+4) */}
                 {isCocinasProjectTypeForConIsla(projectType) ? (
@@ -3318,6 +3429,29 @@ export default function CotizadorPreliminarPage() {
           </div>
         </SectionCard>
       </div>
+      {activeTask?.sourceType?.toLowerCase() === "cita" ? (
+        <section className="mt-8 rounded-3xl border border-emerald-200 bg-emerald-50/70 p-5 shadow-sm">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-700">
+                Cita en proceso
+              </p>
+              <p className="mt-2 text-sm text-emerald-900">
+                Termina la cita cuando hayas completado el levantamiento del cliente.
+              </p>
+              {finishCitaError ? <p className="mt-2 text-sm font-semibold text-rose-600">{finishCitaError}</p> : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleFinishCita()}
+              disabled={finishingCita}
+              className="shrink-0 rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-wait disabled:opacity-60"
+            >
+              {finishingCita ? "Terminando cita..." : "Terminar cita y volver al tablero"}
+            </button>
+          </div>
+        </section>
+      ) : null}
       <div
         className="fixed right-6 top-24 z-40 w-[min(260px,calc(100vw-2rem))] rounded-3xl border border-white/70 bg-white/90 p-4 shadow-2xl backdrop-blur-md"
       >

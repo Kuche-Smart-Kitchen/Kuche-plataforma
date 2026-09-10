@@ -73,6 +73,9 @@ export type KanbanTask = {
   /** IDs backend de los responsables cuando están disponibles. */
   assignedToIds?: string[];
   project: string;
+  /** Datos de contacto disponibles en la cita/cliente de origen. */
+  clientEmail?: string;
+  clientPhone?: string;
   notes?: string;
   files?: TaskFile[];
   priority?: TaskPriority;

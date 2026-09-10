@@ -1,5 +1,3 @@
-import { LIGHTING_ITEMS, SPECIAL_ACCESSORIES_ITEMS } from "@/lib/levantamiento-catalog";
-
 export type MaterialCategoria = "cubierta" | "frente" | "herraje";
 
 /** @deprecated Las gamas de material ya no clasifican el catálogo; solo persisten en datos viejos de localStorage. */
@@ -22,15 +20,8 @@ export type ExtrasPreciosConfig = {
 
 export function defaultExtrasPrecios(): ExtrasPreciosConfig {
   return {
-    iluminacion: Object.fromEntries(
-      LIGHTING_ITEMS.map((i) => [i.id, Math.max(0, Number(i.precioFijo) || 0)]),
-    ),
-    accesoriosEspeciales: Object.fromEntries(
-      SPECIAL_ACCESSORIES_ITEMS.map((i) => [
-        i.id,
-        Math.max(0, Number(i.precioBase ?? i.precioFijo) || 0),
-      ]),
-    ),
+    iluminacion: {},
+    accesoriosEspeciales: {},
   };
 }
 
@@ -47,37 +38,8 @@ export interface LevantamientoConfig {
   extrasPrecios: ExtrasPreciosConfig;
 }
 
-/**
- * Catálogo oficial por defecto (precios $/m). Misma lista que el showroom del Levantamiento Detallado.
- */
-export const DEFAULT_LEVANTAMIENTO_MATERIALES: MaterialConfig[] = [
-  { id: "cub-cuarcita", nombre: "Cuarcita", categoria: "cubierta", precioPorMetro: 7000 },
-  { id: "cub-formaica", nombre: "Formaica", categoria: "cubierta", precioPorMetro: 1800 },
-  { id: "cub-granito", nombre: "Granito", categoria: "cubierta", precioPorMetro: 4000 },
-  { id: "cub-cuarzo", nombre: "Cuarzo", categoria: "cubierta", precioPorMetro: 5500 },
-  { id: "cub-cubierta-solida", nombre: "Cubierta solida", categoria: "cubierta", precioPorMetro: 6000 },
-  { id: "cub-marmol", nombre: "Mármol", categoria: "cubierta", precioPorMetro: 3500 },
-  { id: "cub-piedra-sinterizada", nombre: "Piedra sinterizada", categoria: "cubierta", precioPorMetro: 6500 },
-  { id: "fre-enchapados-naturales", nombre: "Enchapados naturales", categoria: "frente", precioPorMetro: 4000 },
-  { id: "fre-premium", nombre: "Premium", categoria: "frente", precioPorMetro: 10000 },
-  { id: "fre-melamina-1-estandar", nombre: "1 Melamina estandar", categoria: "frente", precioPorMetro: 3500 },
-  { id: "fre-madera-solida", nombre: "Madera solida", categoria: "frente", precioPorMetro: 6000 },
-  { id: "fre-melamina-2-tendencia", nombre: "2 Melamina Tendencia", categoria: "frente", precioPorMetro: 4500 },
-  { id: "fre-altos-brillos", nombre: "Altos Brillos", categoria: "frente", precioPorMetro: 7500 },
-  { id: "fre-supermates", nombre: "Supermates", categoria: "frente", precioPorMetro: 8000 },
-  { id: "her-basico", nombre: "Basico", categoria: "herraje", precioPorMetro: 500 },
-  {
-    id: "her-intermedio",
-    nombre: "Intermedio (cierre lento / push to open)",
-    categoria: "herraje",
-    precioPorMetro: 1000,
-  },
-  { id: "her-alta", nombre: "Alta", categoria: "herraje", precioPorMetro: 2000 },
-  { id: "her-premium", nombre: "Premium", categoria: "herraje", precioPorMetro: 4000 },
-];
-
 function defaultMateriales(): MaterialConfig[] {
-  return DEFAULT_LEVANTAMIENTO_MATERIALES.map((m) => ({ ...m }));
+  return [];
 }
 
 export function createDefaultLevantamientoConfig(): LevantamientoConfig {
