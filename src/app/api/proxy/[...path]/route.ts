@@ -16,9 +16,19 @@ const buildUpstreamUrl = (request: NextRequest) => {
   return upstreamUrl;
 };
 
-const applyCorsHeaders = (response: NextResponse): NextResponse => {
-  response.headers.set("Access-Control-Allow-Origin", "*");
-  response.headers.set("Access-Control-Allow-Credentials", "true");
+/** "*" es inválido junto a credenciales; se refleja el origen solo si está en la allowlist. */
+const resolveRequestOrigin = (request: NextRequest): string | null => {
+  const origin = request.headers.get("origin");
+  if (!origin) return null;
+  return env.allowedOrigins.includes(origin) ? origin : null;
+};
+
+const applyCorsHeaders = (response: NextResponse, request: NextRequest): NextResponse => {
+  const allowedOrigin = resolveRequestOrigin(request);
+  if (allowedOrigin) {
+    response.headers.set("Access-Control-Allow-Origin", allowedOrigin);
+    response.headers.set("Access-Control-Allow-Credentials", "true");
+  }
   response.headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Requested-With");
   response.headers.set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
   response.headers.set("Vary", "Origin");
@@ -85,7 +95,7 @@ const forwardRequest = async (request: NextRequest) => {
       headers: responseHeaders,
     });
 
-    return applyCorsHeaders(response);
+    return applyCorsHeaders(response, request);
   } catch (error) {
     console.error("[api/proxy] upstream fetch failed", {
       url: upstreamUrl.toString(),
@@ -100,6 +110,7 @@ const forwardRequest = async (request: NextRequest) => {
         },
         { status: 502 },
       ),
+      request,
     );
   }
 };
@@ -127,12 +138,8 @@ export async function DELETE(request: NextRequest) {
 export async function OPTIONS(request: NextRequest) {
   const response = new NextResponse(null, { status: 204 });
   response.headers.set("Allow", METHOD_ALLOWLIST.join(", "));
-  response.headers.set("Access-Control-Allow-Methods", METHOD_ALLOWLIST.join(","));
-  response.headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Requested-With");
-  response.headers.set("Access-Control-Allow-Credentials", "true");
   response.headers.set("Access-Control-Max-Age", "86400");
-  response.headers.set("Vary", "Origin");
-  return applyCorsHeaders(response);
+  return applyCorsHeaders(response, request);
 }
 
 export const dynamic = "force-dynamic";

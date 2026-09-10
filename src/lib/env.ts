@@ -74,9 +74,35 @@ export function resolveBackendApiUrl(): string {
   return localhostCandidates[0] ?? candidates[0];
 }
 
+/** Dominios propios del frontend permitidos para peticiones con credenciales (CORS). */
+export function resolveAllowedOrigins(): string[] {
+  const fromEnv = readEnv("ALLOWED_ORIGINS")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  const vercelUrl = readEnv("VERCEL_URL");
+  const vercelBranchUrl = readEnv("VERCEL_BRANCH_URL");
+  const vercelProjectProductionUrl = readEnv("VERCEL_PROJECT_PRODUCTION_URL");
+
+  const defaults = [
+    "https://kuche-plataforma.vercel.app",
+    "https://cocinainteligenteskuche.com",
+    "https://www.cocinainteligenteskuche.com",
+    "http://localhost:3000",
+  ];
+
+  const dynamicVercelOrigins = [vercelUrl, vercelBranchUrl, vercelProjectProductionUrl]
+    .filter(Boolean)
+    .map((host) => `https://${host}`);
+
+  return Array.from(new Set([...fromEnv, ...dynamicVercelOrigins, ...defaults]));
+}
+
 export const env = {
   apiUrl: readEnv("NEXT_PUBLIC_API_URL"),
   backendApiUrl: resolveBackendApiUrl(),
+  allowedOrigins: resolveAllowedOrigins(),
   fileUploadEndpoint: readEnv("NEXT_PUBLIC_FILE_UPLOAD_ENDPOINT"),
   turnstileSiteKey: resolveTurnstileSiteKey(),
   turnstileMode: resolveTurnstileMode(),
