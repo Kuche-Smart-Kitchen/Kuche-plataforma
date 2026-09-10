@@ -71,7 +71,15 @@ export default function Captcha({
         theme: "light",
         callback: (token: string) => callbacksRef.current.onVerify(token),
         "expired-callback": () => callbacksRef.current.onExpire?.(),
-        "error-callback": (errorCode?: string) => callbacksRef.current.onError?.(errorCode),
+        "error-callback": (errorCode?: string) => {
+          // El codigo permite ubicar la causa exacta en https://developers.cloudflare.com/turnstile/troubleshooting/client-side-errors/
+          console.error("[Turnstile] error-callback", {
+            errorCode,
+            sitekey: resolvedSiteKey,
+            hostname: typeof window !== "undefined" ? window.location.hostname : undefined,
+          });
+          callbacksRef.current.onError?.(errorCode);
+        },
       });
     };
 
