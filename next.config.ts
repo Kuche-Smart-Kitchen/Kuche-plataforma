@@ -35,5 +35,5 @@ const nextConfig: NextConfig = {
     ],
   },
 };
-
+//comentario
 export default nextConfig;
