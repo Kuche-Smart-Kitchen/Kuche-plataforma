@@ -24,16 +24,12 @@ const nextConfig: NextConfig = {
     minimumCacheTTL: 0,
     localPatterns: [{ pathname: "/images/**" }],
     remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "i.pravatar.cc",
-      },
-      {
-        protocol: "https",
-        hostname: "lh3.googleusercontent.com",
-      },
+      { protocol: "https", hostname: "i.pravatar.cc" },
+      { protocol: "https", hostname: "lh3.googleusercontent.com" },
     ],
+    loader: "custom",
+    loaderFile: "./image-loader.ts",
   },
 };
-//comentario
+
 export default nextConfig;
