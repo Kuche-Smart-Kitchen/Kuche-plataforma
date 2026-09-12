@@ -9,7 +9,7 @@
     "extract:excel-images": "node scripts/extract-excel-embedded-images.mjs",
     "dev": "next dev --webpack",
     "dev:turbo": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "build:webpack": "next build --webpack",
     "start": "next start",
     "lint": "eslint"
