@@ -13,7 +13,17 @@ import { useFocusTrap } from "@/hooks/useFocusTrap";
 import {
   type KanbanTask,
   type CotizacionFormalData,
+  getTasksFromLocalStorage,
+  saveKanbanTasksToLocalStorage,
+  notifyKanbanTasksUpdated,
 } from "@/lib/kanban";
+import { authApi } from "@/lib/axios";
+import { syncTaskPatchWithBackend, syncTaskStageWithBackend } from "@/lib/admin-workflow";
+import {
+  getSectionAInitialValues,
+  extractClientOptionsFromTasks,
+  type ClientDataOption,
+} from "../Levantamiento-detallado/logica_Levantamiento_y_cotizacion/sectionA";
 import {
   buildWorkshopPdfBlob,
   buildWorkshopPdfDataUrl,
@@ -394,13 +404,19 @@ function FormalCotizacionBanner() {
 
 export default function CotizadorPage() {
   const router = useRouter();
-  const [clients, setClients] = useState([
+  const [clients, setClients] = useState<Array<{ name: string; phone?: string; email?: string }>>([
     { name: "Mariana Fuentes", phone: "", email: "" },
     { name: "Arquitectura F4 Studio", phone: "", email: "" },
     { name: "Eduardo Pardo", phone: "", email: "" },
   ]);
+  const [clientOptions, setClientOptions] = useState<ClientDataOption[]>([]);
+  const [activeTask, setActiveTask] = useState<KanbanTask | null>(null);
   const [catalogoKuche, setCatalogoKuche] = useState(initialCatalogoKuche);
   const [client, setClient] = useState("");
+  const [clientPhone, setClientPhone] = useState("");
+  const [clientEmail, setClientEmail] = useState("");
+  const [isFinishingCotizacion, setIsFinishingCotizacion] = useState(false);
+  const [finishCotizacionError, setFinishCotizacionError] = useState<string | null>(null);
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
   const [newClientName, setNewClientName] = useState("");
   const [newClientPhone, setNewClientPhone] = useState("");
@@ -626,6 +642,70 @@ export default function CotizadorPage() {
     document.addEventListener("click", handleClick);
     return () => document.removeEventListener("click", handleClick);
   }, []);
+
+  useEffect(() => {
+    const tasks = getTasksFromLocalStorage();
+    const extracted = extractClientOptionsFromTasks(tasks);
+    const initialClientsList =
+      extracted.length > 0
+        ? extracted.map((opt) => ({
+            name: opt.name,
+            phone: opt.phone,
+            email: opt.email,
+          }))
+        : [
+            { name: "Mariana Fuentes", phone: "", email: "" },
+            { name: "Arquitectura F4 Studio", phone: "", email: "" },
+            { name: "Eduardo Pardo", phone: "", email: "" },
+          ];
+    setClients(initialClientsList);
+    setClientOptions(extracted);
+
+    const taskId = new URLSearchParams(window.location.search).get("taskId");
+    if (!taskId) return;
+
+    const task = tasks.find((candidate) => candidate.id === taskId);
+    if (!task) return;
+
+    setActiveTask(task);
+    const initial = getSectionAInitialValues(task);
+    if (initial.clientName) setClient(initial.clientName);
+    if (initial.clientPhone) setClientPhone(initial.clientPhone);
+    if (initial.clientEmail) setClientEmail(initial.clientEmail);
+    if (initial.location) setLocation(initial.location);
+    if (initial.projectType) setProjectType(initial.projectType);
+    if (initial.largo) setLargo(initial.largo);
+    if (initial.alto) setAlto(initial.alto);
+    if (initial.deliveryWeeksMin) setDeliveryWeeksMin(initial.deliveryWeeksMin);
+    if (initial.deliveryWeeksMax) setDeliveryWeeksMax(initial.deliveryWeeksMax);
+  }, []);
+
+  const handleClientChange = (val: string) => {
+    setClient(val);
+    const trimmed = val.trim().toLowerCase();
+    if (!trimmed) return;
+
+    const matched =
+      clientOptions.find((opt) => opt.name.toLowerCase() === trimmed) ||
+      clientOptions.find((opt) => opt.name.toLowerCase().includes(trimmed));
+
+    if (matched) {
+      if (matched.location && !location) setLocation(matched.location);
+      if (matched.projectType && projectType === CATALOG_PROJECT_TYPES[0]) {
+        setProjectType(matched.projectType);
+      }
+      if (matched.largo && !largo) setLargo(matched.largo);
+      if (matched.alto && !alto) setAlto(matched.alto);
+      if (matched.deliveryWeeksMin && !deliveryWeeksMin) setDeliveryWeeksMin(matched.deliveryWeeksMin);
+      if (matched.deliveryWeeksMax && !deliveryWeeksMax) setDeliveryWeeksMax(matched.deliveryWeeksMax);
+      if (matched.phone && !clientPhone) setClientPhone(matched.phone);
+      if (matched.email && !clientEmail) setClientEmail(matched.email);
+      if (matched.taskId) {
+        const foundTask = getTasksFromLocalStorage().find((t) => t.id === matched.taskId);
+        if (foundTask) setActiveTask(foundTask);
+      }
+    }
+  };
 
   const toCatalogId = (value: string) =>
     value
@@ -918,23 +998,145 @@ export default function CotizadorPage() {
     if (!trimmedName) {
       return;
     }
+    const phone = newClientPhone.trim();
+    const email = newClientEmail.trim();
+
     setClients((prev) =>
-      prev.some((entry) => entry.name === trimmedName)
+      prev.some((entry) => entry.name.toLowerCase() === trimmedName.toLowerCase())
         ? prev
         : [
             ...prev,
             {
               name: trimmedName,
-              phone: newClientPhone.trim(),
-              email: newClientEmail.trim(),
+              phone,
+              email,
+            },
+          ],
+    );
+    setClientOptions((prev) =>
+      prev.some((entry) => entry.name.toLowerCase() === trimmedName.toLowerCase())
+        ? prev
+        : [
+            ...prev,
+            {
+              name: trimmedName,
+              phone,
+              email,
             },
           ],
     );
     setClient(trimmedName);
+    if (phone) setClientPhone(phone);
+    if (email) setClientEmail(email);
     setNewClientName("");
     setNewClientPhone("");
     setNewClientEmail("");
     setIsClientModalOpen(false);
+  };
+
+  const handleFinishCotizacion = async () => {
+    if (isFinishingCotizacion) return;
+    setIsFinishingCotizacion(true);
+    setFinishCotizacionError(null);
+
+    try {
+      const formalData: CotizacionFormalData = {
+        client: client.trim() || "Cliente sin nombre",
+        projectType: projectType || "—",
+        location: location.trim() || "Ubicación sin definir",
+        date: formatDeliveryWeeksLabel(deliveryWeeksMin, deliveryWeeksMax) || "Por definir",
+        rangeLabel: formatCurrency(totalNeto),
+        cubierta: effectiveMaterialBaseId || "—",
+        frente: effectiveColorId || "—",
+        herraje: "—",
+        largo: largo.trim() || undefined,
+        alto: alto.trim() || undefined,
+        costoBase: totales.costoBaseDirecto,
+        subtotal: totales.subtotalComercial,
+        iva: totales.montoIva,
+        total: totales.totalNeto,
+      };
+
+      const currentTasks = getTasksFromLocalStorage();
+      const targetTaskId = activeTask?.id || new URLSearchParams(window.location.search).get("taskId");
+
+      let targetTask = targetTaskId
+        ? currentTasks.find((t) => t.id === targetTaskId) || activeTask
+        : activeTask;
+
+      if (!targetTask && client.trim()) {
+        targetTask =
+          currentTasks.find(
+            (t) =>
+              t.project?.trim().toLowerCase() === client.trim().toLowerCase() ||
+              t.title?.trim().toLowerCase() === client.trim().toLowerCase(),
+          ) ?? null;
+      }
+
+      const patch: Partial<KanbanTask> = {
+        stage: "contrato",
+        status: "pendiente",
+        followUpStatus: "pendiente",
+        followUpEnteredAt: Date.now(),
+        citaStarted: true,
+        citaFinished: true,
+        cotizacionFormalData: formalData,
+        project: client.trim() || targetTask?.project || "Nuevo Proyecto",
+        location: location.trim() || targetTask?.location || "",
+      };
+
+      if (targetTask) {
+        const updatedTask: KanbanTask = {
+          ...targetTask,
+          ...patch,
+          cotizacionesFormales: [
+            ...(targetTask.cotizacionesFormales?.filter(
+              (c) => c.projectType !== formalData.projectType,
+            ) ?? []),
+            formalData,
+          ],
+        };
+
+        const nextTasks = currentTasks.map((t) => (t.id === targetTask!.id ? updatedTask : t));
+        saveKanbanTasksToLocalStorage(nextTasks);
+        notifyKanbanTasksUpdated(nextTasks);
+
+        await Promise.allSettled([
+          syncTaskStageWithBackend(targetTask, "contrato"),
+          syncTaskPatchWithBackend(targetTask, patch),
+        ]);
+      } else {
+        const newTask: KanbanTask = {
+          id: `task-${Date.now()}`,
+          title: client.trim() || "Proyecto sin nombre",
+          project: client.trim() || "Proyecto sin nombre",
+          stage: "contrato",
+          status: "pendiente",
+          followUpStatus: "pendiente",
+          followUpEnteredAt: Date.now(),
+          assignedTo: [],
+          citaStarted: true,
+          citaFinished: true,
+          location: location.trim() || undefined,
+          cotizacionFormalData: formalData,
+          cotizacionesFormales: [formalData],
+          createdAt: Date.now(),
+        };
+        const nextTasks = [...currentTasks, newTask];
+        saveKanbanTasksToLocalStorage(nextTasks);
+        notifyKanbanTasksUpdated(nextTasks);
+      }
+
+      const currentUser = authApi.getUserFromStorage();
+      const redirectTarget = currentUser?.rol === "admin" ? "/admin/operaciones" : "/dashboard/empleado";
+      router.push(redirectTarget);
+    } catch (error) {
+      setFinishCotizacionError(
+        error instanceof Error ? error.message : "No se pudo terminar la cotización",
+      );
+    } finally {
+      setIsFinishingCotizacion(false);
+    }
   };
 
   const handleEditMaterial = (itemId: string) => {
@@ -1525,7 +1727,7 @@ export default function CotizadorPage() {
                 <input
                   id="cotizador-cliente"
                   value={client}
-                  onChange={(event) => setClient(event.target.value)}
+                  onChange={(event) => handleClientChange(event.target.value)}
                   list="clientes-sugeridos"
                   placeholder="Buscar o escribir nuevo"
                   className="min-w-0 flex-1 rounded-xl border border-primary/10 bg-white px-3 py-2 text-sm outline-none"
@@ -2473,6 +2675,34 @@ export default function CotizadorPage() {
           >
             Generar Hoja de Taller
           </button>
+        </div>
+
+        {/* Sección final: Terminar cotización y pasar de etapa */}
+        <div className="mt-8 rounded-3xl border border-emerald-200 bg-emerald-50/80 p-6 shadow-md backdrop-blur-md">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-800">
+                Finalizar cotización
+              </p>
+              <h3 className="mt-1 text-lg font-semibold text-emerald-950">
+                Completar y pasar a seguimiento
+              </h3>
+              <p className="mt-1 text-sm text-emerald-800">
+                Guarda los datos técnicos y económicos de la cotización formal, actualiza el estatus del proyecto y regresa al tablero de trabajo.
+              </p>
+              {finishCotizacionError ? (
+                <p className="mt-2 text-sm font-semibold text-rose-600">{finishCotizacionError}</p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleFinishCotizacion()}
+              disabled={isFinishingCotizacion}
+              className="shrink-0 rounded-2xl bg-emerald-700 px-6 py-3.5 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-800 focus-visible:outline focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-wait disabled:opacity-60"
+            >
+              {isFinishingCotizacion ? "Terminando cotización..." : "Terminar cotización"}
+            </button>
+          </div>
         </div>
       </section>
 

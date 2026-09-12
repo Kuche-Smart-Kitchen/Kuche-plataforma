@@ -6,6 +6,7 @@ import Navbar from "@/components/layout/Navbar";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { TareasProvider } from "@/contexts/TareasContext";
 import { LevantamientoCatalogoProvider } from "@/contexts/LevantamientoCatalogoContext";
+import { MaterialesProvider } from "@/contexts/MaterialesContext";
 import { runtimeConfigWarnings } from "@/lib/runtime-config-guard";
 
 const manrope = Manrope({
@@ -33,9 +34,11 @@ export default function RootLayout({
         <AuthProvider>
           <TareasProvider>
             <LevantamientoCatalogoProvider>
-              <NumberInputWheelGuard />
-              <Navbar />
-              {children}
+              <MaterialesProvider>
+                <NumberInputWheelGuard />
+                <Navbar />
+                {children}
+              </MaterialesProvider>
             </LevantamientoCatalogoProvider>
           </TareasProvider>
         </AuthProvider>

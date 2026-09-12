@@ -18,6 +18,7 @@ import { dueDateToSortTimestamp } from "@/lib/kanban-due-datetime";
 import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { getTasksFromLocalStorage, type KanbanTask } from "@/lib/kanban";
 import { obtenerTodasLasCitas } from "@/lib/axios/citasApi";
+import { obtenerMateriales } from "@/lib/axios/materialesApi";
 
 type AppointmentLike = {
   status?: string;
@@ -164,9 +165,10 @@ export default function AdminPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [citasResponse, backendSync] = await Promise.all([
+        const [citasResponse, backendSync, materialesList] = await Promise.all([
           obtenerTodasLasCitas(),
           syncKanbanTasksFromBackend(),
+          obtenerMateriales().catch(() => []),
         ]);
 
         const citas = citasResponse.success && Array.isArray(citasResponse.data)
@@ -174,8 +176,12 @@ export default function AdminPage() {
           : [];
         setAppointments(citas.map(citaToAppointment));
 
-        const materiales = getStoredMateriales();
-        setTotalMaterials(materiales.length);
+        if (Array.isArray(materialesList) && materialesList.length > 0) {
+          setTotalMaterials(materialesList.length);
+        } else {
+          const materiales = getStoredMateriales();
+          setTotalMaterials(materiales.length);
+        }
 
         const workflowTasks = (backendSync ? backendSync : getTasksFromLocalStorage()) as KanbanTask[];
         const dashboardTasks: DashboardTask[] = workflowTasks.map((task) => ({

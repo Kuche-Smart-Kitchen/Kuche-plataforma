@@ -1,21 +1,6 @@
 import axiosInstance, { type ApiResponse } from "./axiosConfig";
-
-export type CatalogMaterial = {
-  _id: string;
-  id?: string;
-  idCotizador?: string;
-  nombre: string;
-  descripcion?: string;
-  precioUnitario?: number;
-  precioPorMetro?: number | null;
-  precioMetroLineal?: number | null;
-  seccion?: string;
-  unidadMedida?: string;
-  image?: string;
-  gama?: string;
-  tier?: string;
-  disponible?: boolean;
-};
+import type { CatalogMaterial } from "./materialesApi";
+export * from "./materialesApi";
 
 export type CatalogEquipment = {
   _id: string;

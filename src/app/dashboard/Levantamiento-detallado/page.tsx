@@ -24,8 +24,18 @@ import {
 import {
   type PreliminarData,
   getTasksFromLocalStorage,
+  saveKanbanTasksToLocalStorage,
+  notifyKanbanTasksUpdated,
   type KanbanTask,
 } from "@/lib/kanban";
+import { authApi } from "@/lib/axios";
+import { finalizarCita } from "@/lib/axios/citasApi";
+import { syncTaskPatchWithBackend, syncTaskStageWithBackend } from "@/lib/admin-workflow";
+import {
+  getSectionAInitialValues,
+  extractClientOptionsFromTasks,
+  type ClientDataOption,
+} from "./logica_Levantamiento_y_cotizacion/sectionA";
 import { CatalogProjectTypeField } from "@/components/catalogo/CatalogProjectTypeField";
 import {
   CATALOG_PROJECT_TYPES,
@@ -551,9 +561,10 @@ export default function CotizadorPreliminarPage() {
   const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [clientPhone, setClientPhone] = useState("");
-    const [activeTask, setActiveTask] = useState<KanbanTask | null>(null);
-    const [finishingCita, setFinishingCita] = useState(false);
-    const [finishCitaError, setFinishCitaError] = useState<string | null>(null);
+  const [clientOptions, setClientOptions] = useState<ClientDataOption[]>([]);
+  const [activeTask, setActiveTask] = useState<KanbanTask | null>(null);
+  const [finishingLevantamiento, setFinishingLevantamiento] = useState(false);
+  const [finishLevantamientoError, setFinishLevantamientoError] = useState<string | null>(null);
   const [projectType, setProjectType] = useState<string>(CATALOG_PROJECT_TYPES[0]);
   const [location, setLocation] = useState("");
   const [deliveryWeeksMin, setDeliveryWeeksMin] = useState("");
@@ -611,29 +622,147 @@ export default function CotizadorPreliminarPage() {
   }, [databaseAccessories, databaseLighting, databaseMateriales]);
 
   useEffect(() => {
+    const tasks = getTasksFromLocalStorage();
+    const extracted = extractClientOptionsFromTasks(tasks);
+    setClientOptions(extracted);
+
     const taskId = new URLSearchParams(window.location.search).get("taskId");
     if (!taskId) return;
 
-    const task = getTasksFromLocalStorage().find((candidate) => candidate.id === taskId);
+    const task = tasks.find((candidate) => candidate.id === taskId);
     if (!task) return;
 
     setActiveTask(task);
-    setClientName((current) => current || task.project || task.title || "");
-    setLocation((current) => current || task.location || "");
-
+    const initial = getSectionAInitialValues(task);
+    if (initial.clientName) setClientName(initial.clientName);
+    if (initial.clientPhone) setClientPhone(initial.clientPhone);
+    if (initial.clientEmail) setClientEmail(initial.clientEmail);
+    if (initial.location) setLocation(initial.location);
+    if (initial.projectType) setProjectType(initial.projectType);
+    if (initial.largo) setLargo(initial.largo);
+    if (initial.alto) setAlto(initial.alto);
+    if (initial.deliveryWeeksMin) setDeliveryWeeksMin(initial.deliveryWeeksMin);
+    if (initial.deliveryWeeksMax) setDeliveryWeeksMax(initial.deliveryWeeksMax);
+    if (task.preliminarData?.levantamiento) {
+      setLevantamiento(normalizeLevantamientoDetalle(task.preliminarData.levantamiento));
+    }
   }, []);
 
-  const handleFinishCita = async () => {
-    if (!activeTask || finishingCita) return;
-    setFinishingCita(true);
-    setFinishCitaError(null);
+  const handleClientNameChange = (nextValue: string) => {
+    lastEditedFieldRef.current = "clientName";
+    caretPositionsRef.current.clientName = clientNameInputRef.current?.selectionStart ?? null;
+    setClientName(nextValue);
+
+    const matched = clientOptions.find(
+      (opt) => opt.name.toLowerCase() === nextValue.trim().toLowerCase(),
+    );
+    if (matched) {
+      if (matched.location && !location) setLocation(matched.location);
+      if (matched.projectType && projectType === CATALOG_PROJECT_TYPES[0]) {
+        setProjectType(matched.projectType);
+      }
+      if (matched.largo && !largo) setLargo(matched.largo);
+      if (matched.alto && !alto) setAlto(matched.alto);
+      if (matched.deliveryWeeksMin && !deliveryWeeksMin) setDeliveryWeeksMin(matched.deliveryWeeksMin);
+      if (matched.deliveryWeeksMax && !deliveryWeeksMax) setDeliveryWeeksMax(matched.deliveryWeeksMax);
+      if (matched.phone && !clientPhone) setClientPhone(matched.phone);
+      if (matched.email && !clientEmail) setClientEmail(matched.email);
+      if (matched.taskId) {
+        const foundTask = getTasksFromLocalStorage().find((t) => t.id === matched.taskId);
+        if (foundTask) setActiveTask(foundTask);
+      }
+    }
+  };
+
+  const handleFinishLevantamiento = async () => {
+    if (finishingLevantamiento) return;
+    setFinishingLevantamiento(true);
+    setFinishLevantamientoError(null);
     try {
-      await terminarCita(activeTask);
-      router.push("/admin/operaciones");
+      const preliminarData = buildPreliminarDataFromForm();
+      const currentTasks = getTasksFromLocalStorage();
+      const targetTaskId = activeTask?.id || new URLSearchParams(window.location.search).get("taskId");
+
+      let targetTask = targetTaskId
+        ? currentTasks.find((t) => t.id === targetTaskId) || activeTask
+        : activeTask;
+
+      if (!targetTask && clientName.trim()) {
+        targetTask =
+          currentTasks.find(
+            (t) =>
+              t.project?.trim().toLowerCase() === clientName.trim().toLowerCase() ||
+              t.title?.trim().toLowerCase() === clientName.trim().toLowerCase(),
+          ) ?? null;
+      }
+
+      const patch: Partial<KanbanTask> = {
+        citaStarted: true,
+        citaFinished: true,
+        stage: "disenos",
+        status: "pendiente",
+        preliminarData,
+        project: clientName.trim() || targetTask?.project || "Nuevo Proyecto",
+        location: location.trim() || targetTask?.location || "",
+      };
+
+      if (targetTask) {
+        const updatedTask: KanbanTask = {
+          ...targetTask,
+          ...patch,
+          preliminarCotizaciones: [
+            ...(targetTask.preliminarCotizaciones?.filter(
+              (p) => p.projectType !== preliminarData.projectType,
+            ) ?? []),
+            preliminarData,
+          ],
+        };
+
+        const nextTasks = currentTasks.map((t) => (t.id === targetTask!.id ? updatedTask : t));
+        saveKanbanTasksToLocalStorage(nextTasks);
+        notifyKanbanTasksUpdated(nextTasks);
+
+        const isCita = targetTask.sourceType?.toLowerCase() === "cita";
+        if (isCita && targetTask.sourceId) {
+          try {
+            await terminarCita(targetTask);
+          } catch (e) {
+            console.warn("No se pudo finalizar cita en backend", e);
+          }
+        }
+        await Promise.allSettled([
+          syncTaskStageWithBackend(targetTask, "disenos"),
+          syncTaskPatchWithBackend(targetTask, patch),
+        ]);
+      } else {
+        const newTask: KanbanTask = {
+          id: `task-${Date.now()}`,
+          title: clientName.trim() || "Proyecto sin nombre",
+          project: clientName.trim() || "Proyecto sin nombre",
+          stage: "disenos",
+          status: "pendiente",
+          assignedTo: [],
+          citaStarted: true,
+          citaFinished: true,
+          location: location.trim() || undefined,
+          preliminarData,
+          preliminarCotizaciones: [preliminarData],
+          createdAt: Date.now(),
+        };
+        const nextTasks = [...currentTasks, newTask];
+        saveKanbanTasksToLocalStorage(nextTasks);
+        notifyKanbanTasksUpdated(nextTasks);
+      }
+
+      const currentUser = authApi.getUserFromStorage();
+      const redirectTarget = currentUser?.rol === "admin" ? "/admin/operaciones" : "/dashboard/empleado";
+      router.push(redirectTarget);
     } catch (error) {
-      setFinishCitaError(error instanceof Error ? error.message : "No se pudo terminar la cita");
+      setFinishLevantamientoError(
+        error instanceof Error ? error.message : "No se pudo terminar el levantamiento",
+      );
     } finally {
-      setFinishingCita(false);
+      setFinishingLevantamiento(false);
     }
   };
 
@@ -1314,15 +1443,16 @@ export default function CotizadorPreliminarPage() {
                     id="levantamiento-cliente"
                     ref={clientNameInputRef}
                     value={clientName}
-                    onChange={(event) => {
-                      const nextValue = event.target.value;
-                      lastEditedFieldRef.current = "clientName";
-                      caretPositionsRef.current.clientName = event.target.selectionStart ?? null;
-                      setClientName(nextValue);
-                    }}
+                    onChange={(event) => handleClientNameChange(event.target.value)}
+                    list="levantamiento-clientes-sugeridos"
                     placeholder="Nombre del cliente"
                     className="w-full rounded-xl border border-primary/10 bg-white/90 px-3 py-2 text-sm outline-none"
                   />
+                  <datalist id="levantamiento-clientes-sugeridos">
+                    {clientOptions.map((opt) => (
+                      <option key={`${opt.name}-${opt.taskId ?? ""}`} value={opt.name} />
+                    ))}
+                  </datalist>
                 </div>
 
                 <div className="col-span-12 flex flex-col md:col-span-4">
@@ -3428,30 +3558,35 @@ export default function CotizadorPreliminarPage() {
             </div>
           </div>
         </SectionCard>
-      </div>
-      {activeTask?.sourceType?.toLowerCase() === "cita" ? (
-        <section className="mt-8 rounded-3xl border border-emerald-200 bg-emerald-50/70 p-5 shadow-sm">
+
+        {/* Sección final: Terminar levantamiento y pasar de etapa */}
+        <section className="rounded-3xl border border-emerald-200 bg-emerald-50/80 p-6 shadow-md backdrop-blur-md">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-700">
-                Cita en proceso
+              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-800">
+                Finalizar levantamiento
               </p>
-              <p className="mt-2 text-sm text-emerald-900">
-                Termina la cita cuando hayas completado el levantamiento del cliente.
+              <h3 className="mt-1 text-lg font-semibold text-emerald-950">
+                Completar y avanzar a diseños
+              </h3>
+              <p className="mt-1 text-sm text-emerald-800">
+                Guarda los datos del levantamiento, actualiza el estatus del proyecto y regresa al tablero de trabajo.
               </p>
-              {finishCitaError ? <p className="mt-2 text-sm font-semibold text-rose-600">{finishCitaError}</p> : null}
+              {finishLevantamientoError ? (
+                <p className="mt-2 text-sm font-semibold text-rose-600">{finishLevantamientoError}</p>
+              ) : null}
             </div>
             <button
               type="button"
-              onClick={() => void handleFinishCita()}
-              disabled={finishingCita}
-              className="shrink-0 rounded-2xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-wait disabled:opacity-60"
+              onClick={() => void handleFinishLevantamiento()}
+              disabled={finishingLevantamiento}
+              className="shrink-0 rounded-2xl bg-emerald-700 px-6 py-3.5 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-800 focus-visible:outline focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-wait disabled:opacity-60"
             >
-              {finishingCita ? "Terminando cita..." : "Terminar cita y volver al tablero"}
+              {finishingLevantamiento ? "Terminando levantamiento..." : "Terminar levantamiento"}
             </button>
           </div>
         </section>
-      ) : null}
+      </div>
       <div
         className="fixed right-6 top-24 z-40 w-[min(260px,calc(100vw-2rem))] rounded-3xl border border-white/70 bg-white/90 p-4 shadow-2xl backdrop-blur-md"
       >

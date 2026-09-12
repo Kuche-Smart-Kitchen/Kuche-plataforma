@@ -738,7 +738,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
   const startCotizacionFormal = (taskId: string) => {
     updateTask(taskId, (t) => ({ ...t, citaStarted: true }));
-    router.push("/dashboard/cotizador");
+    router.push(`/dashboard/cotizador?taskId=${encodeURIComponent(taskId)}`);
   };
 
   const approveDesignAsAdmin = async (taskId: string) => {

@@ -7,3 +7,5 @@ export type { AuthResponse, LoginCredentials, RegisterData, User, UserRole } fro
 export * as seguimientoApi from "./seguimientoApi";
 
 export * from "./archivosClienteApi";
+export * from "./materialesApi";
+export * from "./catalogosApi";
