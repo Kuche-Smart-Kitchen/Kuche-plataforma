@@ -89,6 +89,8 @@ export function resolveAllowedOrigins(): string[] {
     "https://kuche-plataforma.vercel.app",
     "https://cocinainteligenteskuche.com",
     "https://www.cocinainteligenteskuche.com",
+    "https://kuchecocinasinteligentes.com",
+    "https://www.kuchecocinasinteligentes.com",
     "http://localhost:3000",
   ];
 
