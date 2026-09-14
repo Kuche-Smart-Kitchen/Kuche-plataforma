@@ -71,8 +71,9 @@ export const restoreSession = async (): Promise<ApiResponse<AuthResponse>> => {
   }
 };
 
-const loginEndpoints = ["/api/auth/login", "/api/login", "/api/auth/signin", "/api/auth/sign-in"];
-const currentUserEndpoints = ["/api/auth/me", "/api/me", "/api/auth/profile", "/api/user/me"];
+// Alineado con los alias documentados por el backend (GUIA_INTEGRACION_LOGIN_FRONTEND.md).
+const loginEndpoints = ["/api/auth/login", "/api/auth/signin", "/api/auth/sign-in"];
+const currentUserEndpoints = ["/api/auth/me", "/api/auth/profile", "/api/auth/user/me"];
 
 export interface LoginCredentials {
   correo: string;
