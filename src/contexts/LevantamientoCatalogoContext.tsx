@@ -33,22 +33,26 @@ export function LevantamientoCatalogoProvider({ children }: { children: ReactNod
   const recargar = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      const [nextMateriales, nextHerrajes, nextElectrodomesticos, nextExtras] = await Promise.all([
-        obtenerMaterialesLevantamiento(),
-        obtenerHerrajesLevantamiento(),
-        obtenerElectrodomesticosLevantamiento(),
-        obtenerExtrasLevantamiento(),
-      ]);
-      setMateriales(nextMateriales);
-      setHerrajes(nextHerrajes);
-      setElectrodomesticos(nextElectrodomesticos);
-      setExtras(nextExtras);
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "No se pudo cargar el catalogo");
-    } finally {
-      setLoading(false);
+    const [materialesResult, herrajesResult, electrodomesticosResult, extrasResult] = await Promise.allSettled([
+      obtenerMaterialesLevantamiento(),
+      obtenerHerrajesLevantamiento(),
+      obtenerElectrodomesticosLevantamiento(),
+      obtenerExtrasLevantamiento(),
+    ]);
+
+    if (materialesResult.status === "fulfilled") setMateriales(materialesResult.value);
+    if (herrajesResult.status === "fulfilled") setHerrajes(herrajesResult.value);
+    if (electrodomesticosResult.status === "fulfilled") setElectrodomesticos(electrodomesticosResult.value);
+    if (extrasResult.status === "fulfilled") setExtras(extrasResult.value);
+
+    const failed = [materialesResult, herrajesResult, electrodomesticosResult, extrasResult].find(
+      (result) => result.status === "rejected",
+    ) as PromiseRejectedResult | undefined;
+    if (failed) {
+      const reason = failed.reason;
+      setError(reason instanceof Error ? reason.message : "No se pudo cargar parte del catalogo");
     }
+    setLoading(false);
   }, []);
 
   useEffect(() => {

@@ -1,3 +1,4 @@
+import type { ApiResponse } from "./axiosConfig";
 import axiosInstance from "./axiosConfig";
 import type { User, UserRole } from "./authApi";
 
@@ -38,4 +39,29 @@ export const fetchAssignableUsers = async (): Promise<AssignableUser[]> => {
       correo: user.correo,
       rol: user.rol,
     }));
+};
+
+export type CrearIntegrantePayload = {
+  nombre: string;
+  correo: string;
+  rol?: UserRole;
+  telefono?: string;
+  password?: string;
+};
+
+const getUserFromResponse = (payload: ApiResponse<User> | User): User => {
+  if ("data" in payload && payload.data) return payload.data as User;
+  return payload as User;
+};
+
+export const crearIntegrante = async (payload: CrearIntegrantePayload): Promise<User> => {
+  const body = {
+    nombre: payload.nombre.trim(),
+    correo: payload.correo.trim(),
+    rol: payload.rol ?? "empleado",
+    telefono: payload.telefono?.trim() || "N/A",
+    ...(payload.password ? { password: payload.password } : {}),
+  };
+  const response = await axiosInstance.post<ApiResponse<User> | User>("/api/usuarios", body);
+  return getUserFromResponse(response.data);
 };

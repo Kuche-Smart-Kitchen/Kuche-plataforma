@@ -20,11 +20,11 @@ import {
 import { generatePublicProjectCode } from "@/lib/project-code";
 import { fetchBackendKanbanTasks } from "@/lib/admin-workflow";
 import { crearTarea } from "@/lib/axios/tareasApi";
-import { fetchAssignableUsers } from "@/lib/axios/usuariosApi";
+import { useEquipoContext } from "@/contexts/EquipoContext";
 
 export default function OperacionesPage() {
   const router = useRouter();
-  const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>([]);
+  const { teamMembers, agregarIntegrante } = useEquipoContext();
   const [selectedEmployeeFilter, setSelectedEmployeeFilter] = useState<string>("Todos");
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
@@ -38,8 +38,9 @@ export default function OperacionesPage() {
   const [newTaskMapsUrl, setNewTaskMapsUrl] = useState("");
   const [assignError, setAssignError] = useState("");
   const [newMemberName, setNewMemberName] = useState("");
+  const [newMemberEmail, setNewMemberEmail] = useState("");
   const [teamError, setTeamError] = useState("");
-  const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
+  const [teamSaving, setTeamSaving] = useState(false);
   const [kanbanTasks, setKanbanTasks] = useState<KanbanTask[]>([]);
   const [selectedPublicTaskId, setSelectedPublicTaskId] = useState<string | null>(null);
   const [isPublicEditorOpen, setIsPublicEditorOpen] = useState(false);
@@ -50,12 +51,6 @@ export default function OperacionesPage() {
   useEscapeClose(isTeamModalOpen, () => setIsTeamModalOpen(false));
   useFocusTrap(isAssignModalOpen, assignModalRef);
   useFocusTrap(isTeamModalOpen, teamModalRef);
-
-  useEffect(() => {
-    void fetchAssignableUsers()
-      .then((users) => setTeamMembers(users.map((user) => ({ id: user.id ?? user._id ?? user.correo, name: user.nombre }))))
-      .catch(() => setTeamMembers([]));
-  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -151,53 +146,27 @@ export default function OperacionesPage() {
     }
   };
 
-  const handleAddMember = () => {
+  const handleAddMember = async () => {
     const name = newMemberName.trim();
-    if (!name) {
-      setTeamError("Escribe el nombre del integrante.");
+    const correo = newMemberEmail.trim();
+    if (!name || !correo) {
+      setTeamError("Escribe el nombre y el correo del integrante.");
       return;
     }
     if (teamMembers.some((m) => m.name.toLowerCase() === name.toLowerCase())) {
       setTeamError("Ya existe un integrante con ese nombre.");
       return;
     }
-    setTeamMembers((prev) => [
-      ...prev,
-      { id: `e${Date.now()}`, name },
-    ]);
-    setNewMemberName("");
+    setTeamSaving(true);
     setTeamError("");
-  };
-
-  const handleUpdateMember = () => {
-    const name = newMemberName.trim();
-    if (!name || !editingMemberId) {
-      setTeamError("Escribe el nombre del integrante.");
-      return;
-    }
-    if (
-      teamMembers.some(
-        (m) => m.id !== editingMemberId && m.name.toLowerCase() === name.toLowerCase()
-      )
-    ) {
-      setTeamError("Ya existe un integrante con ese nombre.");
-      return;
-    }
-    setTeamMembers((prev) =>
-      prev.map((m) => (m.id === editingMemberId ? { ...m, name } : m))
-    );
-    setEditingMemberId(null);
-    setNewMemberName("");
-    setTeamError("");
-  };
-
-  const handleDeleteMember = (id: string) => {
-    const member = teamMembers.find((m) => m.id === id);
-    if (!window.confirm(`¿Eliminar a ${member?.name ?? "este integrante"}?`)) return;
-    setTeamMembers((prev) => prev.filter((m) => m.id !== id));
-    if (editingMemberId === id) {
-      setEditingMemberId(null);
+    try {
+      await agregarIntegrante({ nombre: name, correo });
       setNewMemberName("");
+      setNewMemberEmail("");
+    } catch (err) {
+      setTeamError(err instanceof Error ? err.message : "No se pudo agregar el integrante.");
+    } finally {
+      setTeamSaving(false);
     }
   };
 
@@ -215,8 +184,8 @@ export default function OperacionesPage() {
 
   const openTeamModal = () => {
     setNewMemberName("");
+    setNewMemberEmail("");
     setTeamError("");
-    setEditingMemberId(null);
     setIsTeamModalOpen(true);
   };
 
@@ -519,9 +488,7 @@ export default function OperacionesPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">
-                {editingMemberId ? "Editar integrante" : "Integrantes del equipo"}
-              </h3>
+              <h3 className="text-lg font-semibold text-gray-900">Integrantes del equipo</h3>
               <button
                 type="button"
                 onClick={() => setIsTeamModalOpen(false)}
@@ -530,22 +497,28 @@ export default function OperacionesPage() {
                 Cerrar
               </button>
             </div>
-            <div className="mt-4">
-              <div className="flex gap-2">
-                <input
-                  value={newMemberName}
-                  onChange={(e) => setNewMemberName(e.target.value)}
-                  placeholder="Nombre del integrante"
-                  className="flex-1 rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={editingMemberId ? handleUpdateMember : handleAddMember}
-                  className="rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white"
-                >
-                  {editingMemberId ? "Guardar" : "Agregar"}
-                </button>
-              </div>
+            <div className="mt-4 space-y-2">
+              <input
+                value={newMemberName}
+                onChange={(e) => setNewMemberName(e.target.value)}
+                placeholder="Nombre del integrante"
+                className="w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
+              />
+              <input
+                value={newMemberEmail}
+                onChange={(e) => setNewMemberEmail(e.target.value)}
+                placeholder="Correo del integrante"
+                type="email"
+                className="w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
+              />
+              <button
+                type="button"
+                disabled={teamSaving}
+                onClick={() => void handleAddMember()}
+                className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {teamSaving ? "Agregando..." : "Agregar"}
+              </button>
             </div>
             <div className="mt-4 space-y-2 rounded-2xl border border-primary/10 bg-white/50 p-3">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
@@ -557,26 +530,6 @@ export default function OperacionesPage() {
                   className="flex items-center justify-between rounded-xl border border-primary/10 bg-white px-3 py-2"
                 >
                   <span className="text-sm font-medium text-gray-900">{m.name}</span>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingMemberId(m.id);
-                        setNewMemberName(m.name);
-                        setTeamError("");
-                      }}
-                      className="rounded-full border border-primary/10 px-3 py-1 text-[11px] font-semibold text-secondary"
-                    >
-                      Editar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteMember(m.id)}
-                      className="rounded-full border border-rose-200 px-3 py-1 text-[11px] font-semibold text-rose-600"
-                    >
-                      Eliminar
-                    </button>
-                  </div>
                 </div>
               ))}
               {teamMembers.length === 0 ? (
