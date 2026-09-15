@@ -195,30 +195,30 @@ const SHOWROOM_MATERIAL_IMAGE_BY_ID: Record<string, string> = {
 
 const materialImageMap: Record<MaterialCategory, { match: RegExp; src: string }[]> = {
   cubiertas: [
-    { match: /calacatta|m?rmol|marble/i, src: "/images/materiales/calaccata_marble.jpg" },
-    { match: /granito negro/i, src: "/images/materiales/black_granite.jpg" },
-    { match: /cuarzo/i, src: "/images/materiales/quartz_texture.jpg" },
-    { match: /sinterizada/i, src: "/images/materiales/smooth_stone.jpg" },
-    { match: /porcelanato|terrazzo|terrazo/i, src: "/images/materiales/terazzo_texture.jpg" },
-    { match: /laminado|blanco|nieve/i, src: "/images/materiales/white_seamless_texture.jpg" },
-    { match: /granito/i, src: "/images/materiales/stone_texture.jpg" },
+    { match: /calacatta|m?rmol|marble/i, src: "/images/levantamiento/cubiertas/marmol.jpg" },
+    { match: /granito negro/i, src: "/images/levantamiento/cubiertas/granito.jpg" },
+    { match: /cuarzo/i, src: "/images/levantamiento/cubiertas/cuarzo.jpg" },
+    { match: /sinterizada/i, src: "/images/levantamiento/cubiertas/piedra-sinterizada.jpeg" },
+    { match: /porcelanato|terrazzo|terrazo/i, src: "/images/levantamiento/cubiertas/cubierta-solida.jpg" },
+    { match: /laminado|blanco|nieve/i, src: "/images/levantamiento/cubiertas/formica.jpeg" },
+    { match: /granito/i, src: "/images/levantamiento/cubiertas/granito.jpg" },
   ],
   frentes: [
-    { match: /nogal|parota|cedro|encino|madera|chapa/i, src: "/images/materiales/walnut_wood_texture.jpg" },
-    { match: /melamina blanca|blanca/i, src: "/images/materiales/white_seamless_texture.jpg" },
-    { match: /melamina|mdf/i, src: "/images/materiales/plywood_texture.jpg" },
-    { match: /laca met?lica|metalica/i, src: "/images/materiales/metalic_textures.jpg" },
-    { match: /laca/i, src: "/images/materiales/white_marble_texture.jpg" },
+    { match: /nogal|parota|cedro|encino|madera|chapa/i, src: "/images/levantamiento/frentes/madera-solida.jpeg" },
+    { match: /melamina blanca|blanca/i, src: "/images/levantamiento/frentes/melamina-estandar.jpeg" },
+    { match: /melamina|mdf/i, src: "/images/levantamiento/frentes/melamina-tendencia.jpeg" },
+    { match: /laca met?lica|metalica/i, src: "/images/levantamiento/frentes/altos-brillos.jpeg" },
+    { match: /laca/i, src: "/images/levantamiento/frentes/supermates.jpeg" },
   ],
   herrajes: [
-    { match: /inox|stainless/i, src: "/images/materiales/stainless_steel_hinge.jpg" },
-    { match: /cierre|drawer|slide|push/i, src: "/images/materiales/drawer_slide.jpg" },
-    { match: /soft|hinge|amortiguado|hidr?ulico|smart|lux/i, src: "/images/materiales/cabinet_hinge.jpg" },
+    { match: /inox|stainless/i, src: "/images/levantamiento/herrajes/Alta.jpg" },
+    { match: /cierre|drawer|slide|push/i, src: "/images/levantamiento/herrajes/intermedio.jpg" },
+    { match: /soft|hinge|amortiguado|hidr?ulico|smart|lux/i, src: "/images/levantamiento/herrajes/premium.png" },
   ],
 };
 
 const defaultCategoryImage: Record<MaterialCategory, string> = {
-  cubiertas: "/images/materiales/stone_texture.jpg",
+  cubiertas: "/images/levantamiento/cubiertas/cubierta-solida.jpg",
   frentes: "/images/levantamiento/frentes/melamina-estandar.jpeg",
   herrajes: "/images/levantamiento/herrajes/intermedio.jpg",
 };
@@ -3528,7 +3528,7 @@ export default function CotizadorPreliminarPage() {
                 {pdfUploadStatus === "uploading" ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Guardando en Cloudinary...
+                    Cargando...
                   </>
                 ) : (
                   "Generar Estimación en PDF"

@@ -1,4 +1,8 @@
+import axios from "axios";
 import axiosInstance, { type ApiResponse } from "./axiosConfig";
+
+/** Límite práctico de subida vía el proxy serverless (Vercel corta payloads de función ~4.5 MB). */
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 export interface ClienteArchivo {
   _id: string;
@@ -106,6 +110,14 @@ export const subirArchivoCliente = async (
     return { success: false, message: "Falta el identificador del cliente para subir el archivo." };
   }
 
+  if (file.size > MAX_UPLOAD_BYTES) {
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+    return {
+      success: false,
+      message: `El archivo pesa ${sizeMb} MB y supera el límite de subida (4 MB). Reduce el número de imágenes o su calidad e inténtalo de nuevo.`,
+    };
+  }
+
   const formData = new FormData();
   formData.append("file", file);
   formData.append("tipo", tipo);
@@ -130,6 +142,12 @@ export const subirArchivoCliente = async (
     }
     return { success: true, message: payload.message, data: archivo };
   } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 413) {
+      return {
+        success: false,
+        message: "El archivo es demasiado grande para subirse. Reduce el número de imágenes o su calidad e inténtalo de nuevo.",
+      };
+    }
     const axiosError = error as { response?: { data?: { message?: string } } };
     return {
       success: false,

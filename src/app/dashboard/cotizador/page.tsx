@@ -2739,7 +2739,7 @@ export default function CotizadorPage() {
             {formalPdfUploadStatus === "uploading" ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Guardando en Cloudinary...
+                Cargando...
               </>
             ) : (
               "Generar PDF Cliente"
@@ -2754,7 +2754,7 @@ export default function CotizadorPage() {
             {workshopPdfUploadStatus === "uploading" ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Guardando en Cloudinary...
+                Cargando...
               </>
             ) : (
               "Generar Hoja de Taller"
