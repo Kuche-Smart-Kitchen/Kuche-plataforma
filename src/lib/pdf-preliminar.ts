@@ -724,6 +724,15 @@ export function buildPreliminarPdf(data: PreliminarData): Uint8Array {
   return new Uint8Array(ab);
 }
 
+/** Genera el PDF preliminar con logo como Blob, reutilizable para descarga y subida a Cloudinary. */
+export async function buildPreliminarPdfBlob(data: PreliminarData): Promise<Blob> {
+  const logo = await fetchKucheLogoDataUrl();
+  const logoFit = await getLogoFitSizeForPdf(logo);
+  const doc = buildPreliminarJsPdf(data, logo, logoFit);
+  const bytes = new Uint8Array(doc.output("arraybuffer"));
+  return new Blob([bytes], { type: "application/pdf" });
+}
+
 /** Abre un PDF desde data URL o URL http (comprobantes / archivos de seguimiento). */
 export function openPdfDataUrlOrUrlInNewTab(stored: string): void {
   openStoredPdfInNewTab(stored);

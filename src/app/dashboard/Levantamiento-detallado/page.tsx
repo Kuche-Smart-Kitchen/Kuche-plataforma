@@ -17,6 +17,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FilePenLine,
+  Loader2,
   Minus,
   Plus,
   Search,
@@ -80,9 +81,11 @@ import {
   type LevantamientoDetalle,
 } from "@/lib/levantamiento-catalog";
 import {
+  buildPreliminarPdfBlob,
   buildPreliminarPdfDataUrl,
   downloadPreliminarPdf,
 } from "@/lib/pdf-preliminar";
+import { subirArchivoCliente } from "@/lib/axios/archivosClienteApi";
 import { defaultLevantamientoDetalle, normalizeLevantamientoDetalle } from "@/lib/levantamiento-catalog";
 import { formatDeliveryWeeksLabel } from "@/lib/delivery-weeks";
 import { emptyWhenZeroIntString, emptyWhenZeroNumericString } from "@/lib/numeric-input-empty-zero";
@@ -565,6 +568,8 @@ export default function CotizadorPreliminarPage() {
   const [activeTask, setActiveTask] = useState<KanbanTask | null>(null);
   const [finishingLevantamiento, setFinishingLevantamiento] = useState(false);
   const [finishLevantamientoError, setFinishLevantamientoError] = useState<string | null>(null);
+  const [pdfUploadStatus, setPdfUploadStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
+  const [pdfUploadMessage, setPdfUploadMessage] = useState<string | null>(null);
   const [projectType, setProjectType] = useState<string>(CATALOG_PROJECT_TYPES[0]);
   const [location, setLocation] = useState("");
   const [deliveryWeeksMin, setDeliveryWeeksMin] = useState("");
@@ -1239,6 +1244,37 @@ export default function CotizadorPreliminarPage() {
   const handleGeneratePdf = () => {
     const data = buildPreliminarDataFromForm();
     downloadPreliminarPdf(data, "levantamiento-detallado.pdf");
+
+    const clienteId = activeTask?.codigoProyecto?.trim();
+    if (!clienteId) {
+      setPdfUploadStatus("error");
+      setPdfUploadMessage("El PDF se descargó, pero no se guardó en Cloudinary: falta el código de cliente/proyecto.");
+      return;
+    }
+
+    setPdfUploadStatus("uploading");
+    setPdfUploadMessage(null);
+    void (async () => {
+      try {
+        const blob = await buildPreliminarPdfBlob(data);
+        const file = new File([blob], "levantamiento-detallado.pdf", { type: "application/pdf" });
+        const result = await subirArchivoCliente(file, clienteId, "levantamiento_detallado", {
+          tareasId: activeTask?.id,
+        });
+        if (!result.success) {
+          setPdfUploadStatus("error");
+          setPdfUploadMessage(result.message || "El PDF se descargó, pero no se pudo guardar en Cloudinary.");
+          return;
+        }
+        setPdfUploadStatus("success");
+        setPdfUploadMessage("PDF descargado y guardado en los archivos del cliente.");
+      } catch (error) {
+        setPdfUploadStatus("error");
+        setPdfUploadMessage(
+          error instanceof Error ? error.message : "El PDF se descargó, pero no se pudo guardar en Cloudinary.",
+        );
+      }
+    })();
   };
 
   const handlePersistLevantamientoDraft = useCallback(() => {
@@ -3486,10 +3522,27 @@ export default function CotizadorPreliminarPage() {
               </p>
               <button
                 onClick={handleGeneratePdf}
-                className="mt-4 inline-flex items-center justify-center rounded-2xl bg-[#8B1C1C] px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:brightness-110"
+                disabled={pdfUploadStatus === "uploading"}
+                className="mt-4 inline-flex items-center justify-center gap-2 rounded-2xl bg-[#8B1C1C] px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:brightness-110 disabled:cursor-wait disabled:opacity-70"
               >
-                Generar Estimación en PDF
+                {pdfUploadStatus === "uploading" ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Guardando en Cloudinary...
+                  </>
+                ) : (
+                  "Generar Estimación en PDF"
+                )}
               </button>
+              {pdfUploadMessage ? (
+                <p
+                  className={`mt-2 text-xs font-medium ${
+                    pdfUploadStatus === "error" ? "text-rose-600" : "text-emerald-700"
+                  }`}
+                >
+                  {pdfUploadMessage}
+                </p>
+              ) : null}
               <p className="mt-3 text-xs text-secondary">
                 El PDF incluye portada (datos, materiales, rango) y anexo con comentarios y medidas del
                 levantamiento cuando hay información capturada.

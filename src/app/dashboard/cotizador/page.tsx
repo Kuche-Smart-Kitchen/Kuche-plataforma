@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Minus, MoreVertical, Plus, Star } from "lucide-react";
+import { Loader2, Minus, MoreVertical, Plus, Star } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
@@ -18,6 +18,7 @@ import {
   notifyKanbanTasksUpdated,
 } from "@/lib/kanban";
 import { authApi } from "@/lib/axios";
+import { subirArchivoCliente } from "@/lib/axios/archivosClienteApi";
 import { syncTaskPatchWithBackend, syncTaskStageWithBackend } from "@/lib/admin-workflow";
 import {
   getSectionAInitialValues,
@@ -447,6 +448,14 @@ export default function CotizadorPage() {
   const [newItemUnitType, setNewItemUnitType] = useState("pieza");
   const [newItemCategory, setNewItemCategory] = useState(initialCatalogoKuche[0]?.category ?? "");
   const [finishFormalError, setFinishFormalError] = useState("");
+  const [formalPdfUploadStatus, setFormalPdfUploadStatus] = useState<"idle" | "uploading" | "success" | "error">(
+    "idle",
+  );
+  const [formalPdfUploadMessage, setFormalPdfUploadMessage] = useState<string | null>(null);
+  const [workshopPdfUploadStatus, setWorkshopPdfUploadStatus] = useState<"idle" | "uploading" | "success" | "error">(
+    "idle",
+  );
+  const [workshopPdfUploadMessage, setWorkshopPdfUploadMessage] = useState<string | null>(null);
   const [referenceImages, setReferenceImages] = useState<
     Array<{ id: string; name: string; dataUrl: string }>
   >([]);
@@ -1659,7 +1668,42 @@ export default function CotizadorPage() {
         r.readAsDataURL(blob);
       });
     }
-    doc.save(filename);
+
+    const blob = doc.output("blob");
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(objectUrl);
+
+    const clienteId = activeTask?.codigoProyecto?.trim();
+    if (!clienteId) {
+      setFormalPdfUploadStatus("error");
+      setFormalPdfUploadMessage("El PDF se descargó, pero no se guardó en Cloudinary: falta el código de cliente/proyecto.");
+      return;
+    }
+
+    setFormalPdfUploadStatus("uploading");
+    setFormalPdfUploadMessage(null);
+    try {
+      const file = new File([blob], filename, { type: "application/pdf" });
+      const result = await subirArchivoCliente(file, clienteId, "cotizacion_formal", {
+        tareasId: activeTask?.id,
+      });
+      if (!result.success) {
+        setFormalPdfUploadStatus("error");
+        setFormalPdfUploadMessage(result.message || "El PDF se descargó, pero no se pudo guardar en Cloudinary.");
+        return;
+      }
+      setFormalPdfUploadStatus("success");
+      setFormalPdfUploadMessage("PDF descargado y guardado en los archivos del cliente.");
+    } catch (error) {
+      setFormalPdfUploadStatus("error");
+      setFormalPdfUploadMessage(
+        error instanceof Error ? error.message : "El PDF se descargó, pero no se pudo guardar en Cloudinary.",
+      );
+    }
   };
 
   /** Genera el PDF formal actual y lo devuelve como data URL (para guardar en la tarjeta). */
@@ -1688,8 +1732,33 @@ export default function CotizadorPage() {
         document.body.removeChild(a);
       }
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 300_000);
-    } catch {
+
+      const clienteId = activeTask?.codigoProyecto?.trim();
+      if (!clienteId) {
+        setWorkshopPdfUploadStatus("error");
+        setWorkshopPdfUploadMessage("El PDF se descargó, pero no se guardó en Cloudinary: falta el código de cliente/proyecto.");
+        return;
+      }
+
+      setWorkshopPdfUploadStatus("uploading");
+      setWorkshopPdfUploadMessage(null);
+      const file = new File([blob], downloadName, { type: "application/pdf" });
+      const result = await subirArchivoCliente(file, clienteId, "hoja_taller", {
+        tareasId: activeTask?.id,
+      });
+      if (!result.success) {
+        setWorkshopPdfUploadStatus("error");
+        setWorkshopPdfUploadMessage(result.message || "El PDF se descargó, pero no se pudo guardar en Cloudinary.");
+        return;
+      }
+      setWorkshopPdfUploadStatus("success");
+      setWorkshopPdfUploadMessage("PDF descargado y guardado en los archivos del cliente.");
+    } catch (error) {
       setFinishFormalError("No se pudo generar la hoja de taller. Intenta de nuevo.");
+      setWorkshopPdfUploadStatus("error");
+      setWorkshopPdfUploadMessage(
+        error instanceof Error ? error.message : "No se pudo guardar la hoja de taller en Cloudinary.",
+      );
     }
   };
 
@@ -2663,19 +2732,45 @@ export default function CotizadorPage() {
         <div className="flex flex-wrap gap-3">
           <button
             type="button"
-            onClick={() => handleGenerateClientPdf()}
-            className="rounded-2xl bg-[#8B1C1C] px-5 py-3 text-xs font-semibold text-white"
+            onClick={() => void handleGenerateClientPdf()}
+            disabled={formalPdfUploadStatus === "uploading"}
+            className="inline-flex items-center gap-2 rounded-2xl bg-[#8B1C1C] px-5 py-3 text-xs font-semibold text-white disabled:cursor-wait disabled:opacity-70"
           >
-            Generar PDF Cliente
+            {formalPdfUploadStatus === "uploading" ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Guardando en Cloudinary...
+              </>
+            ) : (
+              "Generar PDF Cliente"
+            )}
           </button>
           <button
             type="button"
-            onClick={handleGenerateWorkshopPdf}
-            className="rounded-2xl bg-slate-900 px-5 py-3 text-xs font-semibold text-white"
+            onClick={() => void handleGenerateWorkshopPdf()}
+            disabled={workshopPdfUploadStatus === "uploading"}
+            className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-xs font-semibold text-white disabled:cursor-wait disabled:opacity-70"
           >
-            Generar Hoja de Taller
+            {workshopPdfUploadStatus === "uploading" ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Guardando en Cloudinary...
+              </>
+            ) : (
+              "Generar Hoja de Taller"
+            )}
           </button>
         </div>
+        {formalPdfUploadMessage ? (
+          <p className={`text-xs font-medium ${formalPdfUploadStatus === "error" ? "text-rose-600" : "text-emerald-700"}`}>
+            {formalPdfUploadMessage}
+          </p>
+        ) : null}
+        {workshopPdfUploadMessage ? (
+          <p className={`text-xs font-medium ${workshopPdfUploadStatus === "error" ? "text-rose-600" : "text-emerald-700"}`}>
+            {workshopPdfUploadMessage}
+          </p>
+        ) : null}
 
         {/* Sección final: Terminar cotización y pasar de etapa */}
         <div className="mt-8 rounded-3xl border border-emerald-200 bg-emerald-50/80 p-6 shadow-md backdrop-blur-md">
