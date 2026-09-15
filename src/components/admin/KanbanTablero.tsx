@@ -13,6 +13,7 @@ import {
   Calendar,
   Trash2,
   CloudUpload,
+  Loader2,
 } from "lucide-react";
 
 import { DueDateInput } from "@/components/ui/DueDateInput";
@@ -341,6 +342,9 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const [uploadAcceptedDesignsTaskId, setUploadAcceptedDesignsTaskId] = useState<string | null>(null);
   const [dropboxStagingFile, setDropboxStagingFile] = useState<File | null>(null);
   const [dropboxUploading, setDropboxUploading] = useState(false);
+  const [designStagingFiles, setDesignStagingFiles] = useState<File[]>([]);
+  const [designFilesUploading, setDesignFilesUploading] = useState(false);
+  const [panelFilesUploading, setPanelFilesUploading] = useState(false);
   const [deleteConfirmTaskId, setDeleteConfirmTaskId] = useState<string | null>(null);
   const [cotizacionEntregadaTaskId, setCotizacionEntregadaTaskId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -379,13 +383,17 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     setUploadTaskId(null);
     setUploadAcceptedDesignsTaskId(null);
     setDropboxStagingFile(null);
+    setDesignStagingFiles([]);
     setCotizacionEntregadaTaskId(null);
     setDragErrorMessage(null);
     setTaskSaveMessage(null);
   }, []);
 
   useEscapeClose(Boolean(activeTaskId), () => setActiveTaskId(null));
-  useEscapeClose(Boolean(uploadTaskId), () => setUploadTaskId(null));
+  useEscapeClose(Boolean(uploadTaskId), () => {
+    setUploadTaskId(null);
+    setDesignStagingFiles([]);
+  });
   useEscapeClose(Boolean(uploadAcceptedDesignsTaskId), () => {
     setUploadAcceptedDesignsTaskId(null);
     setDropboxStagingFile(null);
@@ -923,7 +931,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     return "otro";
   };
 
-  const handleFilesUpload = async (taskId: string, fileList: FileList | null) => {
+  const handleFilesUpload = async (taskId: string, fileList: FileList | File[] | null) => {
     if (!fileList?.length) return;
     const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
     const clienteId = taskSnapshot?.codigoProyecto?.trim();
@@ -1938,13 +1946,23 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
                       Archivos
                     </p>
-                    <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-primary/20 bg-white px-4 py-6 text-sm text-secondary transition hover:border-primary/40 hover:bg-primary/[0.03]">
-                      <FileUp className="h-4 w-4" />
-                      Subir PDF o renders
+                    <label className={`mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-primary/20 bg-white px-4 py-6 text-sm text-secondary transition hover:border-primary/40 hover:bg-primary/[0.03] ${panelFilesUploading ? "pointer-events-none opacity-60" : ""}`}>
+                      {panelFilesUploading ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Subiendo...
+                        </>
+                      ) : (
+                        <>
+                          <FileUp className="h-4 w-4" />
+                          Subir PDF o renders
+                        </>
+                      )}
                       <input
                         type="file"
                         multiple
                         tabIndex={-1}
+                        disabled={panelFilesUploading}
                         className="sr-only"
                         onChange={(event) => {
                           const target = event.target;
@@ -1956,8 +1974,10 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                             });
                             return;
                           }
+                          setPanelFilesUploading(true);
                           void handleFilesUpload(activeTask.id, files).finally(() => {
                             target.value = "";
+                            setPanelFilesUploading(false);
                           });
                         }}
                       />
@@ -2100,17 +2120,19 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
               </p>
               <label className="mt-4 flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-primary/20 bg-white px-4 py-8 text-center text-sm text-secondary transition hover:border-primary/40 hover:bg-primary/[0.03]">
                 <FileUp className="h-4 w-4" />
-                Seleccionar archivos
+                {designStagingFiles.length > 0
+                  ? designStagingFiles.length === 1
+                    ? designStagingFiles[0].name
+                    : `${designStagingFiles.length} archivos seleccionados`
+                  : "Seleccionar archivos"}
                 <input
                   type="file"
                   multiple
                   accept="image/*,.pdf"
                   tabIndex={-1}
                   className="sr-only"
-                  onChange={async (event) => {
+                  onChange={(event) => {
                     const target = event.target;
-                    const id = uploadTaskId;
-                    if (!id) return;
                     const list = target.files;
                     if (!list?.length) {
                       target.value = "";
@@ -2119,24 +2141,52 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                       });
                       return;
                     }
-                    try {
-                      await handleFilesUpload(id, list);
-                      setUploadTaskId(null);
-                    } catch {
-                      /* persistencia u otro error: el modal sigue abierto */
-                    } finally {
-                      target.value = "";
-                    }
+                    setDesignStagingFiles(Array.from(list));
+                    target.value = "";
                   }}
                 />
               </label>
-              <button
-                type="button"
-                onClick={() => setUploadTaskId(null)}
-                className="mt-6 w-full rounded-2xl bg-primary py-3 text-sm font-semibold text-white"
-              >
-                Listo
-              </button>
+              <div className="mt-6 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUploadTaskId(null);
+                    setDesignStagingFiles([]);
+                  }}
+                  disabled={designFilesUploading}
+                  className="flex-1 rounded-2xl border border-primary/10 bg-white py-3 text-sm font-semibold text-secondary transition hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={designStagingFiles.length === 0 || designFilesUploading}
+                  onClick={async () => {
+                    const id = uploadTaskId;
+                    if (!id || designStagingFiles.length === 0) return;
+                    setDesignFilesUploading(true);
+                    try {
+                      await handleFilesUpload(id, designStagingFiles);
+                      setUploadTaskId(null);
+                      setDesignStagingFiles([]);
+                    } catch {
+                      /* persistencia u otro error: el modal sigue abierto */
+                    } finally {
+                      setDesignFilesUploading(false);
+                    }
+                  }}
+                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-2xl bg-primary py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {designFilesUploading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Subiendo...
+                    </>
+                  ) : (
+                    "Listo"
+                  )}
+                </button>
+              </div>
             </motion.div>
                 </motion.div>
               ) : null}

@@ -20,6 +20,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useAuthContext } from "@/contexts/AuthContext";
+import { EquipoProvider } from "@/contexts/EquipoContext";
 import { resolveRouteAccess } from "@/lib/role-routes";
 
 const navigation = [
@@ -78,6 +79,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   return (
+    <EquipoProvider>
     <div className="min-h-screen bg-slate-50">
       <button
         type="button"
@@ -179,5 +181,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {children}
       </main>
     </div>
+    </EquipoProvider>
   );
 }
