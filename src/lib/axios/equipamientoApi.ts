@@ -33,6 +33,8 @@ export interface ElectroCategoria {
   descripcion?: string;
   orden?: number;
   disponible?: boolean;
+  /** El backend marca las categorías de electrodomésticos con "electrodomesticos" para distinguirlas de extras. */
+  modulo?: string;
 }
 
 export interface ElectroCategoriaPayload {
@@ -234,7 +236,14 @@ export const obtenerCategoriasElectrodomesticos = async (): Promise<ApiResponse<
 export const crearCategoriaElectrodomestico = async (
   data: ElectroCategoriaPayload,
 ): Promise<ApiResponse<ElectroCategoria>> => {
-  return requestWithFallback<ElectroCategoria>("post", electroCategoriesRoutes.base, data);
+  const response = await requestWithFallback<ElectroCategoria>("post", electroCategoriesRoutes.base, data);
+  if (response.success && response.data?.modulo && response.data.modulo !== "electrodomesticos") {
+    return {
+      success: false,
+      message: "La categoría se registró en el módulo equivocado (extras) en vez de electrodomésticos. Revisa la configuración del backend.",
+    };
+  }
+  return response;
 };
 
 export const actualizarCategoriaElectrodomestico = async (
