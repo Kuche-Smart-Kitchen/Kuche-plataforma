@@ -129,7 +129,7 @@ export default function EquipamientoAdminPage() {
         setCategoriasExtras(extraCatRes.data);
       }
     } catch {
-      setError("No se pudo cargar la información de equipamiento desde el backend.");
+      setError("No se pudo cargar la información de equipamiento");
     } finally {
       setLoading(false);
     }
@@ -323,9 +323,7 @@ export default function EquipamientoAdminPage() {
               </div>
             </div>
           </div>
-          <div className="rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm text-secondary shadow-sm">
-            Usa esta vista para administrar electrodomésticos, extras y sus categorías desde el backend.
-          </div>
+      
         </div>
 
         <div className="mb-6 flex flex-wrap items-center gap-3 rounded-3xl border border-gray-200 bg-white p-4 shadow-sm">
