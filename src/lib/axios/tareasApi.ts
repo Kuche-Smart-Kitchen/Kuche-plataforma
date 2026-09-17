@@ -48,3 +48,28 @@ export const crearTarea = async (
   const response = await axiosInstance.post<ApiResponse<Record<string, unknown>>>("/api/tareas", data);
   return response.data;
 };
+
+export interface ArchivoExternoPayload {
+  nombre: string;
+  url: string;
+  tipo?: string;
+  key?: string;
+  provider?: "cloudinary" | "dropbox" | "local" | string;
+  mimeType?: string;
+  clienteId?: string;
+}
+
+/** Registra en la tarea archivo(s) ya subidos externamente (p. ej. directo a Cloudinary desde el navegador). */
+export const agregarArchivosTarea = async (
+  id: string,
+  archivos: ArchivoExternoPayload[],
+): Promise<ApiResponse<Record<string, unknown>>> => {
+  if (archivos.length === 0) {
+    throw new Error("Debe enviarse al menos un archivo");
+  }
+  const response = await axiosInstance.post<ApiResponse<Record<string, unknown>>>(
+    `/api/tareas/${id}/archivos`,
+    { archivos },
+  );
+  return response.data;
+};

@@ -108,6 +108,8 @@ export const env = {
   backendApiUrl: resolveBackendApiUrl(),
   allowedOrigins: resolveAllowedOrigins(),
   fileUploadEndpoint: readEnv("NEXT_PUBLIC_FILE_UPLOAD_ENDPOINT"),
+  cloudinaryCloudName: readEnv("NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME") || "dci9m49qc",
+  cloudinaryUploadPreset: readEnv("NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET") || "kuche_uploads",
   turnstileSiteKey: resolveTurnstileSiteKey(),
   turnstileMode: resolveTurnstileMode(),
   showroomAddress: readEnv("NEXT_PUBLIC_SHOWROOM_ADDRESS"),

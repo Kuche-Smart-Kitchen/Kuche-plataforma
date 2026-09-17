@@ -1,8 +1,7 @@
 import axios from "axios";
 import axiosInstance, { type ApiResponse } from "./axiosConfig";
-
-/** Límite práctico de subida vía el proxy serverless (Vercel corta payloads de función ~4.5 MB). */
-const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+import { agregarArchivosTarea } from "./tareasApi";
+import { subirArchivoDirectoACloudinary } from "@/lib/cloudinary-direct";
 
 export interface ClienteArchivo {
   _id: string;
@@ -99,6 +98,10 @@ export interface SubirArchivoClienteOpciones {
   nivel?: "preliminar" | "final";
 }
 
+/**
+ * Sube el archivo directo del navegador a Cloudinary (sin pasar por el backend/proxy, evitando
+ * el límite de payload de la función serverless) y luego registra la URL resultante en la tarea.
+ */
 export const subirArchivoCliente = async (
   file: File,
   clienteId: string,
@@ -110,42 +113,51 @@ export const subirArchivoCliente = async (
     return { success: false, message: "Falta el identificador del cliente para subir el archivo." };
   }
 
-  if (file.size > MAX_UPLOAD_BYTES) {
-    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-    return {
-      success: false,
-      message: `El archivo pesa ${sizeMb} MB y supera el límite de subida (4 MB). Reduce el número de imágenes o su calidad e inténtalo de nuevo.`,
-    };
+  const tareasId = opciones.tareasId?.trim();
+  if (!tareasId) {
+    return { success: false, message: "Falta el identificador de la tarea para registrar el archivo." };
   }
 
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("tipo", tipo);
-  formData.append("clienteId", normalizedClienteId);
-  if (opciones.tareasId) formData.append("tareasId", opciones.tareasId);
-  if (opciones.relacionadoA) formData.append("relacionadoA", opciones.relacionadoA);
-  if (opciones.relacionadoId) formData.append("relacionadoId", opciones.relacionadoId);
-  if (opciones.nivel) formData.append("nivel", opciones.nivel);
-
   try {
-    const response = await axiosInstance.post<ApiResponse<ClienteArchivo> & { archivo?: ClienteArchivo }>(
-      "/api/archivos/upload",
-      formData,
-      { headers: { "Content-Type": "multipart/form-data" } } as never,
-    );
-    const payload = response.data;
-    if (!payload.success) return payload;
+    const uploaded = await subirArchivoDirectoACloudinary(file);
 
-    const archivo = (payload as { archivo?: ClienteArchivo }).archivo ?? (payload as { data?: ClienteArchivo }).data;
-    if (!archivo) {
-      return { success: false, message: payload.message || "El backend no devolvió el archivo subido." };
+    const archivo: ClienteArchivo = {
+      _id: uploaded.publicId,
+      clienteId: normalizedClienteId,
+      tareasId,
+      tipo,
+      nombre: file.name,
+      url: uploaded.secureUrl,
+      key: `cloudinary:${uploaded.publicId}`,
+      provider: "cloudinary",
+      mimeType: file.type,
+    };
+
+    const registro = await agregarArchivosTarea(tareasId, [
+      {
+        nombre: archivo.nombre,
+        url: archivo.url,
+        tipo,
+        key: archivo.key,
+        provider: "cloudinary",
+        mimeType: archivo.mimeType,
+        clienteId: normalizedClienteId,
+      },
+    ]);
+
+    if (!registro.success) {
+      return {
+        success: false,
+        message: registro.message || "El archivo se subió a Cloudinary, pero no se pudo registrar en la tarea.",
+      };
     }
-    return { success: true, message: payload.message, data: archivo };
+
+    return { success: true, message: registro.message, data: archivo };
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.status === 413) {
       return {
         success: false,
-        message: "El archivo es demasiado grande para subirse. Reduce el número de imágenes o su calidad e inténtalo de nuevo.",
+        message: "El archivo es demasiado grande para registrarse en el servidor.",
       };
     }
     const axiosError = error as { response?: { data?: { message?: string } } };

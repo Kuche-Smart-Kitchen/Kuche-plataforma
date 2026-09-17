@@ -784,7 +784,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       });
 
       if (!result.success) {
-        showUploadToast("error", result.message || "No se pudo subir el archivo a Dropbox.");
+        showUploadToast("error", result.message || "No se pudo subir el diseño final.");
         return;
       }
 
@@ -806,7 +806,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
           return;
         }
       }
-      showUploadToast("success", "Diseño subido a Dropbox correctamente.");
+      showUploadToast("success", "Diseño final subido correctamente.");
       setUploadAcceptedDesignsTaskId(null);
       setDropboxStagingFile(null);
     } finally {
@@ -1314,7 +1314,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                               ) : null}
                               {/* Pasar a Seguimiento: manual vía botón */}
 
-                              {/* DISEÑOS: Subir → Admin aprueba → Subida Dropbox */}
+                              {/* DISEÑOS: Subir → Admin aprueba → Subida de diseño final */}
                               {task.stage === "disenos" && (!task.files || task.files.length === 0) ? (
                                 <button
                                   type="button"
@@ -1824,7 +1824,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                       </div>
                       <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm ${activeTask.designApprovedByClient ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
                         {activeTask.designApprovedByClient ? <CheckCircle2 className="h-4 w-4" /> : <span className="h-4 w-4 rounded-full border-2 border-gray-300" />}
-                        <span>3. Subida a Dropbox</span>
+                        <span>3. Subida de diseño final</span>
                       </div>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2">
@@ -2229,7 +2229,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                       </div>
                     </div>
                     <h3 id="dropbox-upload-title" className="mt-4 text-center text-lg font-semibold text-gray-900">
-                      Subir diseños aceptados a Dropbox
+                      Subir diseños aceptados
                     </h3>
                     <p className="mt-2 text-center text-sm text-secondary">
                       Selecciona el archivo con los diseños finales. Al completarse la subida, la tarea pasará a
