@@ -26,7 +26,7 @@ export function TareasProvider({ children }: { children: ReactNode }) {
     if (patch.dueDate !== undefined) data.fechaLimite = snapshot.dueDate;
     if (patch.priority !== undefined) data.prioridad = snapshot.priority;
     if (patch.followUpStatus !== undefined) data.followUpStatus = snapshot.followUpStatus;
-    if (patch.followUpEnteredAt !== undefined) data.followUpEnteredAt = snapshot.followUpEnteredAt;
+    // followUpEnteredAt es propiedad exclusiva del backend/cron (GUIA_FRONTEND_CRON_SEGUIMIENTO_EMAIL.md): nunca se envía.
     if (patch.citaStarted !== undefined) data.citaStarted = snapshot.citaStarted;
     if (patch.citaFinished !== undefined) data.citaFinished = snapshot.citaFinished;
     if (patch.designApprovedByAdmin !== undefined) data.designApprovedByAdmin = snapshot.designApprovedByAdmin;

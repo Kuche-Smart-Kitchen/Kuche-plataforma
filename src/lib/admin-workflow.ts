@@ -272,9 +272,8 @@ const buildTaskPatchPayload = (task: KanbanTask, patch: Partial<KanbanTask>): Re
   if (patch.codigoProyecto !== undefined || task.codigoProyecto !== undefined) {
     payload.codigoProyecto = snapshot.codigoProyecto;
   }
-  if (patch.followUpEnteredAt !== undefined || task.followUpEnteredAt !== undefined) {
-    payload.followUpEnteredAt = snapshot.followUpEnteredAt;
-  }
+  // followUpEnteredAt/followUpReminderStepsSent/followUpLastReminderAt son propiedad exclusiva del backend/cron
+  // (ver GUIA_FRONTEND_CRON_SEGUIMIENTO_EMAIL.md): nunca se envían al servidor, solo se leen.
   if (patch.followUpStatus !== undefined || task.followUpStatus !== undefined) {
     payload.followUpStatus = snapshot.followUpStatus;
   }

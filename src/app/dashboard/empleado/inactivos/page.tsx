@@ -10,7 +10,7 @@ import {
   saveKanbanTasksToLocalStorage,
   type KanbanTask,
 } from "@/lib/kanban";
-import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
+import { syncKanbanTasksFromBackend, syncTaskFollowUpWithBackend } from "@/lib/admin-workflow";
 import { ClientDocuments } from "@/components/admin/ClientDocuments";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
@@ -81,6 +81,7 @@ export default function EmpleadoInactivosPage() {
       saveKanbanTasksToLocalStorage(updatedTasks);
       setClients(updatedTasks.filter((task) => isEmpleadoInactivo(task, currentEmployeeName)));
       setSelectedClient(null);
+      void syncTaskFollowUpWithBackend(target, "pendiente");
     } catch {
       console.error("Error al reactivar cliente");
     }

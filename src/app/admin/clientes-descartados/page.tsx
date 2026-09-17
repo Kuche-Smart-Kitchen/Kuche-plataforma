@@ -10,7 +10,7 @@ import {
   saveKanbanTasksToLocalStorage,
   type KanbanTask,
 } from "@/lib/kanban";
-import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
+import { syncKanbanTasksFromBackend, syncTaskFollowUpWithBackend } from "@/lib/admin-workflow";
 import { ExpedientePdfSections } from "@/components/admin/ExpedientePdfSections";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
@@ -51,6 +51,7 @@ export default function ClientesDescartadosPage() {
 
   const handleReactivate = (clientId: string) => {
     try {
+      const target = (clients as KanbanTask[]).find((task) => task.id === clientId);
       const updatedTasks = (clients as KanbanTask[]).map((task) => {
         if (task.id === clientId) {
           return {
@@ -66,6 +67,9 @@ export default function ClientesDescartadosPage() {
       saveKanbanTasksToLocalStorage(updatedTasks);
       setClients(updatedTasks.filter((t) => t.followUpStatus === "descartado"));
       setSelectedClient(null);
+      if (target) {
+        void syncTaskFollowUpWithBackend(target, "pendiente");
+      }
     } catch {
       console.error("Error al reactivar cliente");
     }
