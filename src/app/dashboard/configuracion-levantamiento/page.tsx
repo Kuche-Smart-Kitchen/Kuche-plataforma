@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { RotateCcw, Save, Search, Trash2, X } from "lucide-react";
 import { DashboardBackButton } from "@/components/dashboard/DashboardBackButton";
 import { NumericInputEmptyZero } from "@/components/dashboard/NumericInputEmptyZero";
 import {
+  createDefaultLevantamientoConfig,
   getLevantamientoConfig,
   resetLevantamientoConfigToDefault,
   saveLevantamientoConfig,
@@ -14,7 +14,6 @@ import {
   type MaterialConfig,
 } from "@/lib/config-levantamiento";
 import { LIGHTING_ITEMS, SPECIAL_ACCESSORIES_ITEMS } from "@/lib/levantamiento-catalog";
-import { useLevantamientoCatalogo } from "@/contexts/LevantamientoCatalogoContext";
 
 const CATEGORIAS: MaterialCategoria[] = ["cubierta", "frente", "herraje"];
 type FiltroCategoria = "todas" | MaterialCategoria;
@@ -67,7 +66,12 @@ function DecimalFractionInput({
 }: DecimalFractionInputProps) {
   const [draft, setDraft] = useState(() => fractionToDraftString(value));
   const [focused, setFocused] = useState(false);
-  const displayDraft = focused ? draft : fractionToDraftString(value);
+
+  useEffect(() => {
+    if (!focused) {
+      setDraft(fractionToDraftString(value));
+    }
+  }, [value, focused]);
 
   return (
     <input
@@ -78,7 +82,7 @@ function DecimalFractionInput({
       placeholder={placeholder}
       className={className}
       aria-label={ariaLabel}
-      value={displayDraft}
+      value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onFocus={() => setFocused(true)}
       onBlur={() => {
@@ -91,8 +95,8 @@ function DecimalFractionInput({
 }
 
 export default function ConfiguracionLevantamientoPage() {
-  const { materiales: dbMateriales, herrajes: dbHerrajes, loading: catalogLoading } = useLevantamientoCatalogo();
-  const [config, setConfig] = useState<LevantamientoConfig>(() => getLevantamientoConfig());
+  const [config, setConfig] = useState<LevantamientoConfig>(() => createDefaultLevantamientoConfig());
+  const [mounted, setMounted] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "ok" | "error">("idle");
   const [newMat, setNewMat] = useState({
     nombre: "",
@@ -105,33 +109,10 @@ export default function ConfiguracionLevantamientoPage() {
   const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
   const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
 
-  /** Catálogo real de materiales/herrajes ($/m) sincronizado en vivo desde el backend (mismo origen que usa el Levantamiento Detallado). */
-  const backendMateriales = useMemo<MaterialConfig[]>(() => {
-    const toCategoria = (seccion?: string): MaterialCategoria =>
-      seccion === "herrajes" ? "herraje" : seccion === "frente" || seccion === "estructura" || seccion === "vistas" ? "frente" : "cubierta";
-    return [
-      ...dbMateriales.map((material) => ({
-        id: material.idCotizador ?? material.id ?? material._id,
-        nombre: material.nombre,
-        categoria: toCategoria(material.seccion),
-        precioPorMetro: Number(material.precioPorMetro ?? material.precioMetroLineal ?? material.precioUnitario ?? 0),
-      })),
-      ...dbHerrajes.map((material) => ({
-        id: material.idCotizador ?? material.id ?? material._id,
-        nombre: material.nombre,
-        categoria: "herraje" as MaterialCategoria,
-        precioPorMetro: Number(material.precioPorMetro ?? material.precioMetroLineal ?? material.precioUnitario ?? 0),
-      })),
-    ];
-  }, [dbMateriales, dbHerrajes]);
-
   useEffect(() => {
-    if (!backendMateriales.length) return;
-    setConfig((prev) => ({
-      ...prev,
-      materiales: [...backendMateriales, ...prev.materiales.filter((m) => m.id.startsWith("custom-"))],
-    }));
-  }, [backendMateriales]);
+    setMounted(true);
+    setConfig(getLevantamientoConfig());
+  }, []);
 
   const sortedMateriales = useMemo(() => {
     const order = { cubierta: 0, frente: 1, herraje: 2 };
@@ -200,6 +181,15 @@ export default function ConfiguracionLevantamientoPage() {
     }));
     setNewMat((n) => ({ ...n, nombre: "", precioPorMetro: 0 }));
   };
+
+  if (!mounted) {
+    return (
+      <main className="min-h-screen bg-background text-primary">
+        <DashboardBackButton />
+        <p className="text-sm text-secondary">Cargando configuración…</p>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-background text-primary">
@@ -358,16 +348,8 @@ export default function ConfiguracionLevantamientoPage() {
               Catálogo de materiales (precio $/m)
             </h2>
             <p className="mt-2 text-xs text-secondary">
-              Precios en vivo desde el catálogo del backend (los mismos que usa el Levantamiento Detallado). Para
-              editar el precio de un material existente ve a{" "}
-              <Link href="/admin/precios" className="font-semibold text-accent underline">
-                Precios y Catálogo
-              </Link>
-              ; aquí solo puedes agregar materiales de referencia locales.
+              Cada material tiene su precio por metro; el escenario solo define el costo base de referencia lineal.
             </p>
-            {catalogLoading && !backendMateriales.length ? (
-              <p className="mt-2 text-xs text-secondary">Cargando catálogo…</p>
-            ) : null}
 
             <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
               <label className="min-w-[12rem] flex-1">
@@ -421,9 +403,7 @@ export default function ConfiguracionLevantamientoPage() {
                       </td>
                     </tr>
                   ) : null}
-                  {filteredMateriales.map((m) => {
-                    const isCustom = m.id.startsWith("custom-");
-                    return (
+                  {filteredMateriales.map((m) => (
                     <tr
                       key={m.id}
                       className="mb-4 flex flex-col gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm md:mb-0 md:table-row md:border-0 md:border-b md:border-primary/5 md:bg-transparent md:p-0 md:shadow-none"
@@ -432,77 +412,60 @@ export default function ConfiguracionLevantamientoPage() {
                         <span className="mb-1 block text-xs font-bold text-gray-400 md:hidden">
                           Nombre
                         </span>
-                        {isCustom ? (
-                          <input
-                            className="w-full min-w-0 rounded-lg border border-primary/10 bg-white px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary/20 md:min-w-[8rem]"
-                            value={m.nombre}
-                            onChange={(e) => updateMaterial(m.id, { nombre: e.target.value })}
-                          />
-                        ) : (
-                          <span className="block px-2 py-1.5 text-sm text-primary">{m.nombre}</span>
-                        )}
+                        <input
+                          className="w-full min-w-0 rounded-lg border border-primary/10 bg-white px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary/20 md:min-w-[8rem]"
+                          value={m.nombre}
+                          onChange={(e) => updateMaterial(m.id, { nombre: e.target.value })}
+                        />
                       </td>
                       <td className="block px-0 py-0 md:table-cell md:px-3 md:py-2">
                         <span className="mb-1 block text-xs font-bold text-gray-400 md:hidden">
                           Categoría
                         </span>
-                        {isCustom ? (
-                          <select
-                            className="w-full rounded-lg border border-primary/10 bg-white px-2 py-1.5 text-sm outline-none md:w-auto"
-                            value={m.categoria}
-                            onChange={(e) =>
-                              updateMaterial(m.id, { categoria: e.target.value as MaterialCategoria })
-                            }
-                          >
-                            {CATEGORIAS.map((c) => (
-                              <option key={c} value={c}>
-                                {c}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <span className="block px-2 py-1.5 text-sm capitalize text-primary">{m.categoria}</span>
-                        )}
+                        <select
+                          className="w-full rounded-lg border border-primary/10 bg-white px-2 py-1.5 text-sm outline-none md:w-auto"
+                          value={m.categoria}
+                          onChange={(e) =>
+                            updateMaterial(m.id, { categoria: e.target.value as MaterialCategoria })
+                          }
+                        >
+                          {CATEGORIAS.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
                       </td>
                       <td className="block px-0 py-0 md:table-cell md:px-3 md:py-2">
                         <span className="mb-1 block text-xs font-bold text-gray-400 md:hidden">
                           $/m
                         </span>
-                        {isCustom ? (
-                          <NumericInputEmptyZero
-                            min={0}
-                            step={50}
-                            parseAs="float"
-                            placeholder="0"
-                            className="w-full rounded-lg border border-primary/10 bg-white px-2 py-1.5 text-sm font-semibold tabular-nums outline-none focus:ring-2 focus:ring-primary/20 md:w-28"
-                            value={m.precioPorMetro}
-                            onValueChange={(n) =>
-                              updateMaterial(m.id, {
-                                precioPorMetro: Math.max(0, n),
-                              })
-                            }
-                          />
-                        ) : (
-                          <span className="block px-2 py-1.5 text-sm font-semibold tabular-nums text-primary">
-                            ${m.precioPorMetro.toLocaleString("es-MX")}
-                          </span>
-                        )}
+                        <NumericInputEmptyZero
+                          min={0}
+                          step={50}
+                          parseAs="float"
+                          placeholder="0"
+                          className="w-full rounded-lg border border-primary/10 bg-white px-2 py-1.5 text-sm font-semibold tabular-nums outline-none focus:ring-2 focus:ring-primary/20 md:w-28"
+                          value={m.precioPorMetro}
+                          onValueChange={(n) =>
+                            updateMaterial(m.id, {
+                              precioPorMetro: Math.max(0, n),
+                            })
+                          }
+                        />
                       </td>
                       <td className="flex justify-end px-0 py-0 md:table-cell md:px-2 md:py-2">
-                        {isCustom ? (
-                          <button
-                            type="button"
-                            onClick={() => setDeletePending({ id: m.id, nombre: m.nombre })}
-                            className="rounded-lg p-2 text-secondary transition hover:bg-rose-50 hover:text-rose-600"
-                            aria-label="Eliminar material"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => setDeletePending({ id: m.id, nombre: m.nombre })}
+                          className="rounded-lg p-2 text-secondary transition hover:bg-rose-50 hover:text-rose-600"
+                          aria-label="Eliminar material"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </td>
                     </tr>
-                    );
-                  })}
+                  ))}
                 </tbody>
               </table>
             </div>
