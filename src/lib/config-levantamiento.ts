@@ -22,16 +22,35 @@ export type ExtrasPreciosConfig = {
   accesoriosEspeciales: Record<string, number>;
 };
 
+/** Precios unitarios base oficiales (MXN) para accesorios especiales cuando el catálogo no trae valor. */
+export const SPECIAL_ACCESSORY_OFFICIAL_UNIT_PRICES: Record<string, number> = {
+  "alacena-extraible": 2000,
+  "bote-basura": 500,
+  "space-tower": 1500,
+  "mecanismos-electronicos": 5000,
+  "sistemas-inteligentes-alexa": 8000,
+  "esquinas-magicas": 2300,
+  "persianas-enrollables": 2000,
+  botelleros: 2000,
+};
+
+function resolveDefaultAccesorioEspecialPrecio(item: {
+  id: string;
+  precioBase?: number;
+  precioFijo?: number;
+}): number {
+  const official = SPECIAL_ACCESSORY_OFFICIAL_UNIT_PRICES[item.id];
+  if (official !== undefined) return official;
+  return Math.max(0, Number(item.precioBase ?? item.precioFijo) || 0);
+}
+
 export function defaultExtrasPrecios(): ExtrasPreciosConfig {
   return {
     iluminacion: Object.fromEntries(
       LIGHTING_ITEMS.map((i) => [i.id, Math.max(0, Number(i.precioFijo) || 0)]),
     ),
     accesoriosEspeciales: Object.fromEntries(
-      SPECIAL_ACCESSORIES_ITEMS.map((i) => [
-        i.id,
-        Math.max(0, Number(i.precioBase ?? i.precioFijo) || 0),
-      ]),
+      SPECIAL_ACCESSORIES_ITEMS.map((i) => [i.id, resolveDefaultAccesorioEspecialPrecio(i)]),
     ),
   };
 }
