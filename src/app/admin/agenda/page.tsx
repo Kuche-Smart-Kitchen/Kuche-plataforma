@@ -7,8 +7,8 @@ import Captcha from "@/components/ui/Captcha";
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
-import { obtenerTodasLasCitas } from "@/lib/axios/citasApi";
 import { useVisitasContext } from "@/contexts/VisitasContext";
+import { actualizarVisita, eliminarVisita, obtenerVisitas } from "@/lib/axios/visitasApi";
 import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 
 type AppointmentType =
@@ -87,23 +87,25 @@ export default function AgendaPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [citasResponse] = await Promise.all([obtenerTodasLasCitas(), syncKanbanTasksFromBackend()]);
-        if (citasResponse.success && Array.isArray(citasResponse.data)) {
-          const nextAppointments: Appointment[] = citasResponse.data.map((cita, index) => ({
-            id: String((cita._id as string | undefined) ?? `agenda-${index}`),
-            title: typeof cita.informacionAdicional === "string" ? cita.informacionAdicional : "Visita",
-            client: typeof cita.nombreCliente === "string" ? cita.nombreCliente : "Cliente sin nombre",
-            location: typeof cita.ubicacion === "string" ? cita.ubicacion : "",
-            date: typeof cita.fechaAgendada === "string" ? cita.fechaAgendada.slice(0, 10) : toDateInput(new Date()),
-            time: typeof cita.fechaAgendada === "string" ? cita.fechaAgendada.slice(11, 16) : "09:00",
+        const [visitasResponse] = await Promise.all([obtenerVisitas(), syncKanbanTasksFromBackend()]);
+        if (visitasResponse.success && Array.isArray(visitasResponse.data)) {
+          const nextAppointments: Appointment[] = visitasResponse.data.map((visita, index) => ({
+            id: String((visita._id as string | undefined) ?? (visita.id as string | undefined) ?? `agenda-${index}`),
+            title: typeof visita.informacionAdicional === "string" ? visita.informacionAdicional : "Visita",
+            client: typeof visita.nombreCliente === "string" ? visita.nombreCliente : "Cliente sin nombre",
+            location: typeof visita.ubicacion === "string" ? visita.ubicacion : "",
+            date: typeof visita.fechaProgramada === "string" ? visita.fechaProgramada.slice(0, 10) : toDateInput(new Date()),
+            time: typeof visita.fechaProgramada === "string" ? visita.fechaProgramada.slice(11, 16) : "09:00",
             type: "Levantamiento / Medidas",
             assignedTo:
-              typeof cita.ingenieroAsignado === "string"
-                ? cita.ingenieroAsignado
-                : Array.isArray(cita.ingenieroAsignado) && cita.ingenieroAsignado.length > 0
-                  ? String(cita.ingenieroAsignado[0])
+              typeof visita.asignadoA === "string"
+                ? visita.asignadoA
+                : typeof visita.responsableId === "string"
+                  ? visita.responsableId
                   : null,
-            status: typeof cita.estado === "string" && cita.estado === "cancelada" ? "Pendiente" : "Confirmada",
+            status: visita.estado === "solicitada" || visita.estado === "pendiente" ? "Pendiente" : "Confirmada",
+            email: typeof visita.correoCliente === "string" ? visita.correoCliente : "",
+            phone: typeof visita.telefonoCliente === "string" ? visita.telefonoCliente : "",
           }));
           setAppointments(nextAppointments);
           if (nextAppointments.length > 0) {
@@ -193,11 +195,7 @@ export default function AgendaPage() {
       setFormError("Completa título, cliente, fecha y hora.");
       return;
     }
-    if (editingId) {
-      setFormError("La edición de visitas requiere un endpoint de actualización del backend.");
-      return;
-    }
-    if (!captchaToken) {
+    if (!editingId && !captchaToken) {
       setFormError("Confirma el captcha para registrar la visita.");
       return;
     }
@@ -206,7 +204,7 @@ export default function AgendaPage() {
     const normalizedStatus =
       formState.assignedTo && formState.status === "Pendiente" ? "Confirmada" : formState.status;
     try {
-      const response = await agendar({
+      const payload = {
         fechaProgramada: new Date(`${formState.date}T${formState.time}:00`).toISOString(),
         nombreCliente: formState.client.trim(),
         correoCliente: formState.email?.trim() || "no-proporcionado@kuche.com",
@@ -214,14 +212,19 @@ export default function AgendaPage() {
         ubicacion: formState.location.trim(),
         informacionAdicional: `${formState.title.trim()} - ${formState.type}`,
         estado: normalizedStatus === "Confirmada" ? "confirmada" : "solicitada",
-      }, captchaToken);
+      } as const;
+      const response = editingId
+        ? await actualizarVisita(editingId, payload)
+        : await agendar(payload, captchaToken);
       if (!response.success) throw new Error(response.message || "No se pudo registrar la visita.");
-      const newAppointment: Appointment = {
+      const savedAppointment: Appointment = {
         ...formState,
         status: normalizedStatus,
         id: String(response.data?._id ?? `v${Date.now().toString(36)}`),
       };
-      setAppointments((prev) => [...prev, newAppointment]);
+      setAppointments((prev) => editingId
+        ? prev.map((item) => item.id === editingId ? savedAppointment : item)
+        : [...prev, savedAppointment]);
       setCaptchaToken("");
       setIsModalOpen(false);
     } catch (error) {
@@ -231,12 +234,22 @@ export default function AgendaPage() {
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!editingId) {
       return;
     }
-    setAppointments((prev) => prev.filter((item) => item.id !== editingId));
-    setIsModalOpen(false);
+    setIsSaving(true);
+    setFormError(null);
+    try {
+      const response = await eliminarVisita(editingId);
+      if (!response.success) throw new Error(response.message || "No se pudo eliminar la visita.");
+      setAppointments((prev) => prev.filter((item) => item.id !== editingId));
+      setIsModalOpen(false);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "No se pudo eliminar la visita.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (

@@ -69,3 +69,26 @@ export const obtenerDisponibilidadVisita = async (fecha: string): Promise<Dispon
   }
   throw lastError instanceof Error ? lastError : new Error("No se pudo consultar disponibilidad de visitas");
 };
+
+export const obtenerVisitas = async (): Promise<ApiResponse<Record<string, unknown>[]>> => {
+  const response = await axiosInstance.get<ApiResponse<Record<string, unknown>[]>>("/api/visitas");
+  return response.data;
+};
+
+export const actualizarVisita = async (
+  id: string,
+  payload: AgendarVisitaPayload,
+): Promise<ApiResponse<Record<string, unknown>>> => {
+  const response = await axiosInstance.patch<ApiResponse<Record<string, unknown>>>(
+    `/api/visitas/${encodeURIComponent(id)}`,
+    payload,
+  );
+  return response.data;
+};
+
+export const eliminarVisita = async (id: string): Promise<ApiResponse<Record<string, unknown>>> => {
+  const response = await axiosInstance.delete<ApiResponse<Record<string, unknown>>>(
+    `/api/visitas/${encodeURIComponent(id)}`,
+  );
+  return response.data;
+};
