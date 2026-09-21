@@ -38,7 +38,23 @@ const normalizeArchivosData = (data: unknown): ClienteArchivo[] => {
 
     for (const candidate of candidates) {
       if (Array.isArray(candidate)) {
-        return candidate as ClienteArchivo[];
+        return candidate
+          .map((value) => {
+            if (!value || typeof value !== "object") return null;
+            const record = value as Record<string, unknown>;
+            const id = String(record._id ?? record.id ?? record.publicId ?? "");
+            const url = String(record.url ?? record.secureUrl ?? "");
+            if (!url) return null;
+            return {
+              ...record,
+              _id: id || url,
+              nombre: String(record.nombre ?? record.name ?? "Archivo"),
+              url,
+              clienteId: String(record.clienteId ?? ""),
+              tipo: String(record.tipo ?? "otro"),
+            } as ClienteArchivo;
+          })
+          .filter((value): value is ClienteArchivo => value !== null);
       }
     }
   }
@@ -46,11 +62,34 @@ const normalizeArchivosData = (data: unknown): ClienteArchivo[] => {
   return [];
 };
 
-const publicRequestConfig = {
-  skipAuthToken: true,
+const readRequestConfig = {
   skipAuthRedirect: true,
   skipNotFoundLog: true,
 } as const;
+
+const obtenerArchivosDesdeRutas = async (paths: string[]): Promise<ApiResponse<ClienteArchivo[]>> => {
+  let lastMessage = "No se pudieron cargar los archivos";
+  for (const path of paths) {
+    try {
+      const response = await axiosInstance.get<ApiResponse<ClienteArchivo[]>>(path, readRequestConfig as never);
+      const payload = response.data;
+      if (!payload.success) {
+        lastMessage = payload.message || lastMessage;
+        continue;
+      }
+      return {
+        success: true,
+        message: payload.message || "Archivos cargados",
+        data: normalizeArchivosData(payload),
+      };
+    } catch (error) {
+      const axiosError = error as { response?: { status?: number; data?: { message?: string } } };
+      lastMessage = axiosError.response?.data?.message || (error instanceof Error ? error.message : lastMessage);
+      if (axiosError.response?.status && axiosError.response.status !== 404) break;
+    }
+  }
+  return { success: false, message: lastMessage };
+};
 
 export const obtenerArchivosCliente = async (
   clienteId: string,
@@ -65,30 +104,24 @@ export const obtenerArchivosCliente = async (
     };
   }
 
-  const url = tipo
-    ? `/api/archivos/cliente/${encodeURIComponent(normalizedId)}/tipo/${encodeURIComponent(tipo)}`
-    : `/api/archivos/cliente/${encodeURIComponent(normalizedId)}`;
+  const encodedId = encodeURIComponent(normalizedId);
+  const suffix = tipo ? `/tipo/${encodeURIComponent(tipo)}` : "";
+  return obtenerArchivosDesdeRutas([
+    `/api/archivos/cliente/${encodedId}${suffix}`,
+    `/api/archivos/clientes/${encodedId}${suffix}`,
+  ]);
+};
 
-  try {
-    const response = await axiosInstance.get<ApiResponse<ClienteArchivo[]>>(url, publicRequestConfig as never);
-    const payload = response.data;
-    const normalizedData = normalizeArchivosData((payload as { data?: unknown }).data ?? payload);
+export const obtenerArchivosTarea = async (tareaId: string): Promise<ApiResponse<ClienteArchivo[]>> => {
+  const normalizedId = tareaId.trim();
+  if (!normalizedId) return { success: true, data: [], message: "Tarea sin identificador" };
+  return obtenerArchivosDesdeRutas([`/api/archivos/tarea/${encodeURIComponent(normalizedId)}`]);
+};
 
-    if (!payload.success) {
-      return payload as ApiResponse<ClienteArchivo[]>;
-    }
-
-    return {
-      success: true,
-      message: payload.message || "Archivos cargados",
-      data: normalizedData,
-    };
-  } catch (error) {
-    return {
-      success: false,
-      message: error instanceof Error ? error.message : "No se pudieron cargar los archivos del cliente",
-    };
-  }
+export const obtenerArchivosPanel = async (codigo: string): Promise<ApiResponse<ClienteArchivo[]>> => {
+  const normalizedCode = codigo.trim();
+  if (!normalizedCode) return { success: true, data: [], message: "Proyecto sin código" };
+  return obtenerArchivosDesdeRutas([`/api/archivos/panel/${encodeURIComponent(normalizedCode)}`]);
 };
 
 export interface SubirArchivoClienteOpciones {
