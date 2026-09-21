@@ -11,7 +11,7 @@ import {
   type KanbanTask,
 } from "@/lib/kanban";
 import { syncKanbanTasksFromBackend, syncTaskFollowUpWithBackend } from "@/lib/admin-workflow";
-import { ExpedientePdfSections } from "@/components/admin/ExpedientePdfSections";
+import { ClientDocuments } from "@/components/admin/ClientDocuments";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
 
@@ -274,7 +274,7 @@ export default function ClientesDescartadosPage() {
 
               <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
                 <div className="space-y-6 pb-6">
-                  <ExpedientePdfSections client={selectedClient} />
+                  <ClientDocuments task={selectedClient} />
                 </div>
 
                 <div className="border-t border-gray-100 pt-6">

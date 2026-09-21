@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import Captcha from "@/components/ui/Captcha";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
-import { agendarCita, obtenerDisponibilidadDia } from "@/lib/axios/citasApi";
+import { useVisitasContext } from "@/contexts/VisitasContext";
 
 const WEEK_DAYS = ["L", "M", "M", "J", "V", "S", "D"];
 const MONTH_NAMES = [
@@ -77,7 +77,7 @@ type ExistingAppointment = {
 
 const getApiErrorMessage = (error: unknown): string => {
   if (!error || typeof error !== "object") {
-    return "No fue posible guardar la cita. Inténtalo de nuevo.";
+    return "No fue posible guardar la solicitud de visita. Inténtalo de nuevo.";
   }
 
   const response = "response" in error ? (error as { response?: unknown }).response : undefined;
@@ -111,10 +111,11 @@ const getApiErrorMessage = (error: unknown): string => {
 
   return error instanceof Error && error.message
     ? error.message
-    : "No fue posible guardar la cita. Inténtalo de nuevo.";
+    : "No fue posible guardar la solicitud de visita. Inténtalo de nuevo.";
 };
 
 export default function BookingSection() {
+  const { agendar, consultarDisponibilidad } = useVisitasContext();
   const todayStart = useMemo(() => getTodayStart(), []);
   const timeSlots = useMemo(() => buildTimeSlots(), []);
   const [currentMonth, setCurrentMonth] = useState(() =>
@@ -199,7 +200,7 @@ export default function BookingSection() {
       }
 
       try {
-        const response = await obtenerDisponibilidadDia(getDateKey(selectedDate));
+        const response = await consultarDisponibilidad(getDateKey(selectedDate));
         if (!isMounted || !response.success) {
           return;
         }
@@ -275,9 +276,9 @@ export default function BookingSection() {
       correoCliente: email.trim(),
       telefonoCliente: phone.trim(),
       ubicacion: location === "capital" ? "Durango Capital" : otherLocation.trim(),
-      fechaAgendada: dateAtTime.toISOString(),
-      informacionAdicional: `Solicitud de cita desde landing - ${location === "capital" ? "Durango Capital" : otherLocation.trim()}`,
-      estado: "programada",
+      fechaProgramada: dateAtTime.toISOString(),
+      informacionAdicional: `Solicitud de visita desde landing - ${location === "capital" ? "Durango Capital" : otherLocation.trim()}`,
+      estado: "solicitada" as const,
     };
 
     setIsSubmitting(true);
@@ -285,10 +286,10 @@ export default function BookingSection() {
     setFormMessage(null);
 
     try {
-      const response = await agendarCita(payload, captchaToken);
+      const response = await agendar(payload, captchaToken);
 
       if (!response.success || !response.data) {
-        throw new Error(response.message || "No fue posible guardar la cita.");
+        throw new Error(response.message || "No fue posible guardar la solicitud de visita.");
       }
 
       setFormMessage("Listo. Te contactaremos para confirmar tu visita.");
@@ -309,7 +310,7 @@ export default function BookingSection() {
   };
 
   return (
-    <section id="agendar-cita" className="bg-background px-4 pb-12">
+    <section id="agendar-visita" className="bg-background px-4 pb-12">
       <form
         className="mx-auto grid max-w-6xl grid-cols-1 overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl md:grid-cols-[1fr_1.1fr]"
         onSubmit={(event) => {

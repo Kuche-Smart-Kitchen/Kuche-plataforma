@@ -21,7 +21,7 @@ import {
 } from "@/lib/kanban";
 import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { ConfirmedClientContractFields } from "@/components/admin/ConfirmedClientContractFields";
-import { ExpedientePdfSections } from "@/components/admin/ExpedientePdfSections";
+import { ClientDocuments } from "@/components/admin/ClientDocuments";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
 
@@ -315,7 +315,7 @@ export default function ClientesConfirmadosPage() {
               <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
                 <div className="space-y-8 pb-8">
                   <ConfirmedClientContractFields key={selectedClient.id} task={selectedClient} onUpdate={handleConfirmedTaskUpdate} />
-                  <ExpedientePdfSections client={selectedClient} withTopDivider />
+                  <ClientDocuments task={selectedClient} />
                 </div>
               </div>
             </motion.aside>

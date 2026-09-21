@@ -25,11 +25,11 @@ export function ConfirmedClientContractFields({ task, onUpdate }: Props) {
   const hasSavedDeliveryDate = Boolean(task.estimatedDeliveryDate?.trim());
 
   const [contractDate, setContractDate] = useState(() => task.contractDate ?? "");
-  const [editingContract, setEditingContract] = useState(() => !hasSavedContractDate);
+  const [editingContract, setEditingContract] = useState(false);
   const [savedContractFlash, setSavedContractFlash] = useState(false);
 
   const [deliveryDate, setDeliveryDate] = useState(() => task.estimatedDeliveryDate ?? "");
-  const [editingDelivery, setEditingDelivery] = useState(() => !hasSavedDeliveryDate);
+  const [editingDelivery, setEditingDelivery] = useState(false);
   const [savedDeliveryFlash, setSavedDeliveryFlash] = useState(false);
 
   const projectLines = getConfirmedCardProjectLines(task);
@@ -72,6 +72,9 @@ export function ConfirmedClientContractFields({ task, onUpdate }: Props) {
   const showContractEditor = !hasSavedContractDate || editingContract;
   const showDeliveryEditor = !hasSavedDeliveryDate || editingDelivery;
 
+  const hasProjectData = projectLines.length > 0 || Boolean(aggWeeks) || hasSavedContractDate || hasSavedDeliveryDate;
+  if (!hasProjectData) return null;
+
   return (
     <div className="rounded-2xl border border-emerald-200/90 bg-emerald-50/60 p-4">
       <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-emerald-900">
@@ -80,7 +83,7 @@ export function ConfirmedClientContractFields({ task, onUpdate }: Props) {
       </p>
 
       <div className="mt-4 space-y-4">
-        <div>
+        {hasSavedContractDate || editingContract ? <div>
           <label className="block text-[11px] font-medium text-emerald-900/90">Fecha de contrato</label>
           {showContractEditor ? (
             <div className="mt-2 space-y-2">
@@ -126,9 +129,9 @@ export function ConfirmedClientContractFields({ task, onUpdate }: Props) {
               </button>
             </div>
           )}
-        </div>
+        </div> : null}
 
-        <div>
+        {hasSavedDeliveryDate || editingDelivery ? <div>
           <label className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-900/90">
             <CalendarClock className="h-3 w-3 shrink-0" />
             Fecha estimada de entrega
@@ -180,9 +183,9 @@ export function ConfirmedClientContractFields({ task, onUpdate }: Props) {
           <p className="mt-1.5 text-[10px] leading-relaxed text-emerald-800/75">
             Opcional: puedes fijarla a mano; si no, la tarjeta puede usar el cálculo desde cotizador y fecha de contrato.
           </p>
-        </div>
+        </div> : null}
 
-        <div>
+        {projectLines.length > 0 ? <div>
           <p className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-900/90">
             <Package className="h-3 w-3 shrink-0" />
             Tipos de proyecto
@@ -205,9 +208,9 @@ export function ConfirmedClientContractFields({ task, onUpdate }: Props) {
               semanas aparecerán aquí.
             </p>
           )}
-        </div>
+        </div> : null}
 
-        <div>
+        {aggWeeks ? <div>
           <p className="text-[11px] font-medium text-emerald-900/90">Entrega estimada (referencia cotizador)</p>
           {aggWeeks ? (
             <p className="mt-2 text-sm text-gray-800">
@@ -237,7 +240,7 @@ export function ConfirmedClientContractFields({ task, onUpdate }: Props) {
               La fecha manual de entrega registrada arriba es la que se muestra en la tarjeta principal (tiene prioridad).
             </p>
           ) : null}
-        </div>
+        </div> : null}
       </div>
     </div>
   );

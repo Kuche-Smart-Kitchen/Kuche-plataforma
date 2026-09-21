@@ -5,6 +5,7 @@ import NumberInputWheelGuard from "@/components/layout/NumberInputWheelGuard";
 import Navbar from "@/components/layout/Navbar";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { TareasProvider } from "@/contexts/TareasContext";
+import { VisitasProvider } from "@/contexts/VisitasContext";
 import { LevantamientoCatalogoProvider } from "@/contexts/LevantamientoCatalogoContext";
 import { MaterialesProvider } from "@/contexts/MaterialesContext";
 import { runtimeConfigWarnings } from "@/lib/runtime-config-guard";
@@ -32,15 +33,17 @@ export default function RootLayout({
     <html lang="es">
       <body className={`${manrope.variable} font-sans antialiased`}>
         <AuthProvider>
-          <TareasProvider>
-            <LevantamientoCatalogoProvider>
-              <MaterialesProvider>
-                <NumberInputWheelGuard />
-                <Navbar />
-                {children}
-              </MaterialesProvider>
-            </LevantamientoCatalogoProvider>
-          </TareasProvider>
+          <VisitasProvider>
+            <TareasProvider>
+              <LevantamientoCatalogoProvider>
+                <MaterialesProvider>
+                  <NumberInputWheelGuard />
+                  <Navbar />
+                  {children}
+                </MaterialesProvider>
+              </LevantamientoCatalogoProvider>
+            </TareasProvider>
+          </VisitasProvider>
         </AuthProvider>
       </body>
     </html>
