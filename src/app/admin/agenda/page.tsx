@@ -3,10 +3,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import Captcha from "@/components/ui/Captcha";
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { obtenerTodasLasCitas } from "@/lib/axios/citasApi";
+import { useVisitasContext } from "@/contexts/VisitasContext";
 import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 
 type AppointmentType =
@@ -26,6 +28,8 @@ type Appointment = {
   type: AppointmentType;
   assignedTo: string | null;
   status: AppointmentStatus;
+  email?: string;
+  phone?: string;
 };
 
 type TeamMember = {
@@ -60,6 +64,10 @@ export default function AgendaPage() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const { agendar } = useVisitasContext();
+  const [isSaving, setIsSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState("");
   const [formState, setFormState] = useState<Appointment>({
     id: "",
     title: "",
@@ -168,36 +176,59 @@ export default function AgendaPage() {
       assignedTo: teamMembers[0]?.id ?? "",
       status: "Confirmada",
     });
+    setFormError(null);
+    setCaptchaToken("");
     setIsModalOpen(true);
   };
 
   const openEditModal = (appointment: Appointment) => {
     setEditingId(appointment.id);
     setFormState(appointment);
+    setFormError(null);
     setIsModalOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formState.title.trim() || !formState.client.trim() || !formState.date || !formState.time) {
+      setFormError("Completa título, cliente, fecha y hora.");
       return;
     }
+    if (editingId) {
+      setFormError("La edición de visitas requiere un endpoint de actualización del backend.");
+      return;
+    }
+    if (!captchaToken) {
+      setFormError("Confirma el captcha para registrar la visita.");
+      return;
+    }
+    setIsSaving(true);
+    setFormError(null);
     const normalizedStatus =
       formState.assignedTo && formState.status === "Pendiente" ? "Confirmada" : formState.status;
-    if (editingId) {
-      setAppointments((prev) =>
-        prev.map((item) =>
-          item.id === editingId ? { ...formState, id: editingId, status: normalizedStatus } : item,
-        ),
-      );
-    } else {
+    try {
+      const response = await agendar({
+        fechaProgramada: new Date(`${formState.date}T${formState.time}:00`).toISOString(),
+        nombreCliente: formState.client.trim(),
+        correoCliente: formState.email?.trim() || "no-proporcionado@kuche.com",
+        telefonoCliente: formState.phone?.trim() || "N/A",
+        ubicacion: formState.location.trim(),
+        informacionAdicional: `${formState.title.trim()} - ${formState.type}`,
+        estado: normalizedStatus === "Confirmada" ? "confirmada" : "solicitada",
+      }, captchaToken);
+      if (!response.success) throw new Error(response.message || "No se pudo registrar la visita.");
       const newAppointment: Appointment = {
         ...formState,
         status: normalizedStatus,
-        id: `a${Date.now().toString(36)}`,
+        id: String(response.data?._id ?? `v${Date.now().toString(36)}`),
       };
       setAppointments((prev) => [...prev, newAppointment]);
+      setCaptchaToken("");
+      setIsModalOpen(false);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "No se pudo registrar la visita.");
+    } finally {
+      setIsSaving(false);
     }
-    setIsModalOpen(false);
   };
 
   const handleDelete = () => {
@@ -357,6 +388,25 @@ export default function AgendaPage() {
                   className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none"
                 />
               </label>
+              <label className="text-xs font-semibold text-gray-500">
+                Correo
+                <input
+                  type="email"
+                  value={formState.email ?? ""}
+                  onChange={(event) => setFormState((prev) => ({ ...prev, email: event.target.value }))}
+                  placeholder="cliente@correo.com"
+                  className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none"
+                />
+              </label>
+              <label className="text-xs font-semibold text-gray-500">
+                Teléfono
+                <input
+                  value={formState.phone ?? ""}
+                  onChange={(event) => setFormState((prev) => ({ ...prev, phone: event.target.value }))}
+                  placeholder="Teléfono"
+                  className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none"
+                />
+              </label>
               <label className="text-xs font-semibold text-gray-500 sm:col-span-2">
                 Dirección / Ubicación
                 <textarea
@@ -452,6 +502,18 @@ export default function AgendaPage() {
                 ) : null}
               </label>
             </div>
+            {formError ? (
+              <p className="mt-4 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">{formError}</p>
+            ) : null}
+            {!editingId ? (
+              <div className="mt-4">
+                <Captcha
+                  onVerify={setCaptchaToken}
+                  onExpire={() => setCaptchaToken("")}
+                  onError={() => setCaptchaToken("")}
+                />
+              </div>
+            ) : null}
             <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
               {editingId ? (
                 <button
@@ -475,9 +537,10 @@ export default function AgendaPage() {
                 <button
                   type="button"
                   onClick={handleSave}
-                  className="rounded-2xl bg-[#8B1C1C] px-5 py-2 text-xs font-semibold text-white"
+                  disabled={isSaving}
+                  className="rounded-2xl bg-[#8B1C1C] px-5 py-2 text-xs font-semibold text-white disabled:opacity-60"
                 >
-                  {editingId ? "Guardar cambios" : "Guardar cita"}
+                  {isSaving ? "Guardando..." : editingId ? "Guardar cambios" : "Guardar visita"}
                 </button>
               </div>
             </div>
