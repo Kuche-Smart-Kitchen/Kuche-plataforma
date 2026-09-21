@@ -14,6 +14,12 @@ export type SeguimientoLoginResponse = {
   project: Record<string, unknown>;
 };
 
+const publicTrackingConfig = (token: string) => ({
+  headers: { Authorization: `Bearer ${token}` },
+  skipAuthToken: true,
+  skipAuthRedirect: true,
+} as never);
+
 const normalizeSeguimientoResponse = <T,>(data: unknown): ApiResponse<T> => {
   if (data && typeof data === "object" && "success" in data) {
     return data as ApiResponse<T>;
@@ -75,4 +81,65 @@ export const autenticarSeguimientoCliente = async (
   }
 
   return postSeguimientoLogin({ clienteId: normalized });
+};
+
+export const obtenerProyectoSeguimiento = async (token: string): Promise<ApiResponse<Record<string, unknown>>> => {
+  const response = await axiosInstance.get<ApiResponse<Record<string, unknown>>>(
+    "/api/seguimiento/proyecto",
+    publicTrackingConfig(token),
+  );
+  return response.data;
+};
+
+export type SeguimientoArchivoRemoto = {
+  id?: string;
+  _id?: string;
+  nombre: string;
+  tipo?: string;
+  url: string;
+  key?: string;
+  provider?: string;
+  mimeType?: string;
+  clienteId?: string;
+  createdAt?: string;
+};
+
+export const obtenerArchivosSeguimiento = async (
+  token: string,
+): Promise<ApiResponse<SeguimientoArchivoRemoto[]>> => {
+  const response = await axiosInstance.get<ApiResponse<SeguimientoArchivoRemoto[]>>(
+    "/api/seguimiento/archivos",
+    publicTrackingConfig(token),
+  );
+  return response.data;
+};
+
+export const obtenerPagosSeguimiento = async (
+  token: string,
+): Promise<ApiResponse<Record<string, unknown>>> => {
+  const response = await axiosInstance.get<ApiResponse<Record<string, unknown>>>(
+    "/api/seguimiento/pagos",
+    publicTrackingConfig(token),
+  );
+  return response.data;
+};
+
+export const cerrarSesionSeguimiento = async (token: string): Promise<ApiResponse<unknown>> => {
+  const response = await axiosInstance.post<ApiResponse<unknown>>(
+    "/api/seguimiento/logout",
+    undefined,
+    publicTrackingConfig(token),
+  );
+  return response.data;
+};
+
+export const actualizarEstatusPublico = async (
+  codigo: string,
+  data: Record<string, unknown>,
+): Promise<ApiResponse<{ project?: Record<string, unknown> }>> => {
+  const response = await axiosInstance.patch<ApiResponse<{ project?: Record<string, unknown> }>>(
+    `/api/seguimiento/proyectos/${encodeURIComponent(codigo.trim())}`,
+    data,
+  );
+  return response.data;
 };

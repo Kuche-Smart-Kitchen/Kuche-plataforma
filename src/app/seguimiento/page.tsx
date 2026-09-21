@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
-import { useClienteArchivos } from "@/hooks/useClienteArchivos";
 import { seguimientoApi } from "@/lib/axios";
 import { type KanbanTask } from "@/lib/kanban";
 import {
@@ -26,6 +25,7 @@ const VOID_SEGUIMIENTO = mergeSeguimientoFromStorage({ codigo: "", cliente: "" }
 export default function SeguimientoPage() {
   const [codigo, setCodigo] = useState("");
   const [hasAccess, setHasAccess] = useState(false);
+  const [trackingToken, setTrackingToken] = useState<string | null>(null);
   const [project, setProject] = useState<SeguimientoProject | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState<null | { name: string; src: string }>(null);
@@ -38,45 +38,7 @@ export default function SeguimientoPage() {
   const currentProject = project ?? VOID_SEGUIMIENTO;
   const isProspect = currentProject.isProspect;
   const normalizedCodigo = useMemo(() => normalizePublicProjectCodeInput(codigo), [codigo]);
-  const backendLookupCode = useMemo(() => normalizedCodigo.replace(/^K-/, ""), [normalizedCodigo]);
-  const projectFilesCount = project?.archivos?.length ?? 0;
-  const shouldFetchRemoteFiles = Boolean(project) && hasAccess && projectFilesCount === 0;
-  const { archivos: remoteFiles, error: remoteFilesError } = useClienteArchivos(
-    backendLookupCode,
-    shouldFetchRemoteFiles,
-  );
-
-  const filesWarning = shouldFetchRemoteFiles && remoteFilesError
-    ? "No pudimos cargar archivos remotos; se muestran los archivos guardados localmente."
-    : null;
-
-  useMemo(() => {
-    if (!project) {
-      return VOID_SEGUIMIENTO;
-    }
-
-    if (!shouldFetchRemoteFiles || remoteFiles.length === 0) {
-      return project;
-    }
-
-    const mappedRemoteFiles = remoteFiles.map((f) => ({
-      id: f._id,
-      name: f.nombre,
-      type: f.tipo,
-      src: f.url,
-    }));
-
-    const currentSignature = JSON.stringify(project.archivos ?? []);
-    const nextSignature = JSON.stringify(mappedRemoteFiles);
-    if (currentSignature === nextSignature) {
-      return project;
-    }
-
-    return {
-      ...project,
-      archivos: mappedRemoteFiles,
-    };
-  }, [project, remoteFiles, shouldFetchRemoteFiles]);
+  const [filesWarning, setFilesWarning] = useState<string | null>(null);
 
   const openImage = (name: string, src: string) => setSelectedImage({ name, src });
 
@@ -94,6 +56,8 @@ export default function SeguimientoPage() {
         setCodeError("Ingresa un código de proyecto.");
         return;
       }
+
+      setFilesWarning(null);
 
       if (typeof window === "undefined") {
         setCodeError("No se pudo validar el código en este dispositivo.");
@@ -116,7 +80,32 @@ export default function SeguimientoPage() {
             const response = await seguimientoApi.autenticarSeguimientoCliente(candidate);
             if (!response.success || !response.data?.project) continue;
 
-            parsed = response.data.project;
+            const token = response.data.token;
+            setTrackingToken(token);
+            const [projectResponse, filesResponse, paymentsResponse] = await Promise.all([
+              seguimientoApi.obtenerProyectoSeguimiento(token),
+              seguimientoApi.obtenerArchivosSeguimiento(token),
+              seguimientoApi.obtenerPagosSeguimiento(token),
+            ]);
+            parsed = projectResponse.success && projectResponse.data
+              ? projectResponse.data
+              : response.data.project;
+            if (filesResponse.success && filesResponse.data) {
+              parsed = {
+                ...parsed,
+                archivos: filesResponse.data.map((file) => ({
+                  id: file.id ?? file._id ?? file.url,
+                  name: file.nombre,
+                  type: file.tipo ?? "otro",
+                  src: file.url,
+                })),
+              };
+            } else {
+              setFilesWarning(filesResponse.message || "No pudimos cargar los archivos del seguimiento.");
+            }
+            if (paymentsResponse.success && paymentsResponse.data) {
+              parsed = { ...parsed, pagos: paymentsResponse.data.pagos ?? paymentsResponse.data };
+            }
             break;
           } catch {
             // Keep trying fallback code formats before reporting an error.
