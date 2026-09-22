@@ -212,6 +212,7 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     citaFinished,
     designApprovedByAdmin: toBooleanValue(raw.designApprovedByAdmin),
     designApprovedByClient: toBooleanValue(raw.designApprovedByClient),
+    designFeedback: toStringValue(raw.designFeedback),
     codigoProyecto:
       toStringValue(raw.codigo) ??
       toStringValue(raw.codigoCliente) ??
@@ -282,6 +283,9 @@ const buildTaskPatchPayload = (task: KanbanTask, patch: Partial<KanbanTask>): Re
   }
   if (patch.designApprovedByClient !== undefined || task.designApprovedByClient !== undefined) {
     payload.designApprovedByClient = snapshot.designApprovedByClient;
+  }
+  if (patch.designFeedback !== undefined || task.designFeedback !== undefined) {
+    payload.designFeedback = snapshot.designFeedback ?? "";
   }
   if (patch.citaStarted !== undefined || task.citaStarted !== undefined) {
     payload.citaStarted = snapshot.citaStarted;

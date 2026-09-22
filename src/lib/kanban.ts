@@ -98,6 +98,8 @@ export type KanbanTask = {
   designApprovedByAdmin?: boolean;
   /** Diseños: si el cliente aprobó el diseño */
   designApprovedByClient?: boolean;
+  /** Observaciones del admin cuando solicita cambios al diseño */
+  designFeedback?: string;
   /** Datos de la cotización preliminar (cita); para ver/descargar PDF en Clientes en proceso */
   preliminarData?: PreliminarData;
   /** Datos de la cotización formal; para ver/descargar PDF en Clientes en proceso */
@@ -295,6 +297,11 @@ export function mergeKanbanTaskLists(local: KanbanTask[], incoming: KanbanTask[]
       followUpStatus: existing.followUpStatus ?? task.followUpStatus,
       designApprovedByAdmin: existing.designApprovedByAdmin || task.designApprovedByAdmin,
       designApprovedByClient: existing.designApprovedByClient || task.designApprovedByClient,
+      designFeedback: existing.designFeedback?.trim()
+        ? existing.designFeedback
+        : task.designFeedback?.trim()
+          ? task.designFeedback
+          : undefined,
     });
   }
 

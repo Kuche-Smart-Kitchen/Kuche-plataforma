@@ -140,7 +140,11 @@ function designProjectsFromTasks(tasks: KanbanTask[]): DesignProject[] {
         image,
         files: task.files ?? [],
         date: formatDesignDate(task.createdAt),
-        status: (task.designApprovedByAdmin ? "Aprobado" : "Pendiente") as ProjectStatus,
+        status: (task.designApprovedByAdmin
+          ? "Aprobado"
+          : task.designFeedback && !task.designApprovedByAdmin
+            ? "Revisión"
+            : "Pendiente") as ProjectStatus,
       };
     });
 }
@@ -284,9 +288,32 @@ export default function DisenosPage() {
     }
   };
 
-  const handleSendFeedback = (projectId: string) => {
+  const handleSendFeedback = async (projectId: string) => {
+    const comment = feedbackDrafts[projectId]?.trim();
+    if (!comment) return;
+
+    const currentTasks = getTasksFromLocalStorage();
+    const taskSnapshot = currentTasks.find((task) => task.id === projectId);
+    if (!taskSnapshot) return;
+
+    const patch = { designApprovedByAdmin: false, designFeedback: comment };
+    const nextTasks = currentTasks.map((task) =>
+      task.id === projectId ? { ...task, ...patch } : task,
+    );
+
+    const persisted = notifyKanbanTasksUpdated(nextTasks);
+    if (persisted) {
+      setProjects(designProjectsFromTasks(nextTasks));
+      window.dispatchEvent(new CustomEvent(kanbanTasksUpdatedEventName, { detail: { tasks: nextTasks } }));
+    }
+
+    const ok = await syncTaskPatchWithBackend(taskSnapshot, patch);
+    if (!ok) {
+      console.warn("No se pudo sincronizar el feedback de diseño con el backend.");
+    }
+
     setFeedbackDrafts((prev) => ({ ...prev, [projectId]: "" }));
-    setActiveFeedbackId(projectId);
+    setActiveFeedbackId(null);
   };
 
   return (

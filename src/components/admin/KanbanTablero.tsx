@@ -217,6 +217,7 @@ const normalizeTask = (task: Partial<KanbanTask> & Record<string, unknown>): Kan
     citaFinished,
     designApprovedByAdmin: Boolean(task.designApprovedByAdmin),
     designApprovedByClient: Boolean(task.designApprovedByClient),
+    designFeedback: typeof task.designFeedback === "string" ? task.designFeedback : undefined,
     codigoProyecto: typeof task.codigoProyecto === "string" ? task.codigoProyecto : undefined,
     contractDate: typeof task.contractDate === "string" ? task.contractDate : undefined,
     estimatedDeliveryDate:
@@ -968,7 +969,11 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       updateTask(taskId, (task) => ({
         ...task,
         files: [...(task.files ?? []), ...nextFiles],
+        designFeedback: undefined,
       }));
+      if (taskSnapshot) {
+        void syncTaskPatchWithBackend(taskSnapshot, { designFeedback: "" });
+      }
     }
 
     if (failedNames.length > 0) {
@@ -1167,10 +1172,17 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                               );
                             })()
                           ) : task.stage === "disenos" && task.files && task.files.length > 0 && !task.designApprovedByAdmin ? (
+                            task.designFeedback ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-1 text-[10px] font-semibold text-rose-700 animate-pulse">
+                                <AlertTriangle className="h-3 w-3" />
+                                Cambios solicitados
+                              </span>
+                            ) : (
                             <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-700">
                               <Clock className="h-3 w-3" />
                               Esperando aprobación
                             </span>
+                            )
                           ) : task.stage === "disenos" && task.designApprovedByAdmin && !task.designApprovedByClient ? (
                             <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-1 text-[10px] font-semibold text-violet-700">
                               <Clock className="h-3 w-3" />
@@ -1810,6 +1822,15 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                 ) : null}
                 {activeTask.stage === "disenos" ? (
                   <div>
+                    {activeTask.designFeedback && !activeTask.designApprovedByAdmin ? (
+                      <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                        <p className="flex items-center gap-2 text-sm font-semibold text-rose-800">
+                          <AlertTriangle className="h-4 w-4 shrink-0" />
+                          Observaciones del Administrador
+                        </p>
+                        <p className="mt-2 text-sm text-rose-900">{activeTask.designFeedback}</p>
+                      </div>
+                    ) : null}
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
                       Flujo de diseño
                     </p>
