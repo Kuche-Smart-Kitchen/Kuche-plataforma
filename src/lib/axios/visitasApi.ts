@@ -23,7 +23,7 @@ const publicVisitRequestConfig = {
   skipAuthRedirect: true,
 } as AxiosRequestConfig;
 
-const visitCreateRoutes = ["/api/visitas", "/api/visitas/agendarVisita"];
+const visitCreateRoutes = ["/api/visitas/agendarVisita"];
 const visitAvailabilityRoutes = ["/api/visitas/disponibilidad", "/api/visitas/horarios-ocupados"];
 
 const canTryNextRoute = (error: unknown) =>
