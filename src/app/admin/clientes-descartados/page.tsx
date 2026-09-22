@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, XCircle, User, Calendar, RotateCcw, X } from "lucide-react";
 import {
   getTaskCardSubtitle,
+  getTasksFromLocalStorage,
   saveKanbanTasksToLocalStorage,
   type KanbanTask,
 } from "@/lib/kanban";
@@ -26,6 +27,8 @@ export default function ClientesDescartadosPage() {
   const [clients, setClients] = useState<KanbanTask[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
   const [selectedClient, setSelectedClient] = useState<KanbanTask | null>(null);
+  const [reactivatingId, setReactivatingId] = useState<string | null>(null);
+  const [reactivateError, setReactivateError] = useState<string | null>(null);
   const columnCount = useClientCardColumns(3);
   const clientColumns = useMemo(() => {
     if (clients.length === 0) return [];
@@ -49,29 +52,39 @@ export default function ClientesDescartadosPage() {
     void load();
   }, []);
 
-  const handleReactivate = (clientId: string) => {
+  const handleReactivate = async (clientId: string) => {
+    const target = clients.find((task) => task.id === clientId);
+    if (!target) return;
+
+    setReactivatingId(clientId);
+    setReactivateError(null);
     try {
-      const target = (clients as KanbanTask[]).find((task) => task.id === clientId);
-      const updatedTasks = (clients as KanbanTask[]).map((task) => {
-        if (task.id === clientId) {
-          return {
-            ...task,
-            followUpStatus: "pendiente" as const,
-            status: "pendiente" as const,
-            stage: "contrato" as const,
-            followUpEnteredAt: Date.now(),
-          };
-        }
-        return task;
-      });
-      saveKanbanTasksToLocalStorage(updatedTasks);
-      setClients(updatedTasks.filter((t) => t.followUpStatus === "descartado"));
-      setSelectedClient(null);
-      if (target) {
-        void syncTaskFollowUpWithBackend(target, "pendiente");
+      const ok = await syncTaskFollowUpWithBackend(target, "pendiente");
+      if (!ok) {
+        setReactivateError("No se pudo reactivar al cliente. Intenta de nuevo.");
+        return;
       }
+
+      // Solo se toca la tarea reactivada; el resto del caché local se conserva intacto.
+      const allTasks = getTasksFromLocalStorage();
+      const updatedTasks = allTasks.map((task) =>
+        task.id === clientId
+          ? {
+              ...task,
+              followUpStatus: "pendiente" as const,
+              status: "pendiente" as const,
+              stage: "contrato" as const,
+              followUpEnteredAt: Date.now(),
+            }
+          : task,
+      );
+      saveKanbanTasksToLocalStorage(updatedTasks);
+      setClients((prev) => prev.filter((task) => task.id !== clientId));
+      setSelectedClient(null);
     } catch {
-      console.error("Error al reactivar cliente");
+      setReactivateError("No se pudo reactivar al cliente. Intenta de nuevo.");
+    } finally {
+      setReactivatingId(null);
     }
   };
 
@@ -188,7 +201,10 @@ export default function ClientesDescartadosPage() {
 
                       <button
                         type="button"
-                        onClick={() => setSelectedClient(client)}
+                        onClick={() => {
+                          setReactivateError(null);
+                          setSelectedClient(client);
+                        }}
                         className="mt-5 w-full rounded-xl bg-slate-600 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700"
                       >
                         Abrir expediente
@@ -278,13 +294,19 @@ export default function ClientesDescartadosPage() {
                 </div>
 
                 <div className="border-t border-gray-100 pt-6">
+                  {reactivateError ? (
+                    <p className="mb-3 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                      {reactivateError}
+                    </p>
+                  ) : null}
                   <button
                     type="button"
-                    onClick={() => handleReactivate(selectedClient.id)}
-                    className="flex w-full items-center justify-center gap-2 rounded-2xl border border-primary/15 bg-primary py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90"
+                    onClick={() => void handleReactivate(selectedClient.id)}
+                    disabled={reactivatingId === selectedClient.id}
+                    className="flex w-full items-center justify-center gap-2 rounded-2xl border border-primary/15 bg-primary py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
                   >
-                    <RotateCcw className="h-4 w-4" />
-                    Reactivar cliente
+                    <RotateCcw className={`h-4 w-4 ${reactivatingId === selectedClient.id ? "animate-spin" : ""}`} />
+                    {reactivatingId === selectedClient.id ? "Reactivando..." : "Reactivar cliente"}
                   </button>
                 </div>
               </div>
