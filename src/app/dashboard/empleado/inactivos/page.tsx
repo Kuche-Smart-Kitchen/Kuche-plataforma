@@ -38,6 +38,8 @@ export default function EmpleadoInactivosPage() {
   const [clients, setClients] = useState<KanbanTask[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
   const [selectedClient, setSelectedClient] = useState<KanbanTask | null>(null);
+  const [reactivatingId, setReactivatingId] = useState<string | null>(null);
+  const [reactivateError, setReactivateError] = useState<string | null>(null);
   const columnCount = useClientCardColumns(3);
   const clientColumns = useMemo(() => {
     if (clients.length === 0) return [];
@@ -61,11 +63,19 @@ export default function EmpleadoInactivosPage() {
     void load();
   }, [currentEmployeeName]);
 
-  const handleReactivate = (clientId: string) => {
+  const handleReactivate = async (clientId: string) => {
     const target = clients.find((c) => c.id === clientId);
     if (!target || !isAssignedToEmpleado(target, currentEmployeeName)) return;
 
+    setReactivatingId(clientId);
+    setReactivateError(null);
     try {
+      const ok = await syncTaskFollowUpWithBackend(target, "pendiente");
+      if (!ok) {
+        setReactivateError("No se pudo reactivar al cliente. Intenta de nuevo.");
+        return;
+      }
+
       const tasks = getTasksFromLocalStorage();
       const updatedTasks = tasks.map((task) => {
         if (task.id !== clientId) return task;
@@ -81,9 +91,10 @@ export default function EmpleadoInactivosPage() {
       saveKanbanTasksToLocalStorage(updatedTasks);
       setClients(updatedTasks.filter((task) => isEmpleadoInactivo(task, currentEmployeeName)));
       setSelectedClient(null);
-      void syncTaskFollowUpWithBackend(target, "pendiente");
     } catch {
-      console.error("Error al reactivar cliente");
+      setReactivateError("No se pudo reactivar al cliente. Intenta de nuevo.");
+    } finally {
+      setReactivatingId(null);
     }
   };
 
@@ -208,7 +219,10 @@ export default function EmpleadoInactivosPage() {
 
                         <button
                           type="button"
-                          onClick={() => setSelectedClient(client)}
+                          onClick={() => {
+                            setReactivateError(null);
+                            setSelectedClient(client);
+                          }}
                           className="mt-5 w-full rounded-xl bg-slate-600 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700"
                         >
                           Abrir expediente
@@ -310,13 +324,19 @@ export default function EmpleadoInactivosPage() {
                 </div>
 
                 <div className="border-t border-gray-100 pt-6">
+                  {reactivateError ? (
+                    <p className="mb-3 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                      {reactivateError}
+                    </p>
+                  ) : null}
                   <button
                     type="button"
-                    onClick={() => handleReactivate(selectedClient.id)}
-                    className="flex w-full items-center justify-center gap-2 rounded-2xl border border-primary/15 bg-primary py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90"
+                    onClick={() => void handleReactivate(selectedClient.id)}
+                    disabled={reactivatingId === selectedClient.id}
+                    className="flex w-full items-center justify-center gap-2 rounded-2xl border border-primary/15 bg-primary py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
                   >
-                    <RotateCcw className="h-4 w-4" />
-                    Reactivar cliente
+                    <RotateCcw className={`h-4 w-4 ${reactivatingId === selectedClient.id ? "animate-spin" : ""}`} />
+                    {reactivatingId === selectedClient.id ? "Reactivando..." : "Reactivar cliente"}
                   </button>
                 </div>
               </div>

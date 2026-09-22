@@ -8,8 +8,10 @@ import { CheckCircle2 } from "lucide-react";
 import { DateInput } from "@/components/ui/DateInput";
 import DateMaskInput from "@/components/ui/DateMaskInput";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
+import { seguimientoApi } from "@/lib/axios";
 import {
   ESTADO_PROYECTO,
+  mergeSeguimientoFromStorage,
   normalizeEstadoProyecto,
   TIMELINE_STEPS,
   type SeguimientoClienteProject,
@@ -189,15 +191,34 @@ export function PublicStatusEditorModal({
   /** Sin focus trap aquí: Chrome + selector de archivos del SO deja la animación de Framer en opacity:0
    *  o el foco en un input sr-only y el panel parece “vacío” sin poder salir. Escape y Cerrar siguen disponibles. */
 
-  const reload = useCallback(() => {
+  const reload = useCallback(async () => {
     setDraft(null);
-    setLoadError(
-      "No hay datos de seguimiento guardados para este código. Debe existir un proyecto con cotización o levantamiento previo.",
-    );
-  }, []);
+    setLoadError(null);
+    try {
+      const response = await seguimientoApi.autenticarSeguimientoCliente(codigoProyecto);
+      if (!response.success || !response.data?.project) {
+        setLoadError(response.message || "No se encontraron datos de seguimiento para este código.");
+        return;
+      }
+      const projectResponse = await seguimientoApi.obtenerProyectoSeguimiento(response.data.token);
+      const project = projectResponse.success && projectResponse.data
+        ? projectResponse.data
+        : response.data.project;
+      const next = mergeSeguimientoFromStorage(project);
+      setDraft(next);
+      setInversionText(String(next.inversion || ""));
+      setPagoAmountText({
+        anticipo: String(next.pagos.anticipo.amount || ""),
+        segundoPago: String(next.pagos.segundoPago.amount || ""),
+        liquidacion: String(next.pagos.liquidacion.amount || ""),
+      });
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "No se pudo cargar el estatus público.");
+    }
+  }, [codigoProyecto]);
 
   useEffect(() => {
-    if (open) reload();
+    if (open) void reload();
   }, [open, reload]);
 
   const totalPagado = useMemo(() => {
@@ -247,6 +268,18 @@ export function PublicStatusEditorModal({
     setSaveError(null);
     setIsSaving(true);
     try {
+      const response = await seguimientoApi.actualizarEstatusPublico(codigoProyecto, {
+        estadoProyecto: draft.estadoProyecto,
+        etapaActual: draft.etapaActual,
+        fechaInicio: draft.fechaInicio,
+        fechaEntrega: draft.fechaEntrega,
+        garantiaInicio: draft.garantiaInicio,
+        inversion: draft.inversion,
+        pagos: effectivePagosFor(draft),
+      });
+      if (!response.success) {
+        throw new Error(response.message || "No se pudo actualizar el estatus público.");
+      }
       onSaved?.();
       if (saveSuccessTimerRef.current) {
         clearTimeout(saveSuccessTimerRef.current);
@@ -263,7 +296,7 @@ export function PublicStatusEditorModal({
     } finally {
       setIsSaving(false);
     }
-  }, [draft, onSaved, onClose]);
+  }, [codigoProyecto, draft, effectivePagosFor, onSaved, onClose]);
 
 
   const addArchivo = () => {

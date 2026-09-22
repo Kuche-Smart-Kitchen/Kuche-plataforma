@@ -932,14 +932,14 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     return "otro";
   };
 
-  const handleFilesUpload = async (taskId: string, fileList: FileList | File[] | null) => {
-    if (!fileList?.length) return;
+  const handleFilesUpload = async (taskId: string, fileList: FileList | File[] | null): Promise<boolean> => {
+    if (!fileList?.length) return false;
     const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
     const clienteId = taskSnapshot?.codigoProyecto?.trim();
 
     if (!clienteId) {
       showUploadToast("error", "No se pudo subir el archivo: falta el código de cliente/proyecto de la tarea.");
-      return;
+      return false;
     }
 
     const tipo = taskSnapshot?.stage === "contrato" ? "fotos_proyecto" : "diseno";
@@ -983,12 +983,14 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
           ? `Se subieron ${nextFiles.length} archivo(s), pero falló: ${failedNames.join(", ")}.`
           : "No se pudo subir el archivo. Revisa la conexión e inténtalo de nuevo.",
       );
-    } else if (nextFiles.length > 0) {
-      showUploadToast(
-        "success",
-        nextFiles.length === 1 ? "Archivo subido correctamente." : `${nextFiles.length} archivos subidos correctamente.`,
-      );
+      return false;
     }
+
+    showUploadToast(
+      "success",
+      nextFiles.length === 1 ? "Archivo subido correctamente." : `${nextFiles.length} archivos subidos correctamente.`,
+    );
+    return true;
   };
 
   return (
