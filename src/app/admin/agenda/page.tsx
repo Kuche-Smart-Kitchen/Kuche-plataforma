@@ -8,6 +8,7 @@ import Captcha from "@/components/ui/Captcha";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useVisitasContext } from "@/contexts/VisitasContext";
+import { useEquipoContext } from "@/contexts/EquipoContext";
 import { actualizarVisita, eliminarVisita, obtenerVisitas } from "@/lib/axios/visitasApi";
 import { obtenerTodasLasCitas } from "@/lib/axios/citasApi";
 import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
@@ -46,19 +47,7 @@ type CitaAlert = {
   assignedTo: string | null;
 };
 
-type TeamMember = {
-  id: string;
-  name: string;
-  role: string;
-};
-
 const UNASSIGNED_FILTER = "__unassigned__";
-
-const typeStyles: Record<AppointmentType, string> = {
-  "Levantamiento / Medidas": "bg-sky-100 text-sky-700",
-  "Cotización en sitio": "bg-emerald-100 text-emerald-700",
-  "Presentación de diseño": "bg-purple-100 text-purple-700",
-};
 
 const weekDays = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 const BUSINESS_START_HOUR = 9;
@@ -83,7 +72,7 @@ const normalizeMatchText = (value: string) => value.trim().toLowerCase();
 export default function AgendaPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [citas, setCitas] = useState<CitaAlert[]>([]);
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const { teamMembers } = useEquipoContext();
   const [selectedEmployee, setSelectedEmployee] = useState("Todos");
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date();
@@ -142,9 +131,6 @@ export default function AgendaPage() {
             phone: typeof visita.telefonoCliente === "string" ? visita.telefonoCliente : "",
           }));
           setAppointments(nextAppointments);
-          if (nextAppointments.length > 0) {
-            setTeamMembers((prev) => prev.length > 0 ? prev : [{ id: "ingeniero", name: "Ingeniero", role: "Asignado" }]);
-          }
         }
 
         if (citasResponse.success && Array.isArray(citasResponse.data)) {
@@ -400,11 +386,11 @@ export default function AgendaPage() {
 
 
   return (
-    <div className="flex h-[calc(100vh-2rem)] flex-col gap-6 overflow-hidden">
+    <div className="flex h-[calc(100vh-2rem)] flex-col gap-6 overflow-hidden rounded-3xl bg-slate-300/60 p-4 shadow-inner">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Agenda de Citas y Visitas</h1>
-          <p className="mt-1 text-sm text-gray-500 capitalize">{formatMonthLabel(currentMonth)}</p>
+          <p className="mt-1 text-sm text-gray-800 capitalize">{formatMonthLabel(currentMonth)}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -433,7 +419,7 @@ export default function AgendaPage() {
             className="rounded-2xl border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 shadow-sm outline-none"
           >
             <option value="Todos">Todos</option>
-            <option value={UNASSIGNED_FILTER}>🚨 Citas sin asignar</option>
+            <option value={UNASSIGNED_FILTER}>Citas sin asignar</option>
             {teamMembers.map((member) => (
               <option key={member.id} value={member.id}>
                 {member.name}
@@ -471,10 +457,10 @@ export default function AgendaPage() {
                 key={dateKey}
                 type="button"
                 onClick={() => openNewModal(dateKey)}
-                className="flex min-h-0 flex-col rounded-2xl border border-gray-100 bg-white p-1.5 text-left transition-colors hover:bg-gray-50"
+                className="flex min-h-0 flex-col rounded-2xl border border-gray-200 bg-white p-1.5 text-left shadow-sm transition-colors hover:bg-gray-50"
               >
                 <div className="text-xs font-semibold text-gray-500">{date.getDate()}</div>
-                <div className="mt-1 flex-1 min-h-0 space-y-1 overflow-y-auto custom-scrollbar">
+                <div className="mt-1 flex-1 min-h-0 space-y-1.5 overflow-y-auto custom-scrollbar">
                   {dayCitas.map((cita) => {
                     const matchedVisita = citaMatchingVisita(cita);
                     if (matchedVisita) {
@@ -486,10 +472,10 @@ export default function AgendaPage() {
                             event.stopPropagation();
                             openEditModal(matchedVisita);
                           }}
-                          className="flex w-full items-center gap-1 truncate rounded-md bg-emerald-600 px-2 py-0.5 text-left text-[10px] text-white shadow-sm"
+                          className="flex w-full items-center gap-1.5 truncate rounded-lg bg-teal-800 px-2.5 py-1.5 text-left text-[11px] font-semibold text-white shadow-md transition hover:brightness-110"
                         >
-                          <CheckCircle2 className="h-3 w-3" />
-                          <span className="truncate">Visita registrada · {cita.time} · {cita.client}</span>
+                          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate">Visita registrada-{cita.time}-{cita.client}</span>
                         </button>
                       );
                     }
@@ -501,10 +487,10 @@ export default function AgendaPage() {
                           event.stopPropagation();
                           openVisitaFromCita(cita);
                         }}
-                        className="flex w-full items-center gap-1 truncate rounded-md bg-amber-500 px-2 py-0.5 text-left text-[10px] text-white shadow-sm"
+                        className="flex w-full items-center gap-1.5 truncate rounded-lg bg-[#8B1C1C] px-2.5 py-1.5 text-left text-[11px] font-semibold text-white shadow-md transition hover:brightness-110"
                       >
-                        <AlertCircle className="h-3 w-3" />
-                        <span className="truncate">Cita · {cita.time} · {cita.client}</span>
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">Cita-{cita.time}-{cita.client}</span>
                       </button>
                     );
                   })}
@@ -518,13 +504,13 @@ export default function AgendaPage() {
                           event.stopPropagation();
                           openEditModal(appointment);
                         }}
-                        className={`flex w-full items-center gap-1 truncate rounded-md px-2 py-0.5 text-left text-[10px] shadow-sm ${
+                        className={`flex w-full items-center gap-1.5 truncate rounded-lg px-2.5 py-1.5 text-left text-[11px] font-semibold shadow-md transition hover:brightness-110 ${
                           isPending
                             ? "bg-red-500 text-white animate-pulse"
-                            : typeStyles[appointment.type]
+                            : "bg-teal-800 text-white"
                         }`}
                       >
-                        {isPending ? <AlertCircle className="h-3 w-3" /> : null}
+                        {isPending ? <AlertCircle className="h-3.5 w-3.5 shrink-0" /> : null}
                         <span className="truncate">
                           {appointment.time} · {appointment.client}
                         </span>
@@ -567,7 +553,7 @@ export default function AgendaPage() {
                 <input
                   value={formState.title}
                   onChange={(event) => setFormState((prev) => ({ ...prev, title: event.target.value }))}
-                  placeholder="Ej. Medición cocina principal"
+                  placeholder="Titulo de la visita"
                   className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none"
                 />
               </label>
@@ -578,12 +564,12 @@ export default function AgendaPage() {
                   onChange={(event) =>
                     setFormState((prev) => ({ ...prev, client: event.target.value }))
                   }
-                  placeholder="Ej. Mariana Fuentes"
+                  placeholder="Nombre del cliente"
                   className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none"
                 />
               </label>
               <label className="text-xs font-semibold text-gray-500">
-                Correo *
+                Correo
                 <input
                   type="email"
                   required
@@ -594,7 +580,7 @@ export default function AgendaPage() {
                 />
               </label>
               <label className="text-xs font-semibold text-gray-500">
-                Teléfono *
+                Teléfono
                 <input
                   required
                   value={formState.phone ?? ""}
@@ -610,7 +596,7 @@ export default function AgendaPage() {
                   onChange={(event) =>
                     setFormState((prev) => ({ ...prev, location: event.target.value }))
                   }
-                  placeholder="Ej. Calle 123, Col. Centro, CDMX"
+                  placeholder="Ubicación del cliente"
                   className="mt-2 min-h-[90px] w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none"
                 />
               </label>
