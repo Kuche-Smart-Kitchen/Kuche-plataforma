@@ -55,6 +55,7 @@ export default function Captcha({
 
   useEffect(() => {
     let cancelled = false;
+    let timer: NodeJS.Timeout;
 
     const renderWidget = () => {
       if (
@@ -66,28 +67,32 @@ export default function Captcha({
         return;
       }
 
-      widgetIdRef.current = window.turnstile.render(containerRef.current, {
-        sitekey: resolvedSiteKey,
-        theme: "light",
-        execution: "execute",
-        callback: (token: string) => callbacksRef.current.onVerify(token),
-        "expired-callback": () => callbacksRef.current.onExpire?.(),
-        "error-callback": (errorCode?: string) => {
-          // El codigo permite ubicar la causa exacta en https://developers.cloudflare.com/turnstile/troubleshooting/client-side-errors/
-          console.error("[Turnstile] error-callback", {
-            errorCode,
+      // Evitamos el choque de contexto dándole un respiro de 100ms al DOM
+      timer = setTimeout(() => {
+        if (cancelled || !containerRef.current || !window.turnstile) return;
+        
+        try {
+          widgetIdRef.current = window.turnstile.render(containerRef.current, {
             sitekey: resolvedSiteKey,
-            hostname: typeof window !== "undefined" ? window.location.hostname : undefined,
+            theme: "light",
+            callback: (token: string) => callbacksRef.current.onVerify(token),
+            "expired-callback": () => callbacksRef.current.onExpire?.(),
+            "error-callback": (errorCode?: string) => {
+              console.error("[Turnstile] error-callback", { errorCode });
+              callbacksRef.current.onError?.(errorCode);
+            },
           });
-          callbacksRef.current.onError?.(errorCode);
-        },
-      });
+        } catch (e) {
+          console.error("[Turnstile] Render exception:", e);
+        }
+      }, 100);
     };
 
     const tick = () => {
       if (cancelled) return;
-      renderWidget();
-      if (!widgetIdRef.current) {
+      if (window.turnstile) {
+        renderWidget();
+      } else {
         setTimeout(tick, 250);
       }
     };
@@ -102,6 +107,7 @@ export default function Captcha({
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
       if (widgetIdRef.current && window.turnstile?.remove) {
         window.turnstile.remove(widgetIdRef.current);
         widgetIdRef.current = null;
@@ -113,7 +119,8 @@ export default function Captcha({
     <div
       ref={containerRef}
       aria-disabled={disabled}
-      className={`${className ?? "min-h-[65px] w-full"}${disabled ? " pointer-events-none opacity-60" : ""}`}
+      // Aseguramos un min-height explícito para que el navegador no bloquee el render del iframe interno
+      className={`${className ?? "min-h-[65px] w-full flex justify-center items-center"}${disabled ? " pointer-events-none opacity-60" : ""}`}
       aria-label="Verificación de seguridad Cloudflare Turnstile"
     />
   );
