@@ -218,7 +218,12 @@ const normalizeTask = (task: Partial<KanbanTask> & Record<string, unknown>): Kan
     designApprovedByAdmin: Boolean(task.designApprovedByAdmin),
     designApprovedByClient: Boolean(task.designApprovedByClient),
     designFeedback: typeof task.designFeedback === "string" ? task.designFeedback : undefined,
-    codigoProyecto: typeof task.codigoProyecto === "string" ? task.codigoProyecto : undefined,
+    codigoProyecto:
+      (typeof task.codigoProyecto === "string" && task.codigoProyecto.trim()) ||
+      (typeof task.codigoCliente === "string" && task.codigoCliente.trim()) ||
+      (typeof task.clientId === "string" && task.clientId.trim()) ||
+      (typeof task.codigo === "string" && task.codigo.trim()) ||
+      undefined,
     contractDate: typeof task.contractDate === "string" ? task.contractDate : undefined,
     estimatedDeliveryDate:
       typeof task.estimatedDeliveryDate === "string" ? task.estimatedDeliveryDate : undefined,
@@ -770,7 +775,12 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
   const handleDropboxUpload = async (taskId: string, file: File) => {
     const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
-    const clienteId = taskSnapshot?.codigoProyecto?.trim();
+    const clienteId =
+      taskSnapshot?.codigoProyecto?.trim() ||
+      (taskSnapshot as any)?.codigoCliente?.trim() ||
+      (taskSnapshot as any)?.clientId?.trim() ||
+      (taskSnapshot as any)?.codigo?.trim() ||
+      taskSnapshot?.id;
 
     if (!clienteId) {
       showUploadToast("error", "No se pudo subir el archivo: falta el código de cliente/proyecto de la tarea.");
@@ -935,7 +945,12 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const handleFilesUpload = async (taskId: string, fileList: FileList | File[] | null): Promise<boolean> => {
     if (!fileList?.length) return false;
     const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
-    const clienteId = taskSnapshot?.codigoProyecto?.trim();
+    const clienteId =
+      taskSnapshot?.codigoProyecto?.trim() ||
+      (taskSnapshot as any)?.codigoCliente?.trim() ||
+      (taskSnapshot as any)?.clientId?.trim() ||
+      (taskSnapshot as any)?.codigo?.trim() ||
+      taskSnapshot?.id;
 
     if (!clienteId) {
       showUploadToast("error", "No se pudo subir el archivo: falta el código de cliente/proyecto de la tarea.");
