@@ -284,8 +284,8 @@ const buildTaskPatchPayload = (task: KanbanTask, patch: Partial<KanbanTask>): Re
   if (patch.designApprovedByClient !== undefined || task.designApprovedByClient !== undefined) {
     payload.designApprovedByClient = snapshot.designApprovedByClient;
   }
-  if (patch.designFeedback !== undefined || task.designFeedback !== undefined) {
-    payload.designFeedback = snapshot.designFeedback ?? "";
+  if (patch.designFeedback !== undefined) {
+    payload.designFeedback = String(patch.designFeedback);
   }
   if (patch.citaStarted !== undefined || task.citaStarted !== undefined) {
     payload.citaStarted = snapshot.citaStarted;
