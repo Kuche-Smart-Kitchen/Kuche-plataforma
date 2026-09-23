@@ -1329,7 +1329,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                               {/* Pasar a Seguimiento: manual vía botón */}
 
                               {/* DISEÑOS: Subir → Admin aprueba → Subida de diseño final */}
-                              {task.stage === "disenos" && (!task.files || task.files.length === 0) ? (
+                              {task.stage === "disenos" && ((!task.files || task.files.length === 0) || (task.designFeedback && !task.designApprovedByAdmin)) ? (
                                 <button
                                   type="button"
                                   onClick={(event) => {
