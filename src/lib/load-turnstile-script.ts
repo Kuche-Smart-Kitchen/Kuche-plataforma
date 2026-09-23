@@ -1,5 +1,5 @@
 /** Carga única del script de Cloudflare Turnstile (solo cuando hace falta el captcha). */
-const TURNSTILE_URL = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+const TURNSTILE_URL = "https://challenges.cloudflare.com/turnstile/v0/api.js";
 
 export function loadTurnstileScript(): Promise<void> {
   if (typeof window === "undefined") {
