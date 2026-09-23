@@ -69,6 +69,7 @@ export default function Captcha({
       widgetIdRef.current = window.turnstile.render(containerRef.current, {
         sitekey: resolvedSiteKey,
         theme: "light",
+        execution: "execute",
         callback: (token: string) => callbacksRef.current.onVerify(token),
         "expired-callback": () => callbacksRef.current.onExpire?.(),
         "error-callback": (errorCode?: string) => {
