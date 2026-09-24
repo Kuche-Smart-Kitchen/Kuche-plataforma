@@ -298,16 +298,12 @@ export function mergeKanbanTaskLists(local: KanbanTask[], incoming: KanbanTask[]
       designApprovedByAdmin: existing.designApprovedByAdmin || task.designApprovedByAdmin,
       designApprovedByClient: existing.designApprovedByClient || task.designApprovedByClient,
       designFeedback: (() => {
-        const fromIncoming = task.designFeedback;
-        const fromLocal = existing.designFeedback;
-        const isExplicitlyCleared = (value: string | undefined) =>
-          value !== undefined && !value.trim();
-        if (isExplicitlyCleared(fromIncoming) || isExplicitlyCleared(fromLocal)) {
-          return undefined;
-        }
-        if (fromLocal?.trim()) return fromLocal;
-        if (fromIncoming?.trim()) return fromIncoming;
-        return undefined;
+        // Si incoming trae explícitamente "" o null, el backend está limpio
+        if (task.designFeedback === "" || task.designFeedback === null) return undefined;
+        if (task.designFeedback?.trim()) return task.designFeedback.trim();
+        // Si local fue limpiado explícitamente con ""
+        if (existing.designFeedback === "" || existing.designFeedback === null) return undefined;
+        return existing.designFeedback?.trim() ? existing.designFeedback.trim() : undefined;
       })(),
     });
   }

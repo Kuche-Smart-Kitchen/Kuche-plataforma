@@ -33,6 +33,12 @@ const toStringValue = (value: unknown): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
+const toFeedbackString = (value: unknown): string | undefined => {
+  if (value === null || value === "") return "";
+  if (typeof value === "string") return value.trim();
+  return undefined;
+};
+
 const toBooleanValue = (value: unknown): boolean | undefined => {
   if (typeof value === "boolean") return value;
   return undefined;
@@ -212,7 +218,7 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     citaFinished,
     designApprovedByAdmin: toBooleanValue(raw.designApprovedByAdmin),
     designApprovedByClient: toBooleanValue(raw.designApprovedByClient),
-    designFeedback: toStringValue(raw.designFeedback),
+    designFeedback: toFeedbackString(raw.designFeedback),
     codigoProyecto:
       toStringValue(raw.codigo) ??
       toStringValue(raw.codigoCliente) ??
