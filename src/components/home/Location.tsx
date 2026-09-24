@@ -46,7 +46,6 @@ export default function Location() {
             loading="lazy"
             referrerPolicy="no-referrer-when-downgrade"
             allowFullScreen
-            sandbox="allow-scripts allow-same-origin allow-popups"
           />
         </div>
       </div>
