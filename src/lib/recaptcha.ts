@@ -66,7 +66,7 @@ export const resetTurnstile = (containerId: string): void => {
 
     const container = document.getElementById(containerId);
     if (container) {
-      window.turnstile.reset(container);
+      window.turnstile.reset(containerId);
     }
   } catch (error) {
     console.error("Error reseteando Turnstile:", error);
