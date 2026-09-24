@@ -275,6 +275,13 @@ export function mergeKanbanTaskLists(local: KanbanTask[], incoming: KanbanTask[]
     const stage =
       STAGE_RANK[existing.stage] >= STAGE_RANK[task.stage] ? existing.stage : task.stage;
 
+    const localHasNewerUpload = (existing.files?.length ?? 0) > (task.files?.length ?? 0);
+    const resolvedFeedback = localHasNewerUpload
+      ? undefined
+      : task.designFeedback?.trim()
+        ? task.designFeedback.trim()
+        : undefined;
+
     merged.set(key, {
       ...task,
       ...existing,
@@ -297,14 +304,7 @@ export function mergeKanbanTaskLists(local: KanbanTask[], incoming: KanbanTask[]
       followUpStatus: existing.followUpStatus ?? task.followUpStatus,
       designApprovedByAdmin: existing.designApprovedByAdmin || task.designApprovedByAdmin,
       designApprovedByClient: existing.designApprovedByClient || task.designApprovedByClient,
-      designFeedback: (() => {
-        // Si incoming trae explícitamente "" o null, el backend está limpio
-        if (task.designFeedback === "" || task.designFeedback === null) return undefined;
-        if (task.designFeedback?.trim()) return task.designFeedback.trim();
-        // Si local fue limpiado explícitamente con ""
-        if (existing.designFeedback === "" || existing.designFeedback === null) return undefined;
-        return existing.designFeedback?.trim() ? existing.designFeedback.trim() : undefined;
-      })(),
+      designFeedback: resolvedFeedback,
     });
   }
 

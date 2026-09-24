@@ -980,17 +980,27 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       });
     }
 
-    if (nextFiles.length > 0 && taskSnapshot) {
+    if (nextFiles.length > 0) {
       const patchUpdates: Partial<KanbanTask> = {
-        files: [...(taskSnapshot.files ?? []), ...nextFiles],
-        designFeedback: "",
+        files: [...(taskSnapshot?.files ?? []), ...nextFiles],
+        designFeedback: undefined,
         designApprovedByAdmin: false,
       };
       updateTask(taskId, (task) => ({ ...task, ...patchUpdates }));
-      await syncTaskPatchWithBackend(taskSnapshot, {
-        designFeedback: "",
-        designApprovedByAdmin: false,
-      });
+
+      if (taskSnapshot) {
+        try {
+          await syncTaskPatchWithBackend(taskSnapshot, {
+            designFeedback: "",
+            designApprovedByAdmin: false,
+          });
+        } catch (e) {
+          console.warn(
+            "No se pudo persistir el reseteo de feedback en backend (posible restricción de rol):",
+            e,
+          );
+        }
+      }
     }
 
     if (failedNames.length > 0) {

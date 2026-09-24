@@ -46,35 +46,14 @@ const getKanbanColumn = async (endpoint: string): Promise<ApiResponse<KanbanItem
   }
 };
 
-const buildEndpointCandidates = (base: string): string[] => [
-  base,
-  base.replace(/\/kanban\//, "/"),
-  base.replace(/\/kanban/, ""),
-  `${base}/all`,
-];
-
-const getKanbanColumnWithFallbacks = async (baseEndpoint: string): Promise<ApiResponse<KanbanItem[]>> => {
-  let lastMessage = "No fue posible obtener datos del kanban";
-
-  for (const endpoint of buildEndpointCandidates(baseEndpoint)) {
-    const response = await getKanbanColumn(endpoint);
-    if (response.success) {
-      return response;
-    }
-    lastMessage = response.message || lastMessage;
-  }
-
-  return { success: false, message: lastMessage };
-};
-
 export const obtenerKanbanCitas = async (): Promise<ApiResponse<KanbanItem[]>> =>
-  getKanbanColumnWithFallbacks("/api/kanban/citas");
+  getKanbanColumn("/api/kanban/citas");
 
 export const obtenerKanbanDisenos = async (): Promise<ApiResponse<KanbanItem[]>> =>
-  getKanbanColumnWithFallbacks("/api/kanban/disenos");
+  getKanbanColumn("/api/kanban/disenos");
 
 export const obtenerKanbanCotizacion = async (): Promise<ApiResponse<KanbanItem[]>> =>
-  getKanbanColumnWithFallbacks("/api/kanban/cotizacion");
+  getKanbanColumn("/api/kanban/cotizacion");
 
 export const obtenerKanbanContrato = async (): Promise<ApiResponse<KanbanItem[]>> =>
-  getKanbanColumnWithFallbacks("/api/kanban/contrato");
+  getKanbanColumn("/api/kanban/contrato");
