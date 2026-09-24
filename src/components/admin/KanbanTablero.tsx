@@ -981,13 +981,16 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     }
 
     if (nextFiles.length > 0 && taskSnapshot) {
-      const patchUpdates = {
+      const patchUpdates: Partial<KanbanTask> = {
         files: [...(taskSnapshot.files ?? []), ...nextFiles],
         designFeedback: "",
         designApprovedByAdmin: false,
       };
       updateTask(taskId, (task) => ({ ...task, ...patchUpdates }));
-      await syncTaskPatchWithBackend(taskSnapshot, { designFeedback: "" });
+      await syncTaskPatchWithBackend(taskSnapshot, {
+        designFeedback: "",
+        designApprovedByAdmin: false,
+      });
     }
 
     if (failedNames.length > 0) {
