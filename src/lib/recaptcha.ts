@@ -3,10 +3,10 @@ import { env } from "@/lib/env";
 declare global {
   interface Window {
     turnstile?: {
-      render: (container: HTMLElement, options: Record<string, unknown>) => string;
-      getResponse?: (container: HTMLElement) => string;
-      reset?: (container: HTMLElement) => void;
-      remove?: (widgetId: string) => void;
+      render: (container: HTMLElement | string, options: Record<string, unknown>) => string;
+      getResponse?: (widgetId?: string) => string;
+      reset: (widgetId: string) => void;
+      remove: (widgetId: string) => void;
     };
   }
 }
@@ -50,7 +50,7 @@ export const obtenerTokenTurnstile = (containerId: string): string => {
       return "";
     }
 
-    const token = window.turnstile.getResponse(container);
+    const token = window.turnstile.getResponse();
     return token || "";
   } catch (error) {
     console.error("Error obteniendo token Turnstile:", error);
@@ -66,7 +66,7 @@ export const resetTurnstile = (containerId: string): void => {
 
     const container = document.getElementById(containerId);
     if (container) {
-      window.turnstile.reset(container);
+      window.turnstile.reset(containerId);
     }
   } catch (error) {
     console.error("Error reseteando Turnstile:", error);

@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { loadTurnstileScript } from "@/lib/load-turnstile-script";
-import { env } from "@/lib/env";
+import { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 
 type CaptchaProps = {
   onVerify: (token: string) => void;
@@ -13,115 +11,116 @@ type CaptchaProps = {
   disabled?: boolean;
 };
 
+export type CaptchaRef = {
+  reset: () => void;
+};
+
 declare global {
   interface Window {
     turnstile?: {
-      render: (container: HTMLElement, options: Record<string, unknown>) => string;
-      getResponse?: (container: HTMLElement) => string;
-      reset?: (container: HTMLElement) => void;
-      remove?: (widgetId: string) => void;
+      render: (container: HTMLElement | string, options: Record<string, unknown>) => string;
+      getResponse?: (widgetId?: string) => string;
+      reset: (widgetId: string) => void;
+      remove: (widgetId: string) => void;
     };
   }
 }
 
-const resolveSiteKey = (siteKey?: string): string => {
-  if (siteKey?.trim()) return siteKey.trim();
-
-  const isDevelopment =
-    process.env.NODE_ENV !== "production" &&
-    process.env.NEXT_PUBLIC_TURNSTILE_MODE === "development";
-
-  if (isDevelopment) return "1x00000000000000000000AA";
-
-  return process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim() || env.turnstileSiteKey;
-};
-
-export default function Captcha({
+const Captcha = forwardRef<CaptchaRef, CaptchaProps>(({
   onVerify,
   onExpire,
   onError,
   className,
   siteKey,
   disabled = false,
-}: CaptchaProps) {
+}, ref) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | null>(null);
-  const callbacksRef = useRef({ onVerify, onExpire, onError });
-  const resolvedSiteKey = resolveSiteKey(siteKey);
+  
+  // Usamos la sitekey provista o la de producción. 
+  // Opcional: Si quieres probar si el ciclo se rompe, puedes cambiar temporalmente 
+  // la de producción por la genérica de pruebas de Cloudflare: "1x00000000000000000000AA"
+  const resolvedSiteKey = siteKey || process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
+
+  useImperativeHandle(ref, () => ({
+    reset: () => {
+      if (widgetIdRef.current && window.turnstile?.reset) {
+        window.turnstile.reset(widgetIdRef.current);
+      }
+    },
+  }));
 
   useEffect(() => {
-    callbacksRef.current = { onVerify, onExpire, onError };
-  }, [onVerify, onExpire, onError]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let timer: NodeJS.Timeout;
+    let isMounted = true;
 
     const renderWidget = () => {
-      if (
-        cancelled ||
-        widgetIdRef.current ||
-        !containerRef.current ||
-        !window.turnstile
-      ) {
-        return;
-      }
+      if (!isMounted || !containerRef.current || widgetIdRef.current) return;
 
-      // Evitamos el choque de contexto dándole un respiro de 100ms al DOM
-      timer = setTimeout(() => {
-        if (cancelled || !containerRef.current || !window.turnstile) return;
-        
+      if (window.turnstile) {
         try {
           widgetIdRef.current = window.turnstile.render(containerRef.current, {
             sitekey: resolvedSiteKey,
             theme: "light",
-            callback: (token: string) => callbacksRef.current.onVerify(token),
-            "expired-callback": () => callbacksRef.current.onExpire?.(),
+            callback: (token: string) => {
+              if (isMounted) onVerify(token);
+            },
+            "expired-callback": () => {
+              if (isMounted) onExpire?.();
+            },
             "error-callback": (errorCode?: string) => {
-              console.error("[Turnstile] error-callback", { errorCode });
-              callbacksRef.current.onError?.(errorCode);
+              if (isMounted) onError?.(errorCode);
             },
           });
-        } catch (e) {
-          console.error("[Turnstile] Render exception:", e);
+        } catch (err) {
+          console.error("Error al renderizar Turnstile:", err);
+          onError?.("render-exception");
         }
-      }, 100);
-    };
-
-    const tick = () => {
-      if (cancelled) return;
-      if (window.turnstile) {
-        renderWidget();
-      } else {
-        setTimeout(tick, 250);
       }
     };
 
-    loadTurnstileScript()
-      .then(() => {
-        if (!cancelled) tick();
-      })
-      .catch(() => {
-        callbacksRef.current.onError?.("script-load-error");
-      });
+    // Si el script global ya existe, renderizamos directamente
+    if (window.turnstile) {
+      renderWidget();
+    } else {
+      // Si no existe, lo cargamos una sola vez de forma segura
+      const scriptId = "cloudflare-turnstile-script";
+      let script = document.getElementById(scriptId) as HTMLScriptElement;
+
+      if (!script) {
+        script = document.createElement("script");
+        script.id = scriptId;
+        script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+        script.async = true;
+        script.defer = true;
+        document.head.appendChild(script);
+      }
+
+      script.onload = () => {
+        renderWidget();
+      };
+    }
 
     return () => {
-      cancelled = true;
-      clearTimeout(timer);
+      isMounted = false;
       if (widgetIdRef.current && window.turnstile?.remove) {
-        window.turnstile.remove(widgetIdRef.current);
+        try {
+          window.turnstile.remove(widgetIdRef.current);
+        } catch {
+          // Ignorar errores de limpieza
+        }
         widgetIdRef.current = null;
       }
     };
-  }, [resolvedSiteKey]);
+  }, []); // Dependencias vacías [ ] para evitar que el componente se destruya y se vuelva a ciclar al cambiar estados
 
   return (
     <div
       ref={containerRef}
-      aria-disabled={disabled}
-      // Aseguramos un min-height explícito para que el navegador no bloquee el render del iframe interno
       className={`${className ?? "min-h-[65px] w-full flex justify-center items-center"}${disabled ? " pointer-events-none opacity-60" : ""}`}
-      aria-label="Verificación de seguridad Cloudflare Turnstile"
     />
   );
-}
+});
+
+Captcha.displayName = "Captcha";
+
+export default Captcha;
