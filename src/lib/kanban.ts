@@ -297,11 +297,18 @@ export function mergeKanbanTaskLists(local: KanbanTask[], incoming: KanbanTask[]
       followUpStatus: existing.followUpStatus ?? task.followUpStatus,
       designApprovedByAdmin: existing.designApprovedByAdmin || task.designApprovedByAdmin,
       designApprovedByClient: existing.designApprovedByClient || task.designApprovedByClient,
-      designFeedback: existing.designFeedback?.trim()
-        ? existing.designFeedback
-        : task.designFeedback?.trim()
-          ? task.designFeedback
-          : undefined,
+      designFeedback: (() => {
+        const fromIncoming = task.designFeedback;
+        const fromLocal = existing.designFeedback;
+        const isExplicitlyCleared = (value: string | undefined) =>
+          value !== undefined && !value.trim();
+        if (isExplicitlyCleared(fromIncoming) || isExplicitlyCleared(fromLocal)) {
+          return undefined;
+        }
+        if (fromLocal?.trim()) return fromLocal;
+        if (fromIncoming?.trim()) return fromIncoming;
+        return undefined;
+      })(),
     });
   }
 

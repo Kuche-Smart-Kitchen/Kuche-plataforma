@@ -980,15 +980,14 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       });
     }
 
-    if (nextFiles.length > 0) {
-      updateTask(taskId, (task) => ({
-        ...task,
-        files: [...(task.files ?? []), ...nextFiles],
-        designFeedback: undefined,
-      }));
-      if (taskSnapshot) {
-        void syncTaskPatchWithBackend(taskSnapshot, { designFeedback: "" });
-      }
+    if (nextFiles.length > 0 && taskSnapshot) {
+      const patchUpdates = {
+        files: [...(taskSnapshot.files ?? []), ...nextFiles],
+        designFeedback: "",
+        designApprovedByAdmin: false,
+      };
+      updateTask(taskId, (task) => ({ ...task, ...patchUpdates }));
+      await syncTaskPatchWithBackend(taskSnapshot, { designFeedback: "" });
     }
 
     if (failedNames.length > 0) {
