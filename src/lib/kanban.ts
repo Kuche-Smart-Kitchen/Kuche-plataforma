@@ -275,13 +275,6 @@ export function mergeKanbanTaskLists(local: KanbanTask[], incoming: KanbanTask[]
     const stage =
       STAGE_RANK[existing.stage] >= STAGE_RANK[task.stage] ? existing.stage : task.stage;
 
-    const localHasNewerUpload = (existing.files?.length ?? 0) > (task.files?.length ?? 0);
-    const resolvedFeedback = localHasNewerUpload
-      ? undefined
-      : task.designFeedback?.trim()
-        ? task.designFeedback.trim()
-        : undefined;
-
     merged.set(key, {
       ...task,
       ...existing,
@@ -304,7 +297,12 @@ export function mergeKanbanTaskLists(local: KanbanTask[], incoming: KanbanTask[]
       followUpStatus: existing.followUpStatus ?? task.followUpStatus,
       designApprovedByAdmin: existing.designApprovedByAdmin || task.designApprovedByAdmin,
       designApprovedByClient: existing.designApprovedByClient || task.designApprovedByClient,
-      designFeedback: resolvedFeedback,
+      designFeedback:
+        existing.designFeedback === undefined && existing.files?.length
+          ? undefined
+          : task.designFeedback?.trim()
+            ? task.designFeedback.trim()
+            : undefined,
     });
   }
 

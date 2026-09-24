@@ -184,6 +184,13 @@ const normalizeTask = (task: Partial<KanbanTask> & Record<string, unknown>): Kan
         ? [cotizacionFormalData]
         : [];
 
+  const isFeedbackResolved =
+    typeof window !== "undefined" &&
+    Boolean(localStorage.getItem(`kuche_feedback_resolved_${task.id}`));
+  const rawFeedback =
+    typeof task.designFeedback === "string" ? task.designFeedback.trim() : undefined;
+  const designFeedback = isFeedbackResolved ? undefined : rawFeedback || undefined;
+
   return {
     id: typeof task.id === "string" ? task.id : `task-${Date.now()}`,
     sourceId: typeof task.sourceId === "string" ? task.sourceId : undefined,
@@ -217,7 +224,7 @@ const normalizeTask = (task: Partial<KanbanTask> & Record<string, unknown>): Kan
     citaFinished,
     designApprovedByAdmin: Boolean(task.designApprovedByAdmin),
     designApprovedByClient: Boolean(task.designApprovedByClient),
-    designFeedback: typeof task.designFeedback === "string" ? task.designFeedback : undefined,
+    designFeedback,
     codigoProyecto:
       (typeof task.codigoProyecto === "string" && task.codigoProyecto.trim()) ||
       (typeof task.codigoCliente === "string" && task.codigoCliente.trim()) ||
@@ -981,8 +988,14 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     }
 
     if (nextFiles.length > 0) {
+      try {
+        localStorage.setItem(`kuche_feedback_resolved_${taskId}`, String(Date.now()));
+      } catch {
+        // ignore quota / private mode
+      }
+
       const patchUpdates: Partial<KanbanTask> = {
-        files: [...(taskSnapshot?.files ?? []), ...nextFiles],
+        files: [...nextFiles],
         designFeedback: undefined,
         designApprovedByAdmin: false,
       };
@@ -991,14 +1004,11 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       if (taskSnapshot) {
         try {
           await syncTaskPatchWithBackend(taskSnapshot, {
-            designFeedback: "",
+            designFeedback: null as any,
             designApprovedByAdmin: false,
           });
         } catch (e) {
-          console.warn(
-            "No se pudo persistir el reseteo de feedback en backend (posible restricción de rol):",
-            e,
-          );
+          console.warn("Error al sincronizar limpieza de feedback en backend:", e);
         }
       }
     }
