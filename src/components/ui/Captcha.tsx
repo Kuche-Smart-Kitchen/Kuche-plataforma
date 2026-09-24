@@ -36,6 +36,10 @@ const Captcha = forwardRef<CaptchaRef, CaptchaProps>(({
 }, ref) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | null>(null);
+  
+  // Usamos la sitekey provista o la de producción. 
+  // Opcional: Si quieres probar si el ciclo se rompe, puedes cambiar temporalmente 
+  // la de producción por la genérica de pruebas de Cloudflare: "1x00000000000000000000AA"
   const resolvedSiteKey = siteKey || process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
 
   useImperativeHandle(ref, () => ({
@@ -49,21 +53,10 @@ const Captcha = forwardRef<CaptchaRef, CaptchaProps>(({
   useEffect(() => {
     let isMounted = true;
 
-    const initTurnstile = () => {
-      if (!isMounted || !containerRef.current) return;
+    const renderWidget = () => {
+      if (!isMounted || !containerRef.current || widgetIdRef.current) return;
 
-      // Si ya existe un widget previo en este contenedor, lo limpiamos
-      if (widgetIdRef.current && window.turnstile?.remove) {
-        try {
-          window.turnstile.remove(widgetIdRef.current);
-        } catch {
-          // Ignorar si ya fue removido
-        }
-        widgetIdRef.current = null;
-      }
-
-      // Validar que el script global de Cloudflare esté cargado
-      if (window.turnstile && containerRef.current) {
+      if (window.turnstile) {
         try {
           widgetIdRef.current = window.turnstile.render(containerRef.current, {
             sitekey: resolvedSiteKey,
@@ -85,8 +78,11 @@ const Captcha = forwardRef<CaptchaRef, CaptchaProps>(({
       }
     };
 
-    // Comprobamos si el script ya está en el DOM, si no, lo inyectamos de forma segura
-    if (!window.turnstile) {
+    // Si el script global ya existe, renderizamos directamente
+    if (window.turnstile) {
+      renderWidget();
+    } else {
+      // Si no existe, lo cargamos una sola vez de forma segura
       const scriptId = "cloudflare-turnstile-script";
       let script = document.getElementById(scriptId) as HTMLScriptElement;
 
@@ -100,16 +96,8 @@ const Captcha = forwardRef<CaptchaRef, CaptchaProps>(({
       }
 
       script.onload = () => {
-        // Dar un pequeño respiro para que el objeto global esté listo
-        const interval = setInterval(() => {
-          if (window.turnstile && isMounted) {
-            clearInterval(interval);
-            initTurnstile();
-          }
-        }, 100);
+        renderWidget();
       };
-    } else {
-      initTurnstile();
     }
 
     return () => {
@@ -118,12 +106,12 @@ const Captcha = forwardRef<CaptchaRef, CaptchaProps>(({
         try {
           window.turnstile.remove(widgetIdRef.current);
         } catch {
-          // Evitar fugas o errores al desmontar
+          // Ignorar errores de limpieza
         }
         widgetIdRef.current = null;
       }
     };
-  }, [resolvedSiteKey, onVerify, onExpire, onError]);
+  }, []); // Dependencias vacías [ ] para evitar que el componente se destruya y se vuelva a ciclar al cambiar estados
 
   return (
     <div
