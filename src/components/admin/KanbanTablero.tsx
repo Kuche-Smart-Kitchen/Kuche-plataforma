@@ -184,12 +184,46 @@ const normalizeTask = (task: Partial<KanbanTask> & Record<string, unknown>): Kan
         ? [cotizacionFormalData]
         : [];
 
-  const isFeedbackResolved =
-    typeof window !== "undefined" &&
-    Boolean(localStorage.getItem(`kuche_feedback_resolved_${task.id}`));
-  const rawFeedback =
-    typeof task.designFeedback === "string" ? task.designFeedback.trim() : undefined;
-  const designFeedback = isFeedbackResolved ? undefined : rawFeedback || undefined;
+  const rawFeedback = typeof task.designFeedback === "string" ? task.designFeedback.trim() : "";
+  const resolvedKey = `kuche_feedback_resolved_${task.id}`;
+  const resolvedTimestampStr = typeof window !== "undefined" ? localStorage.getItem(resolvedKey) : null;
+
+  let effectiveFeedback: string | undefined = rawFeedback || undefined;
+
+  if (rawFeedback && resolvedTimestampStr) {
+    const resolvedAt = Number(resolvedTimestampStr);
+    const updatedAtRaw = task.updatedAt;
+    const taskUpdatedAt =
+      typeof updatedAtRaw === "number" && Number.isFinite(updatedAtRaw)
+        ? updatedAtRaw
+        : typeof updatedAtRaw === "string"
+          ? Date.parse(updatedAtRaw)
+          : 0;
+
+    if (taskUpdatedAt > resolvedAt + 1000) {
+      try {
+        localStorage.removeItem(resolvedKey);
+      } catch {
+        // ignore
+      }
+      effectiveFeedback = rawFeedback;
+    } else {
+      effectiveFeedback = undefined;
+    }
+  } else if (!rawFeedback && resolvedTimestampStr) {
+    try {
+      localStorage.removeItem(resolvedKey);
+    } catch {
+      // ignore
+    }
+  }
+
+  const updatedAt =
+    typeof task.updatedAt === "number" && Number.isFinite(task.updatedAt)
+      ? task.updatedAt
+      : typeof task.updatedAt === "string"
+        ? Date.parse(task.updatedAt) || undefined
+        : undefined;
 
   return {
     id: typeof task.id === "string" ? task.id : `task-${Date.now()}`,
@@ -212,6 +246,7 @@ const normalizeTask = (task: Partial<KanbanTask> & Record<string, unknown>): Kan
     createdAt: typeof task.createdAt === "number" && task.createdAt > 1600000000000
       ? task.createdAt
       : undefined,
+    updatedAt,
     followUpEnteredAt: typeof task.followUpEnteredAt === "number"
       ? task.followUpEnteredAt
       : undefined,
@@ -224,7 +259,7 @@ const normalizeTask = (task: Partial<KanbanTask> & Record<string, unknown>): Kan
     citaFinished,
     designApprovedByAdmin: Boolean(task.designApprovedByAdmin),
     designApprovedByClient: Boolean(task.designApprovedByClient),
-    designFeedback,
+    designFeedback: effectiveFeedback,
     codigoProyecto:
       (typeof task.codigoProyecto === "string" && task.codigoProyecto.trim()) ||
       (typeof task.codigoCliente === "string" && task.codigoCliente.trim()) ||
@@ -1211,7 +1246,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                               );
                             })()
                           ) : task.stage === "disenos" && task.files && task.files.length > 0 && !task.designApprovedByAdmin ? (
-                            task.designFeedback ? (
+                            Boolean(task.designFeedback) ? (
                               <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-1 text-[10px] font-semibold text-rose-700 animate-pulse">
                                 <AlertTriangle className="h-3 w-3" />
                                 Cambios solicitados
@@ -1275,6 +1310,14 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                                 title={task.title}
                               >
                                 {task.title}
+                              </p>
+                            ) : null}
+                            {task.stage === "disenos" && Boolean(task.designFeedback) ? (
+                              <p
+                                className="mt-1 line-clamp-2 break-words text-xs leading-4 text-rose-800"
+                                title={task.designFeedback}
+                              >
+                                {task.designFeedback}
                               </p>
                             ) : null}
                           </div>
@@ -1366,7 +1409,8 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                               {/* Pasar a Seguimiento: manual vía botón */}
 
                               {/* DISEÑOS: Subir → Admin aprueba → Subida de diseño final */}
-                              {task.stage === "disenos" && ((!task.files || task.files.length === 0) || (task.designFeedback && !task.designApprovedByAdmin)) ? (
+                              {task.stage === "disenos" &&
+                              ((!task.files || task.files.length === 0) || Boolean(task.designFeedback)) ? (
                                 <button
                                   type="button"
                                   onClick={(event) => {

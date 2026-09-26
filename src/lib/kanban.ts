@@ -86,6 +86,8 @@ export type KanbanTask = {
   /** Enlace de Google Maps; en la tarjeta se muestra como "Ver en Maps" para abrir la ubicación. */
   mapsUrl?: string;
   createdAt?: number;
+  /** Última actualización en backend (ms epoch); usada para ciclos de designFeedback. */
+  updatedAt?: number;
   /** Para tareas en seguimiento: fecha en que entró a la columna de seguimiento */
   followUpEnteredAt?: number;
   /** Estado del seguimiento: pendiente, confirmado o descartado */

@@ -212,6 +212,7 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     location: toStringValue(raw.ubicacion) ?? toStringValue(cita?.ubicacion),
     mapsUrl: toStringValue(raw.mapsUrl),
     createdAt: toTimestamp(raw.createdAt),
+    updatedAt: toTimestamp(raw.updatedAt),
     followUpEnteredAt: toTimestamp(raw.followUpEnteredAt),
     followUpStatus: normalizeFollowUpStatus(raw.followUpStatus),
     citaStarted,
