@@ -1312,14 +1312,6 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                                 {task.title}
                               </p>
                             ) : null}
-                            {task.stage === "disenos" && Boolean(task.designFeedback) ? (
-                              <p
-                                className="mt-1 line-clamp-2 break-words text-xs leading-4 text-rose-800"
-                                title={task.designFeedback}
-                              >
-                                {task.designFeedback}
-                              </p>
-                            ) : null}
                           </div>
                           <div className="mt-3 min-h-[1.75rem]">
                             <div className="flex flex-wrap gap-2">
