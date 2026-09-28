@@ -238,10 +238,10 @@ export default function AgendaPage() {
     return citas.filter((c) => c.assignedTo === selectedEmployee);
   }, [citas, selectedEmployee]);
 
-  /** Una cita ya tiene visita registrada si coincide fecha + correo (o nombre) con alguna visita existente. */
+  /** Una cita ya tiene visita registrada si coincide correo (o nombre) con alguna visita existente.
+   *  La fecha de la cita y la de la visita son independientes: no se usan para emparejar. */
   const citaMatchingVisita = (cita: CitaAlert): Appointment | undefined =>
     appointments.find((visita) => {
-      if (visita.date !== cita.date) return false;
       const emailMatch = cita.email && visita.email && normalizeMatchText(cita.email) === normalizeMatchText(visita.email);
       const nameMatch = normalizeMatchText(cita.client) === normalizeMatchText(visita.client);
       return Boolean(emailMatch || nameMatch);
@@ -294,7 +294,8 @@ export default function AgendaPage() {
     setIsModalOpen(true);
   };
 
-  /** Clic en la alerta de una cita: precarga sus datos para registrar la visita correspondiente. */
+  /** Clic en la alerta de una cita: precarga solo los datos del cliente. La fecha/hora de la visita
+   *  es independiente de la fecha solicitada en la cita y la elige el equipo al registrar. */
   const openVisitaFromCita = (cita: CitaAlert) => {
     setEditingId(null);
     setFormState({
@@ -302,8 +303,8 @@ export default function AgendaPage() {
       title: cita.info || "Visita",
       client: cita.client,
       location: cita.location,
-      date: cita.date,
-      time: cita.time,
+      date: toDateInput(new Date()),
+      time: "09:00",
       type: "Levantamiento / Medidas",
       assignedTo: teamMembers[0]?.id ?? "",
       status: "Confirmada",
@@ -494,7 +495,7 @@ export default function AgendaPage() {
                         className="flex w-full items-center gap-1.5 truncate rounded-lg bg-[#8B1C1C] px-2.5 py-1.5 text-left text-[11px] font-semibold text-white shadow-md transition hover:brightness-110"
                       >
                         <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                        <span className="truncate">Cita-{cita.time}-{cita.client}</span>
+                        <span className="truncate">Registrar cita · {cita.time} · {cita.client}</span>
                       </button>
                     );
                   })}
