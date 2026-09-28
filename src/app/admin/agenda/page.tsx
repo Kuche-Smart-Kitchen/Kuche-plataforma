@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight } from "lucide-react";
-import Captcha from "@/components/ui/Captcha";
+import Captcha, { type CaptchaRef } from "@/components/ui/Captcha";
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
@@ -85,6 +85,7 @@ export default function AgendaPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState("");
+  const captchaRef = useRef<CaptchaRef | null>(null);
   const [remoteOccupiedTimes, setRemoteOccupiedTimes] = useState<string[]>([]);
   const [formState, setFormState] = useState<Appointment>({
     id: "",
@@ -360,6 +361,9 @@ export default function AgendaPage() {
       setCaptchaToken("");
       setIsModalOpen(false);
     } catch (error) {
+      // El token de Turnstile es de un solo uso: hay que forzar uno nuevo antes de reintentar.
+      setCaptchaToken("");
+      captchaRef.current?.reset();
       setFormError(error instanceof Error ? error.message : "No se pudo registrar la visita.");
     } finally {
       setIsSaving(false);
@@ -703,6 +707,7 @@ export default function AgendaPage() {
             {!editingId ? (
               <div className="mt-4">
                 <Captcha
+                  ref={captchaRef}
                   onVerify={setCaptchaToken}
                   onExpire={() => setCaptchaToken("")}
                   onError={() => setCaptchaToken("")}
