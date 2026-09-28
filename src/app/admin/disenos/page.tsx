@@ -183,7 +183,7 @@ function PreviewImagePane({ src, alt }: { src: string; alt: string }) {
     <img
       src={displaySrc ?? src}
       alt={alt}
-      className="mx-auto max-h-[50vh] w-full object-contain"
+      className="max-h-[48vh] max-w-full h-auto w-auto select-none rounded-lg object-contain"
       onError={() => setFailed(true)}
     />
   );
@@ -563,15 +563,16 @@ export default function DisenosPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
             onClick={() => setActivePreview(null)}
           >
             <motion.div
               ref={previewRef}
               tabIndex={-1}
-              initial={{ scale: 0.96, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.96, opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              transition={{ duration: 0.15 }}
               onClick={(e) => e.stopPropagation()}
               className="w-full max-w-4xl overflow-hidden rounded-3xl bg-white shadow-2xl"
             >
@@ -606,8 +607,8 @@ export default function DisenosPage() {
                   ))}
                 </div>
               </div>
-              <div className="max-h-[55vh] overflow-auto bg-gray-100 p-4">
-                <p className="mb-2 text-center text-[10px] font-medium uppercase tracking-wider text-gray-400">
+              <div className="relative flex max-h-[55vh] min-h-[200px] items-center justify-center overflow-hidden bg-gray-100 p-4">
+                <p className="pointer-events-none absolute left-0 right-0 top-4 text-center text-[10px] font-medium uppercase tracking-wider text-gray-400">
                   Vista previa (opcional)
                 </p>
                 {activePreviewImageSrc ? (
@@ -616,7 +617,7 @@ export default function DisenosPage() {
                     alt={`Diseño ${activePreview.clientName}`}
                   />
                 ) : (
-                  <div className="flex flex-col items-center justify-center gap-4 py-8">
+                  <div className="flex flex-col items-center justify-center gap-4 py-8 pt-10">
                     {(() => {
                       const selected = activePreview.files.find((f) => f.id === previewFileId);
                       const show = selected ?? activePreview.files[0];
