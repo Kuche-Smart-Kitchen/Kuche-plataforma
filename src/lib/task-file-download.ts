@@ -6,23 +6,39 @@ function sanitizeDownloadFilename(name: string): string {
 }
 
 /**
- * Descarga un archivo de tarea Kanban desde su data URL (`TaskFile.src`).
- * Sin `src` no hay datos persistidos (archivos viejos o error al leer).
+ * Descarga un archivo de tarea Kanban desde su URL (`TaskFile.src`).
  */
-export function downloadTaskFile(file: TaskFile): boolean {
+export async function downloadTaskFile(file: TaskFile): Promise<boolean> {
   if (typeof window === "undefined" || !file.src) {
     return false;
   }
+
+  const filename = sanitizeDownloadFilename(file.name) || "diseno.jpg";
+
   try {
+    const response = await fetch(file.src, { mode: "cors" });
+    if (!response.ok) throw new Error("Network response was not ok");
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(blobUrl);
+    return true;
+  } catch (error) {
+    console.warn("Descarga por Blob falló, intentando fallback seguro:", error);
     const link = document.createElement("a");
     link.href = file.src;
-    link.download = sanitizeDownloadFilename(file.name);
-    link.rel = "noopener";
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     link.remove();
     return true;
-  } catch {
-    return false;
   }
 }

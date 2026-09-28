@@ -89,12 +89,20 @@ const normalizeFollowUpStatus = (value: unknown): FollowUpStatus => {
   return "pendiente";
 };
 
-const inferFileType = (tipo: unknown): TaskFile["type"] => {
+const inferFileType = (tipo: unknown, name?: unknown, url?: unknown): TaskFile["type"] => {
   const normalized = toStringValue(tipo)?.toLowerCase() ?? "";
   if (normalized.includes("pdf")) return "pdf";
-  if (normalized.includes("render") || normalized.includes("imagen") || normalized.includes("image")) {
+  if (
+    normalized.includes("diseno") ||
+    normalized.includes("diseño") ||
+    normalized.includes("render") ||
+    normalized.includes("imagen") ||
+    normalized.includes("image")
+  ) {
     return "render";
   }
+  const hints = [toStringValue(name), toStringValue(url)].filter(Boolean).join(" ");
+  if (/\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(hints)) return "render";
   return "otro";
 };
 
@@ -204,7 +212,7 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
       .map((file, index) => ({
         id: toStringValue(file.id) ?? `${toStringValue(raw._id) ?? toStringValue(raw.id) ?? "task"}-file-${index}`,
         name: toStringValue(file.nombre) ?? `Archivo ${index + 1}`,
-        type: inferFileType(file.tipo),
+        type: inferFileType(file.tipo, file.nombre, file.url),
         src: toStringValue(file.url),
       })),
     priority: normalizePriority(raw.prioridad),

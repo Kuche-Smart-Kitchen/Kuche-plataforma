@@ -55,6 +55,20 @@ function formatDesignDate(ts?: number): string {
   return d.toLocaleDateString("es-MX", { year: "numeric", month: "short", day: "numeric" });
 }
 
+function isImageFile(f: TaskFile): boolean {
+  return Boolean(
+    f.src &&
+      (f.type === "render" ||
+        /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(f.src) ||
+        /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(f.name)),
+  );
+}
+
+function previewImageSrc(src: string | null | undefined): string | null {
+  if (!src) return null;
+  return toDropboxDirectImageUrl(src) ?? src;
+}
+
 function ProjectThumbnail({
   image,
   alt,
@@ -87,9 +101,11 @@ function ProjectThumbnail({
     );
   }
 
+  const displaySrc = previewImageSrc(image);
+
   return (
     <img
-      src={image}
+      src={displaySrc ?? image}
       alt={alt}
       className={className}
       onClick={onClick}
@@ -98,13 +114,34 @@ function ProjectThumbnail({
   );
 }
 
-function DesignFileDownloadRow({ file }: { file: TaskFile }) {
+function DesignFileDownloadRow({
+  file,
+  onSelectPreview,
+  isPreviewSelected,
+}: {
+  file: TaskFile;
+  onSelectPreview?: () => void;
+  isPreviewSelected?: boolean;
+}) {
   const canDownload = Boolean(file.src);
   return (
-    <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2">
-      <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-700" title={file.name}>
+    <div
+      className={`flex items-center gap-2 rounded-xl border bg-white px-3 py-2 ${
+        isPreviewSelected ? "border-[#8B1C1C] ring-1 ring-[#8B1C1C]/30" : "border-gray-200"
+      }`}
+    >
+      <button
+        type="button"
+        disabled={!file.src}
+        title={file.src ? "Ver en vista previa" : "Sin URL de archivo"}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelectPreview?.();
+        }}
+        className="min-w-0 flex-1 truncate text-left text-xs font-medium text-gray-700 hover:text-[#8B1C1C] disabled:cursor-default disabled:opacity-60"
+      >
         {file.name}
-      </span>
+      </button>
       <button
         type="button"
         disabled={!canDownload}
@@ -115,7 +152,7 @@ function DesignFileDownloadRow({ file }: { file: TaskFile }) {
         }
         onClick={(e) => {
           e.stopPropagation();
-          if (canDownload) downloadTaskFile(file);
+          if (canDownload) void downloadTaskFile(file);
         }}
         className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-[11px] font-semibold text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
       >
@@ -126,12 +163,38 @@ function DesignFileDownloadRow({ file }: { file: TaskFile }) {
   );
 }
 
+function PreviewImagePane({ src, alt }: { src: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  const displaySrc = previewImageSrc(src);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  if (failed) {
+    return (
+      <p className="py-8 text-center text-sm text-gray-500">
+        No se pudo cargar la vista previa. Usa Descargar o abre el archivo en una pestaña nueva.
+      </p>
+    );
+  }
+
+  return (
+    <img
+      src={displaySrc ?? src}
+      alt={alt}
+      className="mx-auto max-h-[50vh] w-full object-contain"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function designProjectsFromTasks(tasks: KanbanTask[]): DesignProject[] {
   return tasks
     .filter((t) => t.stage === "disenos" && t.files && t.files.length > 0)
     .map((task) => {
-      const firstImage = task.files!.find((f) => f.type === "render" && f.src);
-      const image = toDropboxDirectImageUrl(firstImage?.src ?? null);
+      const firstImage = task.files?.find(isImageFile);
+      const image = firstImage?.src ?? null;
       return {
         id: task.id,
         taskId: task.id,
@@ -155,9 +218,20 @@ export default function DisenosPage() {
   const [filter, setFilter] = useState<FilterOption>("Todos");
   const [feedbackDrafts, setFeedbackDrafts] = useState<Record<string, string>>({});
   const [activePreview, setActivePreview] = useState<DesignProject | null>(null);
+  const [previewFileId, setPreviewFileId] = useState<string | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
   const [confirmingClientId, setConfirmingClientId] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!activePreview) {
+      setPreviewFileId(null);
+      return;
+    }
+    const defaultFile =
+      activePreview.files.find(isImageFile) ?? activePreview.files[0] ?? null;
+    setPreviewFileId(defaultFile?.id ?? null);
+  }, [activePreview]);
 
   const loadProjects = useCallback(async () => {
     const currentTasks = getTasksFromLocalStorage();
@@ -206,6 +280,17 @@ export default function DisenosPage() {
     () => filteredProjects.findIndex((p) => p.id === activePreview?.id),
     [activePreview?.id, filteredProjects],
   );
+
+  const activePreviewImageSrc = useMemo(() => {
+    if (!activePreview) return null;
+    const selected = activePreview.files.find((f) => f.id === previewFileId);
+    if (selected?.src) {
+      return isImageFile(selected) ? selected.src : null;
+    }
+    if (activePreview.image) return activePreview.image;
+    const fallback = activePreview.files.find(isImageFile);
+    return fallback?.src ?? null;
+  }, [activePreview, previewFileId]);
 
   const goToNext = useCallback(() => {
     if (!filteredProjects.length) return;
@@ -512,7 +597,12 @@ export default function DisenosPage() {
                 </p>
                 <div className="mt-3 flex max-h-36 flex-col gap-2 overflow-y-auto">
                   {activePreview.files.map((f) => (
-                    <DesignFileDownloadRow key={f.id} file={f} />
+                    <DesignFileDownloadRow
+                      key={f.id}
+                      file={f}
+                      isPreviewSelected={previewFileId === f.id}
+                      onSelectPreview={() => setPreviewFileId(f.id)}
+                    />
                   ))}
                 </div>
               </div>
@@ -520,30 +610,33 @@ export default function DisenosPage() {
                 <p className="mb-2 text-center text-[10px] font-medium uppercase tracking-wider text-gray-400">
                   Vista previa (opcional)
                 </p>
-                {activePreview.image ? (
-                  <img
-                    src={activePreview.image}
+                {activePreviewImageSrc ? (
+                  <PreviewImagePane
+                    src={activePreviewImageSrc}
                     alt={`Diseño ${activePreview.clientName}`}
-                    className="mx-auto max-h-[50vh] w-full object-contain"
-                    onError={(e) => {
-                      e.currentTarget.style.display = "none";
-                    }}
                   />
                 ) : (
                   <div className="flex flex-col items-center justify-center gap-4 py-8">
-                    {activePreview.files.map((f) => (
-                      <div
-                        key={f.id}
-                        className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3"
-                      >
-                        {f.type === "pdf" ? (
-                          <FileText className="h-8 w-8 text-gray-400" />
-                        ) : (
-                          <ImageIcon className="h-8 w-8 text-gray-400" />
-                        )}
-                        <span className="text-sm font-medium text-gray-700">{f.name}</span>
-                      </div>
-                    ))}
+                    {(() => {
+                      const selected = activePreview.files.find((f) => f.id === previewFileId);
+                      const show = selected ?? activePreview.files[0];
+                      if (!show) {
+                        return (
+                          <p className="text-sm text-gray-500">Selecciona un archivo para previsualizar.</p>
+                        );
+                      }
+                      return (
+                        <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
+                          {show.type === "pdf" ? (
+                            <FileText className="h-8 w-8 text-gray-400" />
+                          ) : (
+                            <ImageIcon className="h-8 w-8 text-gray-400" />
+                          )}
+                          <span className="text-sm font-medium text-gray-700">{show.name}</span>
+                          <span className="text-xs text-gray-500">Vista previa no disponible · usa Descargar</span>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
