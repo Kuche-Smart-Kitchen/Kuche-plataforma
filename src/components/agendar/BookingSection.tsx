@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import Captcha from "@/components/ui/Captcha";
+import Captcha, { type CaptchaRef } from "@/components/ui/Captcha";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
-import { useVisitasContext } from "@/contexts/VisitasContext";
+import { agendarCita, obtenerDisponibilidadDia } from "@/lib/axios/citasApi";
 
 const WEEK_DAYS = ["L", "M", "M", "J", "V", "S", "D"];
 const MONTH_NAMES = [
@@ -115,7 +115,6 @@ const getApiErrorMessage = (error: unknown): string => {
 };
 
 export default function BookingSection() {
-  const { agendar, consultarDisponibilidad } = useVisitasContext();
   const todayStart = useMemo(() => getTodayStart(), []);
   const timeSlots = useMemo(() => buildTimeSlots(), []);
   const [currentMonth, setCurrentMonth] = useState(() =>
@@ -133,6 +132,7 @@ export default function BookingSection() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const modalRef = useRef<HTMLDivElement | null>(null);
+  const captchaRef = useRef<CaptchaRef | null>(null);
   const [captchaToken, setCaptchaToken] = useState("");
   const [pendingSummary, setPendingSummary] = useState<{
     dateLabel: string;
@@ -200,7 +200,7 @@ export default function BookingSection() {
       }
 
       try {
-        const response = await consultarDisponibilidad(getDateKey(selectedDate));
+        const response = await obtenerDisponibilidadDia(getDateKey(selectedDate));
         if (!isMounted || !response.success) {
           return;
         }
@@ -276,9 +276,8 @@ export default function BookingSection() {
       correoCliente: email.trim(),
       telefonoCliente: phone.trim(),
       ubicacion: location === "capital" ? "Durango Capital" : otherLocation.trim(),
-      fechaProgramada: dateAtTime.toISOString(),
-      informacionAdicional: `Solicitud de visita desde landing - ${location === "capital" ? "Durango Capital" : otherLocation.trim()}`,
-      estado: "solicitada" as const,
+      fechaAgendada: dateAtTime.toISOString(),
+      informacionAdicional: `Solicitud de cita desde landing - ${location === "capital" ? "Durango Capital" : otherLocation.trim()}`,
     };
 
     setIsSubmitting(true);
@@ -286,7 +285,7 @@ export default function BookingSection() {
     setFormMessage(null);
 
     try {
-      const response = await agendar(payload, captchaToken);
+      const response = await agendarCita(payload, captchaToken);
 
       if (!response.success || !response.data) {
         throw new Error(response.message || "No fue posible guardar la solicitud de visita.");
@@ -303,6 +302,9 @@ export default function BookingSection() {
       setCaptchaToken("");
       setLocation("capital");
     } catch (error) {
+      // El token de Turnstile es de un solo uso: hay que forzar uno nuevo antes de reintentar.
+      setCaptchaToken("");
+      captchaRef.current?.reset();
       setFormError(getApiErrorMessage(error));
     } finally {
       setIsSubmitting(false);
@@ -595,6 +597,7 @@ export default function BookingSection() {
           <div className="mt-6 rounded-xl border border-gray-200 bg-gray-50 p-4">
             <p className="text-xs text-secondary">Verificación de seguridad</p>
             <Captcha
+              ref={captchaRef}
               onVerify={(token) => {
                 setCaptchaToken(token);
                 setFormMessage(null);
