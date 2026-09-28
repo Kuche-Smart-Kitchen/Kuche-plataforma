@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { UserPlus, Calculator, FileText } from "lucide-react";
+import { Calculator, FileText, Pencil, Trash2, UserPlus } from "lucide-react";
 
 import { DueDateInput } from "@/components/ui/DueDateInput";
 import { KanbanTablero } from "@/components/admin/KanbanTablero";
@@ -24,7 +24,8 @@ import { useEquipoContext } from "@/contexts/EquipoContext";
 
 export default function OperacionesPage() {
   const router = useRouter();
-  const { teamMembers, agregarIntegrante } = useEquipoContext();
+  const { teamMembers, agregarIntegrante, actualizarIntegrante, eliminarIntegrante } =
+    useEquipoContext();
   const [selectedEmployeeFilter, setSelectedEmployeeFilter] = useState<string>("Todos");
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
@@ -41,6 +42,8 @@ export default function OperacionesPage() {
   const [newMemberEmail, setNewMemberEmail] = useState("");
   const [teamError, setTeamError] = useState("");
   const [teamSaving, setTeamSaving] = useState(false);
+  const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
+  const [editingMemberName, setEditingMemberName] = useState("");
   const [kanbanTasks, setKanbanTasks] = useState<KanbanTask[]>([]);
   const [selectedPublicTaskId, setSelectedPublicTaskId] = useState<string | null>(null);
   const [isPublicEditorOpen, setIsPublicEditorOpen] = useState(false);
@@ -185,8 +188,55 @@ export default function OperacionesPage() {
   const openTeamModal = () => {
     setNewMemberName("");
     setNewMemberEmail("");
+    setEditingMemberId(null);
+    setEditingMemberName("");
     setTeamError("");
     setIsTeamModalOpen(true);
+  };
+
+  const cancelMemberEdit = () => {
+    setEditingMemberId(null);
+    setEditingMemberName("");
+    setTeamError("");
+  };
+
+  const handleSaveMemberEdit = async (id: string) => {
+    const name = editingMemberName.trim();
+    if (!name) {
+      setTeamError("Escribe el nombre del integrante.");
+      return;
+    }
+    if (teamMembers.some((m) => m.id !== id && m.name.toLowerCase() === name.toLowerCase())) {
+      setTeamError("Ya existe un integrante con ese nombre.");
+      return;
+    }
+    setTeamSaving(true);
+    setTeamError("");
+    try {
+      await actualizarIntegrante(id, { nombre: name });
+      cancelMemberEdit();
+    } catch (err) {
+      setTeamError(err instanceof Error ? err.message : "No se pudo actualizar el integrante.");
+    } finally {
+      setTeamSaving(false);
+    }
+  };
+
+  const handleDeleteMember = async (id: string) => {
+    const member = teamMembers.find((m) => m.id === id);
+    if (!window.confirm(`¿Eliminar a ${member?.name ?? "este integrante"}?`)) return;
+    setTeamSaving(true);
+    setTeamError("");
+    try {
+      await eliminarIntegrante(id);
+      if (editingMemberId === id) {
+        cancelMemberEdit();
+      }
+    } catch (err) {
+      setTeamError(err instanceof Error ? err.message : "No se pudo eliminar el integrante.");
+    } finally {
+      setTeamSaving(false);
+    }
   };
 
   return (
@@ -491,7 +541,10 @@ export default function OperacionesPage() {
               <h3 className="text-lg font-semibold text-gray-900">Integrantes del equipo</h3>
               <button
                 type="button"
-                onClick={() => setIsTeamModalOpen(false)}
+                onClick={() => {
+                  cancelMemberEdit();
+                  setIsTeamModalOpen(false);
+                }}
                 className="rounded-full border border-primary/10 px-3 py-1 text-xs font-semibold text-secondary"
               >
                 Cerrar
@@ -528,9 +581,67 @@ export default function OperacionesPage() {
                 {teamMembers.map((m) => (
                   <div
                     key={m.id}
-                    className="flex items-center justify-between rounded-xl border border-primary/10 bg-white px-3 py-2"
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/10 bg-white px-3 py-2"
                   >
-                    <span className="text-sm font-medium text-gray-900">{m.name}</span>
+                    {editingMemberId === m.id ? (
+                      <>
+                        <input
+                          value={editingMemberName}
+                          onChange={(e) => setEditingMemberName(e.target.value)}
+                          className="min-w-0 flex-1 rounded-xl border border-primary/10 px-3 py-1.5 text-sm outline-none"
+                          placeholder="Nombre"
+                          disabled={teamSaving}
+                        />
+                        <div className="flex shrink-0 gap-2">
+                          <button
+                            type="button"
+                            disabled={teamSaving}
+                            onClick={() => void handleSaveMemberEdit(m.id)}
+                            className="rounded-full bg-primary px-3 py-1 text-[11px] font-semibold text-white disabled:opacity-60"
+                          >
+                            Guardar
+                          </button>
+                          <button
+                            type="button"
+                            disabled={teamSaving}
+                            onClick={cancelMemberEdit}
+                            className="rounded-full border border-primary/10 px-3 py-1 text-[11px] font-semibold text-secondary"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-sm font-medium text-gray-900">{m.name}</span>
+                        <div className="flex shrink-0 gap-2">
+                          <button
+                            type="button"
+                            disabled={teamSaving}
+                            onClick={() => {
+                              setEditingMemberId(m.id);
+                              setEditingMemberName(m.name);
+                              setTeamError("");
+                            }}
+                            className="inline-flex items-center gap-1 rounded-full border border-primary/10 px-3 py-1 text-[11px] font-semibold text-secondary hover:bg-primary/5"
+                            title="Editar"
+                          >
+                            <Pencil className="h-3 w-3" />
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            disabled={teamSaving}
+                            onClick={() => void handleDeleteMember(m.id)}
+                            className="inline-flex items-center gap-1 rounded-full border border-rose-200 px-3 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50"
+                            title="Eliminar"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            Eliminar
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))}
                 {teamMembers.length === 0 ? (
