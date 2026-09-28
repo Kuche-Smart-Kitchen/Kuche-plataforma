@@ -23,7 +23,9 @@ const publicVisitRequestConfig = {
   skipAuthRedirect: true,
 } as AxiosRequestConfig;
 
-const visitCreateRoutes = ["/api/visitas/agendarVisita"];
+// Ambas rutas son válidas para crear (documentado por backend); se usa la nombrada primero y
+// la raíz plana como respaldo si esa cambia de nombre.
+const visitCreateRoutes = ["/api/visitas/agendarVisita", "/api/visitas"];
 const visitAvailabilityRoutes = ["/api/visitas/disponibilidad", "/api/visitas/horarios-ocupados"];
 
 const canTryNextRoute = (error: unknown) =>
@@ -77,7 +79,7 @@ export const obtenerVisitas = async (): Promise<ApiResponse<Record<string, unkno
 
 export const actualizarVisita = async (
   id: string,
-  payload: AgendarVisitaPayload,
+  payload: Partial<AgendarVisitaPayload>,
 ): Promise<ApiResponse<Record<string, unknown>>> => {
   const response = await axiosInstance.patch<ApiResponse<Record<string, unknown>>>(
     `/api/visitas/${encodeURIComponent(id)}`,

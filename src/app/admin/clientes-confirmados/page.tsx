@@ -22,6 +22,7 @@ import {
 import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { ConfirmedClientContractFields } from "@/components/admin/ConfirmedClientContractFields";
 import { ClientDocuments } from "@/components/admin/ClientDocuments";
+import { ContratoUploadButton } from "@/components/admin/ContratoUploadButton";
 import { PublicStatusEditorModal } from "@/components/admin/PublicStatusEditorModal";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
@@ -61,6 +62,7 @@ export default function ClientesConfirmadosPage() {
   const [isHydrated, setIsHydrated] = useState(false);
   const [selectedClient, setSelectedClient] = useState<KanbanTask | null>(null);
   const [isContratoEditorOpen, setIsContratoEditorOpen] = useState(false);
+  const [documentsRefreshKey, setDocumentsRefreshKey] = useState(0);
   const columnCount = useClientCardColumns(3);
   const clientColumns = useMemo(() => {
     if (clients.length === 0) return [];
@@ -316,16 +318,22 @@ export default function ClientesConfirmadosPage() {
 
               <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
                 <div className="space-y-8 pb-8">
-                  <button
-                    type="button"
-                    disabled={!selectedClient.codigoProyecto}
-                    onClick={() => setIsContratoEditorOpen(true)}
-                    className="w-full rounded-2xl bg-primary py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Contrato y proyecto (pagos y archivo de contrato)
-                  </button>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      disabled={!selectedClient.codigoProyecto}
+                      onClick={() => setIsContratoEditorOpen(true)}
+                      className="w-full rounded-2xl border border-primary/15 bg-white py-3 text-sm font-semibold text-primary shadow-sm transition hover:bg-primary/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Pagos del proyecto
+                    </button>
+                    <ContratoUploadButton
+                      task={selectedClient}
+                      onUploaded={() => setDocumentsRefreshKey((k) => k + 1)}
+                    />
+                  </div>
                   <ConfirmedClientContractFields key={selectedClient.id} task={selectedClient} onUpdate={handleConfirmedTaskUpdate} />
-                  <ClientDocuments task={selectedClient} />
+                  <ClientDocuments key={documentsRefreshKey} task={selectedClient} />
                 </div>
               </div>
             </motion.aside>

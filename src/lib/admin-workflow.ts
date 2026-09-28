@@ -334,7 +334,7 @@ export async function syncTaskAssigneesWithBackend(task: KanbanTask, assignedTo:
 
   try {
     if (validForCita && citaSourceId) {
-      await asignarIngenierosCita(citaSourceId, { ingenieroIds: assignedIds });
+      await asignarIngenierosCita(citaSourceId, { ingenierosIds: assignedIds });
       return true;
     }
 

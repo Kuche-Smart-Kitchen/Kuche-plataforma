@@ -2,8 +2,12 @@ import { AxiosError, type AxiosRequestConfig } from "axios";
 
 import axiosInstance, { type ApiResponse } from "./axiosConfig";
 
+export interface AsignarIngenieroCitaData {
+  ingenieroId: string;
+}
+
 export interface AsignarIngenierosCitaData {
-  ingenieroIds: string[];
+  ingenierosIds: string[];
 }
 
 export interface AgendarCitaPayload {
@@ -78,9 +82,9 @@ const requestWithFallback = async <T>(
   throw lastError;
 };
 
-// "/api/citas/admin/getAllCitas" no sigue la convención plana del resto de rutas de citas y 404 en el dashboard;
-// se prueba primero la ruta plana y se conserva la anterior como respaldo por compatibilidad.
-const citaListRoutes = ["/api/citas", "/api/citas/admin/getAllCitas"];
+// Orden según el contrato del backend: ruta admin oficial primero (datos completos), luego los
+// alias documentados como compatibilidad (`/admin/getAllCitas`, `/api/citas` público).
+const citaListRoutes = ["/api/citas/verCitas", "/api/citas/admin/getAllCitas", "/api/citas"];
 
 export const obtenerTodasLasCitas = async (): Promise<ApiResponse<Record<string, unknown>[]>> => {
   let lastError: unknown;
@@ -163,26 +167,17 @@ export const obtenerHorariosOcupados = async (): Promise<string[]> => {
   return [];
 };
 
+// `actualizarCita` (PUT) admite fecha/estado/datos completos; `actualizarDatos` (PUT) es solo
+// para datos de cliente. Se prueba primero la ruta oficial de actualización general.
 export const actualizarCita = async (
   id: string,
   data: Record<string, unknown>,
 ): Promise<ApiResponse<Record<string, unknown>>> => {
-  const endpoints = [`/api/citas/${id}/actualizarDatos`, `/api/citas/actualizarCita/${id}`, `/api/citas/${id}`];
-  let lastError: unknown;
-
-  for (const endpoint of endpoints) {
-    try {
-      const response = await axiosInstance.put<ApiResponse<Record<string, unknown>>>(endpoint, data);
-      return response.data;
-    } catch (error) {
-      lastError = error;
-      if (endpoint === endpoints[endpoints.length - 1]) {
-        throw error;
-      }
-    }
-  }
-
-  throw lastError instanceof Error ? lastError : new Error("No fue posible actualizar la cita");
+  return requestWithFallback<Record<string, unknown>>(
+    [`/api/citas/actualizarCita/${id}`, `/api/citas/${id}/actualizarDatos`],
+    "put",
+    data,
+  );
 };
 
 export const eliminarCita = async (
@@ -196,35 +191,38 @@ export const iniciarCita = async (
   id: string,
   data: Record<string, unknown> = {},
 ): Promise<ApiResponse<Record<string, unknown>>> => {
-  return requestWithFallback<Record<string, unknown>>(
-    [`/api/citas/${id}/iniciar`, `/api/citas/${id}/start`],
-    "put",
-    data,
-  );
+  const response = await axiosInstance.put<ApiResponse<Record<string, unknown>>>(`/api/citas/${id}/iniciar`, data);
+  return response.data;
 };
 
 export const finalizarCita = async (
   id: string,
   data: Record<string, unknown> = {},
 ): Promise<ApiResponse<Record<string, unknown>>> => {
-  return requestWithFallback<Record<string, unknown>>(
-    [`/api/citas/${id}/finalizar`, `/api/citas/${id}/finish`],
-    "put",
-    data,
-  );
+  const response = await axiosInstance.put<ApiResponse<Record<string, unknown>>>(`/api/citas/${id}/finalizar`, data);
+  return response.data;
 };
 
+/** Asigna un solo ingeniero a la cita (`PUT /api/citas/:id/asignarIngeniero`, body `{ ingenieroId }`). */
+export const asignarIngenieroCita = async (
+  id: string,
+  data: AsignarIngenieroCitaData,
+): Promise<ApiResponse<Record<string, unknown>>> => {
+  const response = await axiosInstance.put<ApiResponse<Record<string, unknown>>>(
+    `/api/citas/${id}/asignarIngeniero`,
+    data,
+  );
+  return response.data;
+};
+
+/** Asigna varios ingenieros a la cita (`PUT /api/citas/:id/asignarIngenieros`, body `{ ingenierosIds }`). */
 export const asignarIngenierosCita = async (
   id: string,
   data: AsignarIngenierosCitaData,
 ): Promise<ApiResponse<Record<string, unknown>>> => {
-  return requestWithFallback<Record<string, unknown>>(
-    [
-      `/api/citas/${id}/asignarIngeniero`,
-      `/api/citas/${id}/asignarIngenieros`,
-      `/api/citas/${id}/asignar-ingenieros`,
-    ],
-    "put",
-    data as unknown as Record<string, unknown>,
+  const response = await axiosInstance.put<ApiResponse<Record<string, unknown>>>(
+    `/api/citas/${id}/asignarIngenieros`,
+    data,
   );
+  return response.data;
 };
