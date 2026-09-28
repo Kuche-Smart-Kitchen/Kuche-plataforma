@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, User, X } from "lucide-react";
 import { getTaskCardSubtitle, stageStyles, type KanbanTask } from "@/lib/kanban";
 import { ClientDocuments } from "@/components/admin/ClientDocuments";
+import { PublicStatusEditorModal } from "@/components/admin/PublicStatusEditorModal";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
 import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
@@ -37,6 +38,7 @@ export default function AdminClientesEnProcesoPage() {
   const [tasks, setTasks] = useState<KanbanTask[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
   const [selectedClient, setSelectedClient] = useState<KanbanTask | null>(null);
+  const [isContratoEditorOpen, setIsContratoEditorOpen] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -250,12 +252,30 @@ export default function AdminClientesEnProcesoPage() {
               </div>
 
               <div className="min-h-0 flex-1 px-6 py-6">
+                <button
+                  type="button"
+                  disabled={!selectedClient.codigoProyecto}
+                  onClick={() => setIsContratoEditorOpen(true)}
+                  className="mb-6 w-full rounded-2xl bg-primary py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Contrato y proyecto (pagos y archivo de contrato)
+                </button>
                 <ClientDocuments task={selectedClient} />
               </div>
             </motion.div>
           </motion.div>
         ) : null}
       </AnimatePresence>
+
+      {isContratoEditorOpen && selectedClient?.codigoProyecto ? (
+        <PublicStatusEditorModal
+          open
+          onClose={() => setIsContratoEditorOpen(false)}
+          role="admin"
+          codigoProyecto={selectedClient.codigoProyecto}
+          subtitle={`${selectedClient.project ?? selectedClient.title}`}
+        />
+      ) : null}
     </div>
   );
 }

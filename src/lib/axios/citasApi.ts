@@ -78,14 +78,29 @@ const requestWithFallback = async <T>(
   throw lastError;
 };
 
-export const obtenerTodasLasCitas = async (): Promise<ApiResponse<Record<string, unknown>[]>> => {
-  const response = await axiosInstance.get<unknown>("/api/citas/admin/getAllCitas");
-  const normalized = normalizeCitaListResponse(response.data);
+// "/api/citas/admin/getAllCitas" no sigue la convención plana del resto de rutas de citas y 404 en el dashboard;
+// se prueba primero la ruta plana y se conserva la anterior como respaldo por compatibilidad.
+const citaListRoutes = ["/api/citas", "/api/citas/admin/getAllCitas"];
 
-  return {
-    success: true,
-    data: normalized,
-  };
+export const obtenerTodasLasCitas = async (): Promise<ApiResponse<Record<string, unknown>[]>> => {
+  let lastError: unknown;
+
+  for (const endpoint of citaListRoutes) {
+    try {
+      const response = await axiosInstance.get<unknown>(endpoint, { skipNotFoundLog: true } as AxiosRequestConfig);
+      return {
+        success: true,
+        data: normalizeCitaListResponse(response.data),
+      };
+    } catch (error) {
+      lastError = error;
+      if (!shouldRetryWithFallback(error) || endpoint === citaListRoutes[citaListRoutes.length - 1]) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError;
 };
 
 export const agendarCita = async (

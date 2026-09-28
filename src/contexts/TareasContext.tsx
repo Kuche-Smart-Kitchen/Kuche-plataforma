@@ -1,8 +1,9 @@
 "use client";
 
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
-import { finalizarCita } from "@/lib/axios/citasApi";
+import { actualizarCita, finalizarCita } from "@/lib/axios/citasApi";
 import { actualizarTarea, asignarTrabajadoresTarea } from "@/lib/axios/tareasApi";
+import { dueDateToSortTimestamp } from "@/lib/kanban-due-datetime";
 import type { KanbanTask } from "@/lib/kanban";
 
 type TareasContextType = {
@@ -16,6 +17,17 @@ const TareasContext = createContext<TareasContextType | undefined>(undefined);
 export function TareasProvider({ children }: { children: ReactNode }) {
   const actualizar = useCallback(async (task: KanbanTask, patch: Partial<KanbanTask> = {}) => {
     const snapshot = { ...task, ...patch };
+    const esCita = task.sourceType?.toLowerCase() === "cita";
+
+    // Las tarjetas de "citas" viven en la colección de citas, no en tareas: la fecha debe
+    // persistirse como `fechaAgendada` vía el endpoint de citas o la agenda queda desincronizada.
+    if (esCita && patch.dueDate !== undefined) {
+      const citaId = task.sourceId?.trim() || task.id;
+      const fechaAgendada = new Date(dueDateToSortTimestamp(snapshot.dueDate, Date.now())).toISOString();
+      const response = await actualizarCita(citaId, { fechaAgendada });
+      if (!response.success) throw new Error(response.message || "No se pudo actualizar la fecha de la cita");
+    }
+
     const data: Record<string, unknown> = {};
     if (patch.title !== undefined) data.titulo = snapshot.title;
     if (patch.stage !== undefined) data.etapa = snapshot.stage;
@@ -23,7 +35,7 @@ export function TareasProvider({ children }: { children: ReactNode }) {
     if (patch.notes !== undefined) data.notas = snapshot.notes;
     if (patch.location !== undefined) data.ubicacion = snapshot.location;
     if (patch.mapsUrl !== undefined) data.mapsUrl = snapshot.mapsUrl;
-    if (patch.dueDate !== undefined) data.fechaLimite = snapshot.dueDate;
+    if (patch.dueDate !== undefined && !esCita) data.fechaLimite = snapshot.dueDate;
     if (patch.priority !== undefined) data.prioridad = snapshot.priority;
     if (patch.followUpStatus !== undefined) data.followUpStatus = snapshot.followUpStatus;
     // followUpEnteredAt es propiedad exclusiva del backend/cron (GUIA_FRONTEND_CRON_SEGUIMIENTO_EMAIL.md): nunca se envía.

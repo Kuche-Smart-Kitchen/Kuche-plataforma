@@ -22,6 +22,7 @@ import {
 import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { ConfirmedClientContractFields } from "@/components/admin/ConfirmedClientContractFields";
 import { ClientDocuments } from "@/components/admin/ClientDocuments";
+import { PublicStatusEditorModal } from "@/components/admin/PublicStatusEditorModal";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
 
@@ -59,6 +60,7 @@ export default function ClientesConfirmadosPage() {
   const [clients, setClients] = useState<KanbanTask[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
   const [selectedClient, setSelectedClient] = useState<KanbanTask | null>(null);
+  const [isContratoEditorOpen, setIsContratoEditorOpen] = useState(false);
   const columnCount = useClientCardColumns(3);
   const clientColumns = useMemo(() => {
     if (clients.length === 0) return [];
@@ -314,6 +316,14 @@ export default function ClientesConfirmadosPage() {
 
               <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
                 <div className="space-y-8 pb-8">
+                  <button
+                    type="button"
+                    disabled={!selectedClient.codigoProyecto}
+                    onClick={() => setIsContratoEditorOpen(true)}
+                    className="w-full rounded-2xl bg-primary py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Contrato y proyecto (pagos y archivo de contrato)
+                  </button>
                   <ConfirmedClientContractFields key={selectedClient.id} task={selectedClient} onUpdate={handleConfirmedTaskUpdate} />
                   <ClientDocuments task={selectedClient} />
                 </div>
@@ -322,6 +332,17 @@ export default function ClientesConfirmadosPage() {
           </motion.div>
         ) : null}
       </AnimatePresence>
+
+      {isContratoEditorOpen && selectedClient?.codigoProyecto ? (
+        <PublicStatusEditorModal
+          open
+          onClose={() => setIsContratoEditorOpen(false)}
+          role="admin"
+          codigoProyecto={selectedClient.codigoProyecto}
+          subtitle={`${selectedClient.project ?? selectedClient.title}`}
+          onSaved={() => handleConfirmedTaskUpdate(selectedClient)}
+        />
+      ) : null}
     </div>
   );
 }
