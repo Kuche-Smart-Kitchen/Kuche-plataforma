@@ -10,7 +10,9 @@ import {
   Download,
   FileText,
   Image as ImageIcon,
+  Maximize2,
   MessageSquare,
+  X,
 } from "lucide-react";
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
@@ -163,7 +165,15 @@ function DesignFileDownloadRow({
   );
 }
 
-function PreviewImagePane({ src, alt }: { src: string; alt: string }) {
+function PreviewImagePane({
+  src,
+  alt,
+  onOpenZoom,
+}: {
+  src: string;
+  alt: string;
+  onOpenZoom?: () => void;
+}) {
   const [failed, setFailed] = useState(false);
   const displaySrc = previewImageSrc(src);
 
@@ -183,7 +193,9 @@ function PreviewImagePane({ src, alt }: { src: string; alt: string }) {
     <img
       src={displaySrc ?? src}
       alt={alt}
-      className="max-h-[48vh] max-w-full h-auto w-auto select-none rounded-lg object-contain"
+      title="Clic para ver en pantalla completa"
+      className="h-auto max-h-[48vh] w-auto max-w-full cursor-zoom-in select-none rounded-lg object-contain"
+      onClick={() => onOpenZoom?.()}
       onError={() => setFailed(true)}
     />
   );
@@ -219,18 +231,35 @@ export default function DisenosPage() {
   const [feedbackDrafts, setFeedbackDrafts] = useState<Record<string, string>>({});
   const [activePreview, setActivePreview] = useState<DesignProject | null>(null);
   const [previewFileId, setPreviewFileId] = useState<string | null>(null);
+  const [isZoomOpen, setIsZoomOpen] = useState(false);
+  const [isZoomedIn, setIsZoomedIn] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
   const [confirmingClientId, setConfirmingClientId] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
 
+  const closeActivePreview = useCallback(() => {
+    setIsZoomOpen(false);
+    setIsZoomedIn(false);
+    setActivePreview(null);
+  }, []);
+
+  const openZoomViewer = useCallback(() => {
+    setIsZoomOpen(true);
+    setIsZoomedIn(false);
+  }, []);
+
   useEffect(() => {
     if (!activePreview) {
       setPreviewFileId(null);
+      setIsZoomOpen(false);
+      setIsZoomedIn(false);
       return;
     }
     const defaultFile =
       activePreview.files.find(isImageFile) ?? activePreview.files[0] ?? null;
     setPreviewFileId(defaultFile?.id ?? null);
+    setIsZoomOpen(false);
+    setIsZoomedIn(false);
   }, [activePreview]);
 
   const loadProjects = useCallback(async () => {
@@ -267,8 +296,8 @@ export default function DisenosPage() {
     };
   }, [loadProjects]);
 
-  useEscapeClose(Boolean(activePreview), () => setActivePreview(null));
-  useFocusTrap(Boolean(activePreview), previewRef);
+  useEscapeClose(Boolean(activePreview && !isZoomOpen), closeActivePreview);
+  useFocusTrap(Boolean(activePreview && !isZoomOpen), previewRef);
 
   const filteredProjects = useMemo(() => {
     if (filter === "Todos") return projects;
@@ -310,13 +339,22 @@ export default function DisenosPage() {
   useEffect(() => {
     if (!activePreview) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setActivePreview(null);
-      else if (event.key === "ArrowRight") goToNext();
+      if (event.key === "Escape") {
+        if (isZoomOpen) {
+          setIsZoomOpen(false);
+          setIsZoomedIn(false);
+          return;
+        }
+        closeActivePreview();
+        return;
+      }
+      if (isZoomOpen) return;
+      if (event.key === "ArrowRight") goToNext();
       else if (event.key === "ArrowLeft") goToPrev();
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [activePreview, goToNext, goToPrev]);
+  }, [activePreview, closeActivePreview, goToNext, goToPrev, isZoomOpen]);
 
   const handleApprove = async (taskId: string) => {
     const currentTasks = getTasksFromLocalStorage();
@@ -564,7 +602,7 @@ export default function DisenosPage() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            onClick={() => setActivePreview(null)}
+            onClick={closeActivePreview}
           >
             <motion.div
               ref={previewRef}
@@ -583,7 +621,7 @@ export default function DisenosPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setActivePreview(null)}
+                  onClick={closeActivePreview}
                   className="rounded-full border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-500"
                 >
                   Cerrar
@@ -612,10 +650,21 @@ export default function DisenosPage() {
               </div>
               <div className="relative flex max-h-[55vh] min-h-[200px] items-center justify-center overflow-hidden bg-gray-100 px-4 pb-4">
                 {activePreviewImageSrc ? (
-                  <PreviewImagePane
-                    src={activePreviewImageSrc}
-                    alt={`Diseño ${activePreview.clientName}`}
-                  />
+                  <>
+                    <PreviewImagePane
+                      src={activePreviewImageSrc}
+                      alt={`Diseño ${activePreview.clientName}`}
+                      onOpenZoom={openZoomViewer}
+                    />
+                    <button
+                      type="button"
+                      onClick={openZoomViewer}
+                      className="absolute right-6 top-2 inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white/90 px-2.5 py-1 text-[10px] font-semibold text-gray-600 shadow-sm backdrop-blur-sm transition hover:bg-white"
+                    >
+                      <Maximize2 className="h-3.5 w-3.5" />
+                      Pantalla completa
+                    </button>
+                  </>
                 ) : (
                   <p className="text-sm text-gray-500">Sin imagen disponible</p>
                 )}
@@ -643,6 +692,44 @@ export default function DisenosPage() {
           </motion.div>
         ) : null}
       </AnimatePresence>
+
+      {isZoomOpen && activePreview && activePreviewImageSrc ? (
+        <div
+          className="fixed inset-0 z-[100] flex select-none items-center justify-center bg-black/95 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Vista previa en pantalla completa"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setIsZoomOpen(false);
+              setIsZoomedIn(false);
+            }}
+            className="absolute right-4 top-4 z-10 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold text-white backdrop-blur-sm transition hover:bg-white/20"
+          >
+            <X className="h-4 w-4" />
+            Cerrar (Esc)
+          </button>
+
+          <div className="flex h-full w-full items-center justify-center overflow-auto p-4">
+            <img
+              src={previewImageSrc(activePreviewImageSrc) ?? activePreviewImageSrc}
+              alt={`Diseño ${activePreview.clientName}`}
+              onClick={() => setIsZoomedIn((current) => !current)}
+              className={`object-contain transition-transform duration-200 select-none ${
+                isZoomedIn
+                  ? "max-w-none scale-150 cursor-zoom-out"
+                  : "max-h-[90vh] max-w-[90vw] cursor-zoom-in"
+              }`}
+            />
+          </div>
+
+          <p className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2 rounded-full bg-black/50 px-4 py-2 text-xs text-white/90">
+            Clic en la imagen para acercar/alejar · Esc para salir
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }
