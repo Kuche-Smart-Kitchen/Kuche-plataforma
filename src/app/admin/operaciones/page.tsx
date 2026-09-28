@@ -480,14 +480,14 @@ export default function OperacionesPage() {
       ) : null}
 
       {isTeamModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
           <div
             ref={teamModalRef}
             tabIndex={-1}
-            className="w-full max-w-md rounded-3xl border border-white/70 bg-white p-6 shadow-2xl"
+            className="flex max-h-[90vh] w-full max-w-md flex-col rounded-3xl border border-white/70 bg-white p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between">
+            <div className="flex shrink-0 items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900">Integrantes del equipo</h3>
               <button
                 type="button"
@@ -497,50 +497,52 @@ export default function OperacionesPage() {
                 Cerrar
               </button>
             </div>
-            <div className="mt-4 space-y-2">
-              <input
-                value={newMemberName}
-                onChange={(e) => setNewMemberName(e.target.value)}
-                placeholder="Nombre del integrante"
-                className="w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-              />
-              <input
-                value={newMemberEmail}
-                onChange={(e) => setNewMemberEmail(e.target.value)}
-                placeholder="Correo del integrante"
-                type="email"
-                className="w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-              />
-              <button
-                type="button"
-                disabled={teamSaving}
-                onClick={() => void handleAddMember()}
-                className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
-              >
-                {teamSaving ? "Agregando..." : "Agregar"}
-              </button>
-            </div>
-            <div className="mt-4 space-y-2 rounded-2xl border border-primary/10 bg-white/50 p-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
-                Integrantes actuales
-              </p>
-              {teamMembers.map((m) => (
-                <div
-                  key={m.id}
-                  className="flex items-center justify-between rounded-xl border border-primary/10 bg-white px-3 py-2"
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="mt-4 space-y-2">
+                <input
+                  value={newMemberName}
+                  onChange={(e) => setNewMemberName(e.target.value)}
+                  placeholder="Nombre del integrante"
+                  className="w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
+                />
+                <input
+                  value={newMemberEmail}
+                  onChange={(e) => setNewMemberEmail(e.target.value)}
+                  placeholder="Correo del integrante"
+                  type="email"
+                  className="w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
+                />
+                <button
+                  type="button"
+                  disabled={teamSaving}
+                  onClick={() => void handleAddMember()}
+                  className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
                 >
-                  <span className="text-sm font-medium text-gray-900">{m.name}</span>
-                </div>
-              ))}
-              {teamMembers.length === 0 ? (
-                <p className="text-xs text-secondary">Sin integrantes. Agrega al menos uno.</p>
+                  {teamSaving ? "Agregando..." : "Agregar"}
+                </button>
+              </div>
+              <div className="mt-4 space-y-2 rounded-2xl border border-primary/10 bg-white/50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
+                  Integrantes actuales
+                </p>
+                {teamMembers.map((m) => (
+                  <div
+                    key={m.id}
+                    className="flex items-center justify-between rounded-xl border border-primary/10 bg-white px-3 py-2"
+                  >
+                    <span className="text-sm font-medium text-gray-900">{m.name}</span>
+                  </div>
+                ))}
+                {teamMembers.length === 0 ? (
+                  <p className="text-xs text-secondary">Sin integrantes. Agrega al menos uno.</p>
+                ) : null}
+              </div>
+              {teamError ? (
+                <p className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-600">
+                  {teamError}
+                </p>
               ) : null}
             </div>
-            {teamError ? (
-              <p className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-600">
-                {teamError}
-              </p>
-            ) : null}
           </div>
         </div>
       ) : null}
