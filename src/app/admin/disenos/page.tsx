@@ -607,38 +607,17 @@ export default function DisenosPage() {
                   ))}
                 </div>
               </div>
-              <div className="relative flex max-h-[55vh] min-h-[200px] items-center justify-center overflow-hidden bg-gray-100 p-4">
-                <p className="pointer-events-none absolute left-0 right-0 top-4 text-center text-[10px] font-medium uppercase tracking-wider text-gray-400">
-                  Vista previa (opcional)
-                </p>
+              <div className="border-t border-gray-100 bg-gray-50 px-6 pb-2 pt-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Vista previa</p>
+              </div>
+              <div className="relative flex max-h-[55vh] min-h-[200px] items-center justify-center overflow-hidden bg-gray-100 px-4 pb-4">
                 {activePreviewImageSrc ? (
                   <PreviewImagePane
                     src={activePreviewImageSrc}
                     alt={`Diseño ${activePreview.clientName}`}
                   />
                 ) : (
-                  <div className="flex flex-col items-center justify-center gap-4 py-8 pt-10">
-                    {(() => {
-                      const selected = activePreview.files.find((f) => f.id === previewFileId);
-                      const show = selected ?? activePreview.files[0];
-                      if (!show) {
-                        return (
-                          <p className="text-sm text-gray-500">Selecciona un archivo para previsualizar.</p>
-                        );
-                      }
-                      return (
-                        <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
-                          {show.type === "pdf" ? (
-                            <FileText className="h-8 w-8 text-gray-400" />
-                          ) : (
-                            <ImageIcon className="h-8 w-8 text-gray-400" />
-                          )}
-                          <span className="text-sm font-medium text-gray-700">{show.name}</span>
-                          <span className="text-xs text-gray-500">Vista previa no disponible · usa Descargar</span>
-                        </div>
-                      );
-                    })()}
-                  </div>
+                  <p className="text-sm text-gray-500">Sin imagen disponible</p>
                 )}
               </div>
               <div className="flex items-center justify-between border-t border-gray-100 px-6 py-4">
