@@ -1,7 +1,14 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Check,
@@ -50,6 +57,13 @@ const statusStyles: Record<ProjectStatus, string> = {
 
 const filters = ["Todos", "Pendientes", "Aprobados"] as const;
 type FilterOption = (typeof filters)[number];
+
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 3.5;
+const ZOOM_CLICK_LEVEL = 2.2;
+
+type ZoomOrigin = { x: number; y: number };
+type ZoomPosition = { x: number; y: number };
 
 function formatDesignDate(ts?: number): string {
   if (ts == null) return "—";
@@ -232,35 +246,113 @@ export default function DisenosPage() {
   const [activePreview, setActivePreview] = useState<DesignProject | null>(null);
   const [previewFileId, setPreviewFileId] = useState<string | null>(null);
   const [isZoomOpen, setIsZoomOpen] = useState(false);
-  const [isZoomedIn, setIsZoomedIn] = useState(false);
+  const [scale, setScale] = useState(ZOOM_MIN);
+  const [origin, setOrigin] = useState<ZoomOrigin>({ x: 50, y: 50 });
+  const [position, setPosition] = useState<ZoomPosition>({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
   const [confirmingClientId, setConfirmingClientId] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
+  const dragStartRef = useRef<{ pointerX: number; pointerY: number; posX: number; posY: number } | null>(
+    null,
+  );
+  const didDragRef = useRef(false);
+
+  const resetZoomTransform = useCallback(() => {
+    setScale(ZOOM_MIN);
+    setOrigin({ x: 50, y: 50 });
+    setPosition({ x: 0, y: 0 });
+    setIsDragging(false);
+    dragStartRef.current = null;
+    didDragRef.current = false;
+  }, []);
+
+  const closeZoomLightbox = useCallback(() => {
+    setIsZoomOpen(false);
+    resetZoomTransform();
+  }, [resetZoomTransform]);
 
   const closeActivePreview = useCallback(() => {
-    setIsZoomOpen(false);
-    setIsZoomedIn(false);
+    closeZoomLightbox();
     setActivePreview(null);
-  }, []);
+  }, [closeZoomLightbox]);
 
   const openZoomViewer = useCallback(() => {
+    resetZoomTransform();
     setIsZoomOpen(true);
-    setIsZoomedIn(false);
-  }, []);
+  }, [resetZoomTransform]);
 
   useEffect(() => {
     if (!activePreview) {
       setPreviewFileId(null);
-      setIsZoomOpen(false);
-      setIsZoomedIn(false);
+      closeZoomLightbox();
       return;
     }
     const defaultFile =
       activePreview.files.find(isImageFile) ?? activePreview.files[0] ?? null;
     setPreviewFileId(defaultFile?.id ?? null);
-    setIsZoomOpen(false);
-    setIsZoomedIn(false);
-  }, [activePreview]);
+    closeZoomLightbox();
+  }, [activePreview, closeZoomLightbox]);
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const start = dragStartRef.current;
+      if (!start) return;
+      const deltaX = event.clientX - start.pointerX;
+      const deltaY = event.clientY - start.pointerY;
+      if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+        didDragRef.current = true;
+      }
+      setPosition({ x: start.posX + deltaX, y: start.posY + deltaY });
+    };
+
+    const stopDragging = () => {
+      setIsDragging(false);
+      dragStartRef.current = null;
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", stopDragging);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", stopDragging);
+    };
+  }, [isDragging]);
+
+  const handleLightboxImageClick = (event: ReactMouseEvent<HTMLImageElement>) => {
+    if (didDragRef.current) {
+      didDragRef.current = false;
+      return;
+    }
+
+    if (scale === ZOOM_MIN) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const x = ((event.clientX - rect.left) / rect.width) * 100;
+      const y = ((event.clientY - rect.top) / rect.height) * 100;
+      setOrigin({ x, y });
+      setScale(Math.min(ZOOM_CLICK_LEVEL, ZOOM_MAX));
+      setPosition({ x: 0, y: 0 });
+      return;
+    }
+
+    resetZoomTransform();
+  };
+
+  const handleLightboxImageMouseDown = (event: ReactMouseEvent<HTMLImageElement>) => {
+    if (scale <= ZOOM_MIN) return;
+    event.preventDefault();
+    didDragRef.current = false;
+    setIsDragging(true);
+    dragStartRef.current = {
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      posX: position.x,
+      posY: position.y,
+    };
+  };
 
   const loadProjects = useCallback(async () => {
     const currentTasks = getTasksFromLocalStorage();
@@ -341,8 +433,7 @@ export default function DisenosPage() {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         if (isZoomOpen) {
-          setIsZoomOpen(false);
-          setIsZoomedIn(false);
+          closeZoomLightbox();
           return;
         }
         closeActivePreview();
@@ -354,7 +445,7 @@ export default function DisenosPage() {
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [activePreview, closeActivePreview, goToNext, goToPrev, isZoomOpen]);
+  }, [activePreview, closeActivePreview, closeZoomLightbox, goToNext, goToPrev, isZoomOpen]);
 
   const handleApprove = async (taskId: string) => {
     const currentTasks = getTasksFromLocalStorage();
@@ -702,31 +793,41 @@ export default function DisenosPage() {
         >
           <button
             type="button"
-            onClick={() => {
-              setIsZoomOpen(false);
-              setIsZoomedIn(false);
-            }}
+            onClick={closeZoomLightbox}
             className="absolute right-4 top-4 z-10 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold text-white backdrop-blur-sm transition hover:bg-white/20"
           >
             <X className="h-4 w-4" />
             Cerrar (Esc)
           </button>
 
-          <div className="flex h-full w-full items-center justify-center overflow-auto p-4">
+          <div className="flex h-full w-full items-center justify-center overflow-hidden p-4">
             <img
               src={previewImageSrc(activePreviewImageSrc) ?? activePreviewImageSrc}
               alt={`Diseño ${activePreview.clientName}`}
-              onClick={() => setIsZoomedIn((current) => !current)}
-              className={`object-contain transition-transform duration-200 select-none ${
-                isZoomedIn
-                  ? "max-w-none scale-150 cursor-zoom-out"
-                  : "max-h-[90vh] max-w-[90vw] cursor-zoom-in"
+              draggable={false}
+              onClick={handleLightboxImageClick}
+              onMouseDown={handleLightboxImageMouseDown}
+              onMouseLeave={() => {
+                if (isDragging) setIsDragging(false);
+                dragStartRef.current = null;
+              }}
+              style={{
+                transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+                transformOrigin: `${origin.x}% ${origin.y}%`,
+                transition: isDragging ? "none" : "transform 0.18s ease-out",
+              }}
+              className={`max-h-[90vh] max-w-[90vw] select-none object-contain ${
+                scale > ZOOM_MIN
+                  ? isDragging
+                    ? "cursor-grabbing"
+                    : "cursor-grab"
+                  : "cursor-zoom-in"
               }`}
             />
           </div>
 
           <p className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2 rounded-full bg-black/50 px-4 py-2 text-xs text-white/90">
-            Clic en la imagen para acercar/alejar · Esc para salir
+            Clic para acercar en el punto · Arrastra para explorar · Esc para salir
           </p>
         </div>
       ) : null}
