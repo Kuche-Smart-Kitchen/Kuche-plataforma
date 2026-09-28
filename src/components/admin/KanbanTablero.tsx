@@ -184,6 +184,47 @@ const normalizeTask = (task: Partial<KanbanTask> & Record<string, unknown>): Kan
         ? [cotizacionFormalData]
         : [];
 
+  const rawFeedback = typeof task.designFeedback === "string" ? task.designFeedback.trim() : "";
+  const resolvedKey = `kuche_feedback_resolved_${task.id}`;
+  const resolvedTimestampStr = typeof window !== "undefined" ? localStorage.getItem(resolvedKey) : null;
+
+  let effectiveFeedback: string | undefined = rawFeedback || undefined;
+
+  if (rawFeedback && resolvedTimestampStr) {
+    const resolvedAt = Number(resolvedTimestampStr);
+    const updatedAtRaw = task.updatedAt;
+    const taskUpdatedAt =
+      typeof updatedAtRaw === "number" && Number.isFinite(updatedAtRaw)
+        ? updatedAtRaw
+        : typeof updatedAtRaw === "string"
+          ? Date.parse(updatedAtRaw)
+          : 0;
+
+    if (taskUpdatedAt > resolvedAt + 1000) {
+      try {
+        localStorage.removeItem(resolvedKey);
+      } catch {
+        // ignore
+      }
+      effectiveFeedback = rawFeedback;
+    } else {
+      effectiveFeedback = undefined;
+    }
+  } else if (!rawFeedback && resolvedTimestampStr) {
+    try {
+      localStorage.removeItem(resolvedKey);
+    } catch {
+      // ignore
+    }
+  }
+
+  const updatedAt =
+    typeof task.updatedAt === "number" && Number.isFinite(task.updatedAt)
+      ? task.updatedAt
+      : typeof task.updatedAt === "string"
+        ? Date.parse(task.updatedAt) || undefined
+        : undefined;
+
   return {
     id: typeof task.id === "string" ? task.id : `task-${Date.now()}`,
     sourceId: typeof task.sourceId === "string" ? task.sourceId : undefined,
@@ -205,6 +246,7 @@ const normalizeTask = (task: Partial<KanbanTask> & Record<string, unknown>): Kan
     createdAt: typeof task.createdAt === "number" && task.createdAt > 1600000000000
       ? task.createdAt
       : undefined,
+    updatedAt,
     followUpEnteredAt: typeof task.followUpEnteredAt === "number"
       ? task.followUpEnteredAt
       : undefined,
@@ -217,7 +259,7 @@ const normalizeTask = (task: Partial<KanbanTask> & Record<string, unknown>): Kan
     citaFinished,
     designApprovedByAdmin: Boolean(task.designApprovedByAdmin),
     designApprovedByClient: Boolean(task.designApprovedByClient),
-    designFeedback: typeof task.designFeedback === "string" ? task.designFeedback : undefined,
+    designFeedback: effectiveFeedback,
     codigoProyecto:
       (typeof task.codigoProyecto === "string" && task.codigoProyecto.trim()) ||
       (typeof task.codigoCliente === "string" && task.codigoCliente.trim()) ||
@@ -980,17 +1022,30 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       });
     }
 
-    if (nextFiles.length > 0 && taskSnapshot) {
+    if (nextFiles.length > 0) {
+      try {
+        localStorage.setItem(`kuche_feedback_resolved_${taskId}`, String(Date.now()));
+      } catch {
+        // ignore quota / private mode
+      }
+
       const patchUpdates: Partial<KanbanTask> = {
-        files: [...(taskSnapshot.files ?? []), ...nextFiles],
-        designFeedback: "",
+        files: [...nextFiles],
+        designFeedback: undefined,
         designApprovedByAdmin: false,
       };
       updateTask(taskId, (task) => ({ ...task, ...patchUpdates }));
-      await syncTaskPatchWithBackend(taskSnapshot, {
-        designFeedback: "",
-        designApprovedByAdmin: false,
-      });
+
+      if (taskSnapshot) {
+        try {
+          await syncTaskPatchWithBackend(taskSnapshot, {
+            designFeedback: null as any,
+            designApprovedByAdmin: false,
+          });
+        } catch (e) {
+          console.warn("Error al sincronizar limpieza de feedback en backend:", e);
+        }
+      }
     }
 
     if (failedNames.length > 0) {
@@ -1191,7 +1246,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                               );
                             })()
                           ) : task.stage === "disenos" && task.files && task.files.length > 0 && !task.designApprovedByAdmin ? (
-                            task.designFeedback ? (
+                            Boolean(task.designFeedback) ? (
                               <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-1 text-[10px] font-semibold text-rose-700 animate-pulse">
                                 <AlertTriangle className="h-3 w-3" />
                                 Cambios solicitados
@@ -1346,7 +1401,8 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                               {/* Pasar a Seguimiento: manual vía botón */}
 
                               {/* DISEÑOS: Subir → Admin aprueba → Subida de diseño final */}
-                              {task.stage === "disenos" && ((!task.files || task.files.length === 0) || (task.designFeedback && !task.designApprovedByAdmin)) ? (
+                              {task.stage === "disenos" &&
+                              ((!task.files || task.files.length === 0) || Boolean(task.designFeedback)) ? (
                                 <button
                                   type="button"
                                   onClick={(event) => {

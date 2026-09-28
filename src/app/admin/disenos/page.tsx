@@ -1,7 +1,14 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Check,
@@ -10,7 +17,9 @@ import {
   Download,
   FileText,
   Image as ImageIcon,
+  Maximize2,
   MessageSquare,
+  X,
 } from "lucide-react";
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
@@ -49,10 +58,31 @@ const statusStyles: Record<ProjectStatus, string> = {
 const filters = ["Todos", "Pendientes", "Aprobados"] as const;
 type FilterOption = (typeof filters)[number];
 
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 3.5;
+const ZOOM_CLICK_LEVEL = 2.2;
+
+type ZoomOrigin = { x: number; y: number };
+type ZoomPosition = { x: number; y: number };
+
 function formatDesignDate(ts?: number): string {
   if (ts == null) return "—";
   const d = new Date(ts);
   return d.toLocaleDateString("es-MX", { year: "numeric", month: "short", day: "numeric" });
+}
+
+function isImageFile(f: TaskFile): boolean {
+  return Boolean(
+    f.src &&
+      (f.type === "render" ||
+        /\.(jpg|jpeg|png|webp|gif|svg)($|\?)/i.test(f.src) ||
+        /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(f.name)),
+  );
+}
+
+function previewImageSrc(src: string | null | undefined): string | null {
+  if (!src) return null;
+  return toDropboxDirectImageUrl(src) ?? src;
 }
 
 function ProjectThumbnail({
@@ -87,9 +117,11 @@ function ProjectThumbnail({
     );
   }
 
+  const displaySrc = previewImageSrc(image);
+
   return (
     <img
-      src={image}
+      src={displaySrc ?? image}
       alt={alt}
       className={className}
       onClick={onClick}
@@ -98,13 +130,34 @@ function ProjectThumbnail({
   );
 }
 
-function DesignFileDownloadRow({ file }: { file: TaskFile }) {
+function DesignFileDownloadRow({
+  file,
+  onSelectPreview,
+  isPreviewSelected,
+}: {
+  file: TaskFile;
+  onSelectPreview?: () => void;
+  isPreviewSelected?: boolean;
+}) {
   const canDownload = Boolean(file.src);
   return (
-    <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2">
-      <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-700" title={file.name}>
+    <div
+      className={`flex items-center gap-2 rounded-xl border bg-white px-3 py-2 ${
+        isPreviewSelected ? "border-[#8B1C1C] ring-1 ring-[#8B1C1C]/30" : "border-gray-200"
+      }`}
+    >
+      <button
+        type="button"
+        disabled={!file.src}
+        title={file.src ? "Ver en vista previa" : "Sin URL de archivo"}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelectPreview?.();
+        }}
+        className="min-w-0 flex-1 truncate text-left text-xs font-medium text-gray-700 hover:text-[#8B1C1C] disabled:cursor-default disabled:opacity-60"
+      >
         {file.name}
-      </span>
+      </button>
       <button
         type="button"
         disabled={!canDownload}
@@ -115,7 +168,7 @@ function DesignFileDownloadRow({ file }: { file: TaskFile }) {
         }
         onClick={(e) => {
           e.stopPropagation();
-          if (canDownload) downloadTaskFile(file);
+          if (canDownload) void downloadTaskFile(file);
         }}
         className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-[11px] font-semibold text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
       >
@@ -126,12 +179,48 @@ function DesignFileDownloadRow({ file }: { file: TaskFile }) {
   );
 }
 
+function PreviewImagePane({
+  src,
+  alt,
+  onOpenZoom,
+}: {
+  src: string;
+  alt: string;
+  onOpenZoom?: () => void;
+}) {
+  const [failed, setFailed] = useState(false);
+  const displaySrc = previewImageSrc(src);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  if (failed) {
+    return (
+      <p className="py-8 text-center text-sm text-gray-500">
+        No se pudo cargar la vista previa. Usa Descargar o abre el archivo en una pestaña nueva.
+      </p>
+    );
+  }
+
+  return (
+    <img
+      src={displaySrc ?? src}
+      alt={alt}
+      title="Clic para ver en pantalla completa"
+      className="h-auto max-h-[48vh] w-auto max-w-full cursor-zoom-in select-none rounded-lg object-contain"
+      onClick={() => onOpenZoom?.()}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function designProjectsFromTasks(tasks: KanbanTask[]): DesignProject[] {
   return tasks
     .filter((t) => t.stage === "disenos" && t.files && t.files.length > 0)
     .map((task) => {
-      const firstImage = task.files!.find((f) => f.type === "render" && f.src);
-      const image = toDropboxDirectImageUrl(firstImage?.src ?? null);
+      const firstImage = task.files?.find(isImageFile);
+      const image = firstImage?.src ?? null;
       return {
         id: task.id,
         taskId: task.id,
@@ -155,9 +244,115 @@ export default function DisenosPage() {
   const [filter, setFilter] = useState<FilterOption>("Todos");
   const [feedbackDrafts, setFeedbackDrafts] = useState<Record<string, string>>({});
   const [activePreview, setActivePreview] = useState<DesignProject | null>(null);
+  const [previewFileId, setPreviewFileId] = useState<string | null>(null);
+  const [isZoomOpen, setIsZoomOpen] = useState(false);
+  const [scale, setScale] = useState(ZOOM_MIN);
+  const [origin, setOrigin] = useState<ZoomOrigin>({ x: 50, y: 50 });
+  const [position, setPosition] = useState<ZoomPosition>({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
   const [confirmingClientId, setConfirmingClientId] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
+  const dragStartRef = useRef<{ pointerX: number; pointerY: number; posX: number; posY: number } | null>(
+    null,
+  );
+  const didDragRef = useRef(false);
+
+  const resetZoomTransform = useCallback(() => {
+    setScale(ZOOM_MIN);
+    setOrigin({ x: 50, y: 50 });
+    setPosition({ x: 0, y: 0 });
+    setIsDragging(false);
+    dragStartRef.current = null;
+    didDragRef.current = false;
+  }, []);
+
+  const closeZoomLightbox = useCallback(() => {
+    setIsZoomOpen(false);
+    resetZoomTransform();
+  }, [resetZoomTransform]);
+
+  const closeActivePreview = useCallback(() => {
+    closeZoomLightbox();
+    setActivePreview(null);
+  }, [closeZoomLightbox]);
+
+  const openZoomViewer = useCallback(() => {
+    resetZoomTransform();
+    setIsZoomOpen(true);
+  }, [resetZoomTransform]);
+
+  useEffect(() => {
+    if (!activePreview) {
+      setPreviewFileId(null);
+      closeZoomLightbox();
+      return;
+    }
+    const defaultFile =
+      activePreview.files.find(isImageFile) ?? activePreview.files[0] ?? null;
+    setPreviewFileId(defaultFile?.id ?? null);
+    closeZoomLightbox();
+  }, [activePreview, closeZoomLightbox]);
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const start = dragStartRef.current;
+      if (!start) return;
+      const deltaX = event.clientX - start.pointerX;
+      const deltaY = event.clientY - start.pointerY;
+      if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+        didDragRef.current = true;
+      }
+      setPosition({ x: start.posX + deltaX, y: start.posY + deltaY });
+    };
+
+    const stopDragging = () => {
+      setIsDragging(false);
+      dragStartRef.current = null;
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", stopDragging);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", stopDragging);
+    };
+  }, [isDragging]);
+
+  const handleLightboxImageClick = (event: ReactMouseEvent<HTMLImageElement>) => {
+    if (didDragRef.current) {
+      didDragRef.current = false;
+      return;
+    }
+
+    if (scale === ZOOM_MIN) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const x = ((event.clientX - rect.left) / rect.width) * 100;
+      const y = ((event.clientY - rect.top) / rect.height) * 100;
+      setOrigin({ x, y });
+      setScale(Math.min(ZOOM_CLICK_LEVEL, ZOOM_MAX));
+      setPosition({ x: 0, y: 0 });
+      return;
+    }
+
+    resetZoomTransform();
+  };
+
+  const handleLightboxImageMouseDown = (event: ReactMouseEvent<HTMLImageElement>) => {
+    if (scale <= ZOOM_MIN) return;
+    event.preventDefault();
+    didDragRef.current = false;
+    setIsDragging(true);
+    dragStartRef.current = {
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      posX: position.x,
+      posY: position.y,
+    };
+  };
 
   const loadProjects = useCallback(async () => {
     const currentTasks = getTasksFromLocalStorage();
@@ -193,8 +388,8 @@ export default function DisenosPage() {
     };
   }, [loadProjects]);
 
-  useEscapeClose(Boolean(activePreview), () => setActivePreview(null));
-  useFocusTrap(Boolean(activePreview), previewRef);
+  useEscapeClose(Boolean(activePreview && !isZoomOpen), closeActivePreview);
+  useFocusTrap(Boolean(activePreview && !isZoomOpen), previewRef);
 
   const filteredProjects = useMemo(() => {
     if (filter === "Todos") return projects;
@@ -206,6 +401,17 @@ export default function DisenosPage() {
     () => filteredProjects.findIndex((p) => p.id === activePreview?.id),
     [activePreview?.id, filteredProjects],
   );
+
+  const activePreviewImageSrc = useMemo(() => {
+    if (!activePreview) return null;
+    const selected = activePreview.files.find((f) => f.id === previewFileId);
+    if (selected?.src) {
+      return isImageFile(selected) ? selected.src : null;
+    }
+    if (activePreview.image) return activePreview.image;
+    const fallback = activePreview.files.find(isImageFile);
+    return fallback?.src ?? null;
+  }, [activePreview, previewFileId]);
 
   const goToNext = useCallback(() => {
     if (!filteredProjects.length) return;
@@ -225,13 +431,21 @@ export default function DisenosPage() {
   useEffect(() => {
     if (!activePreview) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setActivePreview(null);
-      else if (event.key === "ArrowRight") goToNext();
+      if (event.key === "Escape") {
+        if (isZoomOpen) {
+          closeZoomLightbox();
+          return;
+        }
+        closeActivePreview();
+        return;
+      }
+      if (isZoomOpen) return;
+      if (event.key === "ArrowRight") goToNext();
       else if (event.key === "ArrowLeft") goToPrev();
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [activePreview, goToNext, goToPrev]);
+  }, [activePreview, closeActivePreview, closeZoomLightbox, goToNext, goToPrev, isZoomOpen]);
 
   const handleApprove = async (taskId: string) => {
     const currentTasks = getTasksFromLocalStorage();
@@ -478,15 +692,16 @@ export default function DisenosPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={() => setActivePreview(null)}
+            transition={{ duration: 0.15 }}
+            onClick={closeActivePreview}
           >
             <motion.div
               ref={previewRef}
               tabIndex={-1}
-              initial={{ scale: 0.96, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.96, opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              transition={{ duration: 0.15 }}
               onClick={(e) => e.stopPropagation()}
               className="w-full max-w-4xl overflow-hidden rounded-3xl bg-white shadow-2xl"
             >
@@ -497,7 +712,7 @@ export default function DisenosPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setActivePreview(null)}
+                  onClick={closeActivePreview}
                   className="rounded-full border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-500"
                 >
                   Cerrar
@@ -512,39 +727,37 @@ export default function DisenosPage() {
                 </p>
                 <div className="mt-3 flex max-h-36 flex-col gap-2 overflow-y-auto">
                   {activePreview.files.map((f) => (
-                    <DesignFileDownloadRow key={f.id} file={f} />
+                    <DesignFileDownloadRow
+                      key={f.id}
+                      file={f}
+                      isPreviewSelected={previewFileId === f.id}
+                      onSelectPreview={() => setPreviewFileId(f.id)}
+                    />
                   ))}
                 </div>
               </div>
-              <div className="max-h-[55vh] overflow-auto bg-gray-100 p-4">
-                <p className="mb-2 text-center text-[10px] font-medium uppercase tracking-wider text-gray-400">
-                  Vista previa (opcional)
-                </p>
-                {activePreview.image ? (
-                  <img
-                    src={activePreview.image}
-                    alt={`Diseño ${activePreview.clientName}`}
-                    className="mx-auto max-h-[50vh] w-full object-contain"
-                    onError={(e) => {
-                      e.currentTarget.style.display = "none";
-                    }}
-                  />
+              <div className="border-t border-gray-100 bg-gray-50 px-6 pb-2 pt-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Vista previa</p>
+              </div>
+              <div className="relative flex max-h-[55vh] min-h-[200px] items-center justify-center overflow-hidden bg-gray-100 px-4 pb-4">
+                {activePreviewImageSrc ? (
+                  <>
+                    <PreviewImagePane
+                      src={activePreviewImageSrc}
+                      alt={`Diseño ${activePreview.clientName}`}
+                      onOpenZoom={openZoomViewer}
+                    />
+                    <button
+                      type="button"
+                      onClick={openZoomViewer}
+                      className="absolute right-6 top-2 inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white/90 px-2.5 py-1 text-[10px] font-semibold text-gray-600 shadow-sm backdrop-blur-sm transition hover:bg-white"
+                    >
+                      <Maximize2 className="h-3.5 w-3.5" />
+                      Pantalla completa
+                    </button>
+                  </>
                 ) : (
-                  <div className="flex flex-col items-center justify-center gap-4 py-8">
-                    {activePreview.files.map((f) => (
-                      <div
-                        key={f.id}
-                        className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3"
-                      >
-                        {f.type === "pdf" ? (
-                          <FileText className="h-8 w-8 text-gray-400" />
-                        ) : (
-                          <ImageIcon className="h-8 w-8 text-gray-400" />
-                        )}
-                        <span className="text-sm font-medium text-gray-700">{f.name}</span>
-                      </div>
-                    ))}
-                  </div>
+                  <p className="text-sm text-gray-500">Sin imagen disponible</p>
                 )}
               </div>
               <div className="flex items-center justify-between border-t border-gray-100 px-6 py-4">
@@ -570,6 +783,54 @@ export default function DisenosPage() {
           </motion.div>
         ) : null}
       </AnimatePresence>
+
+      {isZoomOpen && activePreview && activePreviewImageSrc ? (
+        <div
+          className="fixed inset-0 z-[100] flex select-none items-center justify-center bg-black/95 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Vista previa en pantalla completa"
+        >
+          <button
+            type="button"
+            onClick={closeZoomLightbox}
+            className="absolute right-4 top-4 z-10 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold text-white backdrop-blur-sm transition hover:bg-white/20"
+          >
+            <X className="h-4 w-4" />
+            Cerrar (Esc)
+          </button>
+
+          <div className="flex h-full w-full items-center justify-center overflow-hidden p-4">
+            <img
+              src={previewImageSrc(activePreviewImageSrc) ?? activePreviewImageSrc}
+              alt={`Diseño ${activePreview.clientName}`}
+              draggable={false}
+              onClick={handleLightboxImageClick}
+              onMouseDown={handleLightboxImageMouseDown}
+              onMouseLeave={() => {
+                if (isDragging) setIsDragging(false);
+                dragStartRef.current = null;
+              }}
+              style={{
+                transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+                transformOrigin: `${origin.x}% ${origin.y}%`,
+                transition: isDragging ? "none" : "transform 0.18s ease-out",
+              }}
+              className={`max-h-[90vh] max-w-[90vw] select-none object-contain ${
+                scale > ZOOM_MIN
+                  ? isDragging
+                    ? "cursor-grabbing"
+                    : "cursor-grab"
+                  : "cursor-zoom-in"
+              }`}
+            />
+          </div>
+
+          <p className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2 rounded-full bg-black/50 px-4 py-2 text-xs text-white/90">
+            Clic para acercar en el punto · Arrastra para explorar · Esc para salir
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }

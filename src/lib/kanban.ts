@@ -86,6 +86,8 @@ export type KanbanTask = {
   /** Enlace de Google Maps; en la tarjeta se muestra como "Ver en Maps" para abrir la ubicación. */
   mapsUrl?: string;
   createdAt?: number;
+  /** Última actualización en backend (ms epoch); usada para ciclos de designFeedback. */
+  updatedAt?: number;
   /** Para tareas en seguimiento: fecha en que entró a la columna de seguimiento */
   followUpEnteredAt?: number;
   /** Estado del seguimiento: pendiente, confirmado o descartado */
@@ -297,14 +299,12 @@ export function mergeKanbanTaskLists(local: KanbanTask[], incoming: KanbanTask[]
       followUpStatus: existing.followUpStatus ?? task.followUpStatus,
       designApprovedByAdmin: existing.designApprovedByAdmin || task.designApprovedByAdmin,
       designApprovedByClient: existing.designApprovedByClient || task.designApprovedByClient,
-      designFeedback: (() => {
-        // Si incoming trae explícitamente "" o null, el backend está limpio
-        if (task.designFeedback === "" || task.designFeedback === null) return undefined;
-        if (task.designFeedback?.trim()) return task.designFeedback.trim();
-        // Si local fue limpiado explícitamente con ""
-        if (existing.designFeedback === "" || existing.designFeedback === null) return undefined;
-        return existing.designFeedback?.trim() ? existing.designFeedback.trim() : undefined;
-      })(),
+      designFeedback:
+        existing.designFeedback === undefined && existing.files?.length
+          ? undefined
+          : task.designFeedback?.trim()
+            ? task.designFeedback.trim()
+            : undefined,
     });
   }
 
