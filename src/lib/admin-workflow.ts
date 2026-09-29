@@ -355,8 +355,8 @@ export async function syncTaskPatchWithBackend(task: KanbanTask, patch: Partial<
     const payload = buildTaskPatchPayload(task, patch);
     if (Object.keys(payload).length === 0) return true;
 
-    await actualizarTarea(taskId, payload);
-    return true;
+    const response = await actualizarTarea(taskId, payload);
+    return response.success !== false;
   } catch (error) {
     console.warn("No se pudo sincronizar avance de tarea en backend", { taskId, patch, error });
     return false;

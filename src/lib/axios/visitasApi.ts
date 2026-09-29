@@ -6,10 +6,13 @@ export interface AgendarVisitaPayload {
   nombreCliente: string;
   correoCliente: string;
   telefonoCliente: string;
+  tareaId?: string;
   ubicacion?: string;
   informacionAdicional?: string;
   estado?: "solicitada" | "programada" | "confirmada" | "cancelada";
 }
+
+export type EstadoOperativoVisita = "pending" | "in_progress" | "completed";
 
 export interface DisponibilidadVisitaResponse {
   success: boolean;
@@ -84,6 +87,17 @@ export const actualizarVisita = async (
   const response = await axiosInstance.patch<ApiResponse<Record<string, unknown>>>(
     `/api/visitas/${encodeURIComponent(id)}`,
     payload,
+  );
+  return response.data;
+};
+
+export const actualizarEstadoOperativoVisita = async (
+  id: string,
+  status: EstadoOperativoVisita,
+): Promise<ApiResponse<Record<string, unknown>>> => {
+  const response = await axiosInstance.patch<ApiResponse<Record<string, unknown>>>(
+    `/api/visitas/${encodeURIComponent(id)}/status`,
+    { status },
   );
   return response.data;
 };

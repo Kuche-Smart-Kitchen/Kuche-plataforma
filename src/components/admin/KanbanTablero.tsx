@@ -13,9 +13,11 @@ import {
   Calendar,
   Trash2,
   CloudUpload,
+  CalendarPlus,
   Loader2,
 } from "lucide-react";
 
+import Captcha, { type CaptchaRef } from "@/components/ui/Captcha";
 import { DueDateInput } from "@/components/ui/DueDateInput";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
@@ -32,6 +34,7 @@ import { syncSeguimientoEstadoFromKanbanConfirm } from "@/lib/seguimiento-projec
 import {
   kanbanColumns,
   initialKanbanTasks,
+  kanbanTasksUpdatedEventName,
   notifyKanbanTasksUpdated,
   syncSeguimientoProjectKanbanStage,
   type KanbanTask,
@@ -47,6 +50,7 @@ import {
 } from "@/lib/kanban";
 import { dueDateToSortTimestamp, formatDueDateTimeDisplay } from "@/lib/kanban-due-datetime";
 import { subirArchivoCliente } from "@/lib/axios/archivosClienteApi";
+import { agendarVisita } from "@/lib/axios/visitasApi";
 
 const currentUser = "Valeria";
 
@@ -395,6 +399,18 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const [panelFilesUploading, setPanelFilesUploading] = useState(false);
   const [deleteConfirmTaskId, setDeleteConfirmTaskId] = useState<string | null>(null);
   const [cotizacionEntregadaTaskId, setCotizacionEntregadaTaskId] = useState<string | null>(null);
+  const [scheduleVisitTaskId, setScheduleVisitTaskId] = useState<string | null>(null);
+  const [visitDraft, setVisitDraft] = useState({
+    date: "",
+    time: "09:00",
+    client: "",
+    email: "",
+    phone: "",
+    location: "",
+  });
+  const [visitCaptchaToken, setVisitCaptchaToken] = useState("");
+  const [visitSaving, setVisitSaving] = useState(false);
+  const [visitError, setVisitError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const activeTaskRef = useRef<HTMLElement | null>(null);
   const panelScrollRef = useRef<HTMLElement | null>(null);
@@ -402,6 +418,8 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const uploadAcceptedDesignsRef = useRef<HTMLDivElement | null>(null);
   const deleteConfirmRef = useRef<HTMLDivElement | null>(null);
   const cotizacionEntregadaRef = useRef<HTMLDivElement | null>(null);
+  const scheduleVisitRef = useRef<HTMLDivElement | null>(null);
+  const visitCaptchaRef = useRef<CaptchaRef | null>(null);
 
   const commitKanbanTasks = useCallback((nextTasks: KanbanTask[]) => {
     kanbanTasksRef.current = nextTasks;
@@ -448,11 +466,13 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   });
   useEscapeClose(Boolean(deleteConfirmTaskId), () => setDeleteConfirmTaskId(null));
   useEscapeClose(Boolean(cotizacionEntregadaTaskId), () => setCotizacionEntregadaTaskId(null));
+  useEscapeClose(Boolean(scheduleVisitTaskId), () => setScheduleVisitTaskId(null));
   useFocusTrap(Boolean(activeTaskId), activeTaskRef);
   useFocusTrap(Boolean(uploadTaskId), uploadTaskRef);
   useFocusTrap(Boolean(uploadAcceptedDesignsTaskId), uploadAcceptedDesignsRef);
   useFocusTrap(Boolean(deleteConfirmTaskId), deleteConfirmRef);
   useFocusTrap(Boolean(cotizacionEntregadaTaskId), cotizacionEntregadaRef);
+  useFocusTrap(Boolean(scheduleVisitTaskId), scheduleVisitRef);
   // Al abrir el panel de detalle, aseguramos que se muestre desde el inicio.
   useEffect(() => {
     if (!activeTaskId) return;
@@ -491,10 +511,13 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
         void syncFromBackend();
       }
     };
+    const handleKanbanTasksUpdated = () => void syncFromBackend();
     window.addEventListener("focus", handleFocus);
+    window.addEventListener(kanbanTasksUpdatedEventName, handleKanbanTasksUpdated);
     document.addEventListener("visibilitychange", handleVisibility);
     return () => {
       window.removeEventListener("focus", handleFocus);
+      window.removeEventListener(kanbanTasksUpdatedEventName, handleKanbanTasksUpdated);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [hydrateAndApplyTasks]);
@@ -741,6 +764,67 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     onAfterDiscard?.();
   };
 
+  const openScheduleVisit = (task: KanbanTask) => {
+    const scheduledDate = new Date();
+    scheduledDate.setDate(scheduledDate.getDate() + 1);
+    const date = `${scheduledDate.getFullYear()}-${String(scheduledDate.getMonth() + 1).padStart(2, "0")}-${String(scheduledDate.getDate()).padStart(2, "0")}`;
+    setVisitDraft({
+      date,
+      time: "09:00",
+      client: task.project,
+      email: task.clientEmail ?? "",
+      phone: task.clientPhone ?? "",
+      location: task.location ?? "",
+    });
+    setVisitError(null);
+    setVisitCaptchaToken("");
+    setScheduleVisitTaskId(task.id);
+  };
+
+  const saveScheduledVisit = async () => {
+    const task = kanbanTasksRef.current.find((item) => item.id === scheduleVisitTaskId);
+    if (!task) return;
+    if (!visitDraft.client.trim() || !visitDraft.email.trim() || !visitDraft.phone.trim() || !visitDraft.date || !visitDraft.time) {
+      setVisitError("Completa cliente, correo, teléfono, fecha y hora.");
+      return;
+    }
+    if (!visitCaptchaToken) {
+      setVisitError("Confirma el captcha para registrar la visita.");
+      return;
+    }
+    if (new Date(`${visitDraft.date}T${visitDraft.time}:00`) <= new Date()) {
+      setVisitError("La visita debe programarse en una fecha y hora futuras.");
+      return;
+    }
+
+    setVisitSaving(true);
+    setVisitError(null);
+    try {
+      const response = await agendarVisita(
+        {
+          fechaProgramada: new Date(`${visitDraft.date}T${visitDraft.time}:00`).toISOString(),
+          nombreCliente: visitDraft.client.trim(),
+          correoCliente: visitDraft.email.trim(),
+          telefonoCliente: visitDraft.phone.trim(),
+          ubicacion: visitDraft.location.trim() || undefined,
+          informacionAdicional: "Presentación de diseño",
+          tareaId: task.id,
+        },
+        visitCaptchaToken,
+      );
+      if (!response.success) throw new Error(response.message || "No se pudo registrar la visita.");
+      setScheduleVisitTaskId(null);
+      setVisitCaptchaToken("");
+      setUploadToast({ type: "success", message: "Visita agendada; la tarjeta permanece en Diseños." });
+    } catch (error) {
+      setVisitCaptchaToken("");
+      visitCaptchaRef.current?.reset();
+      setVisitError(error instanceof Error ? error.message : "No se pudo registrar la visita.");
+    } finally {
+      setVisitSaving(false);
+    }
+  };
+
   const startCita = async (taskId: string) => {
     const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
     updateTask(taskId, (task) => ({ ...task, citaStarted: true }));
@@ -841,25 +925,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
         return;
       }
 
-      const patch: Partial<KanbanTask> = {
-        designApprovedByClient: true,
-        stage: "cotizacion",
-        status: "pendiente",
-        citaStarted: false,
-        citaFinished: false,
-      };
-
-      updateTask(taskId, (task) => ({ ...task, ...patch }));
-      if (taskSnapshot) {
-        const patchOk = await syncTaskPatchWithBackend(taskSnapshot, patch);
-        if (!patchOk) {
-          showUploadToast("error", "El diseño se subió, pero no se persistió el avance de la tarea en backend.");
-          setUploadAcceptedDesignsTaskId(null);
-          setDropboxStagingFile(null);
-          return;
-        }
-      }
-      showUploadToast("success", "Diseño final subido correctamente.");
+      showUploadToast("success", "Diseño final subido. La aprobación se registra desde la visita en Agenda.");
       setUploadAcceptedDesignsTaskId(null);
       setDropboxStagingFile(null);
     } finally {
@@ -967,6 +1033,11 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const uploadTask = useMemo(
     () => kanbanTasks.find((task) => task.id === uploadTaskId) ?? null,
     [kanbanTasks, uploadTaskId],
+  );
+
+  const scheduleVisitTask = useMemo(
+    () => kanbanTasks.find((task) => task.id === scheduleVisitTaskId) ?? null,
+    [kanbanTasks, scheduleVisitTaskId],
   );
 
   const inferFileType = (name: string): TaskFile["type"] => {
@@ -1400,7 +1471,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                               ) : null}
                               {/* Pasar a Seguimiento: manual vía botón */}
 
-                              {/* DISEÑOS: Subir → Admin aprueba → Subida de diseño final */}
+                              {/* DISEÑOS: Admin aprueba → Agendar visita → Cliente aprueba en Agenda */}
                               {task.stage === "disenos" &&
                               ((!task.files || task.files.length === 0) || Boolean(task.designFeedback)) ? (
                                 <button
@@ -1425,7 +1496,20 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                                   className="inline-flex min-h-[32px] w-auto items-center gap-1 rounded-full bg-sky-600 px-2.5 py-1 text-[11px] font-semibold leading-tight text-white"
                                 >
                                   <CloudUpload className="h-3 w-3 shrink-0" />
-                                  Subir diseños aceptados
+                                  Subir diseño final
+                                </button>
+                              ) : null}
+                              {task.stage === "disenos" && task.designApprovedByAdmin && !task.designApprovedByClient ? (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openScheduleVisit(task);
+                                  }}
+                                  className="inline-flex min-h-[32px] w-auto items-center gap-1 rounded-full border border-sky-200 bg-white px-2.5 py-1 text-[11px] font-semibold leading-tight text-sky-800"
+                                >
+                                  <CalendarPlus className="h-3 w-3 shrink-0" />
+                                  Agendar visita
                                 </button>
                               ) : null}
                             </div>
@@ -1920,7 +2004,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                       </div>
                       <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm ${activeTask.designApprovedByClient ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
                         {activeTask.designApprovedByClient ? <CheckCircle2 className="h-4 w-4" /> : <span className="h-4 w-4 rounded-full border-2 border-gray-300" />}
-                        <span>3. Subida de diseño final</span>
+                        <span>3. Aprobación del cliente en Agenda</span>
                       </div>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2">
@@ -1935,17 +2019,27 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                       ) : !activeTask.designApprovedByAdmin ? (
                         <span className="text-sm text-amber-600 font-medium">Esperando aprobación del admin</span>
                       ) : !activeTask.designApprovedByClient ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDropboxStagingFile(null);
-                            setUploadAcceptedDesignsTaskId(activeTask.id);
-                          }}
-                          className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full bg-sky-600 px-3 py-1.5 text-xs font-semibold leading-tight text-white"
-                        >
-                          <CloudUpload className="h-3.5 w-3.5 shrink-0" />
-                          Subir diseños aceptados
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDropboxStagingFile(null);
+                              setUploadAcceptedDesignsTaskId(activeTask.id);
+                            }}
+                            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full bg-sky-600 px-3 py-1.5 text-xs font-semibold leading-tight text-white"
+                          >
+                            <CloudUpload className="h-3.5 w-3.5 shrink-0" />
+                            Subir diseño final
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openScheduleVisit(activeTask)}
+                            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-sky-200 bg-white px-3 py-1.5 text-xs font-semibold leading-tight text-sky-800"
+                          >
+                            <CalendarPlus className="h-3.5 w-3.5 shrink-0" />
+                            Agendar visita
+                          </button>
+                        </>
                       ) : (
                         <span className="text-sm text-emerald-600 font-medium">Diseño aprobado</span>
                       )}
@@ -2325,11 +2419,11 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                       </div>
                     </div>
                     <h3 id="dropbox-upload-title" className="mt-4 text-center text-lg font-semibold text-gray-900">
-                      Subir diseños aceptados
+                      Subir diseño final
                     </h3>
                     <p className="mt-2 text-center text-sm text-secondary">
-                      Selecciona el archivo con los diseños finales. Al completarse la subida, la tarea pasará a
-                      Cotización (no se guardará el archivo en el tablero).
+                      El archivo se adjunta al proyecto. La tarjeta no avanza hasta que el cliente apruebe el diseño
+                      desde el detalle de su visita en Agenda.
                     </p>
                     <label className="mt-5 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-primary/20 bg-sky-50/50 px-4 py-8 text-center text-sm text-secondary transition hover:border-sky-300 hover:bg-sky-50">
                       <CloudUpload className="h-5 w-5 text-sky-600" />
@@ -2368,7 +2462,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                         }}
                         className="flex-1 rounded-2xl bg-sky-600 py-3 text-sm font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        {dropboxUploading ? "Subiendo…" : "Subir y avanzar"}
+                        {dropboxUploading ? "Subiendo…" : "Subir archivo"}
                       </button>
                     </div>
                   </motion.div>
@@ -2470,6 +2564,95 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                 <p className="mt-1 text-sm font-medium text-rose-800">{dragErrorMessage}</p>
               </div>
             </div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>,
+            document.body,
+          )
+        : null}
+
+      {mounted
+        ? createPortal(
+            <AnimatePresence mode="sync">
+              {scheduleVisitTask ? (
+                <motion.div
+                  key={`schedule-visit-${scheduleVisitTask.id}`}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0, pointerEvents: "none" }}
+                  className="pointer-events-auto fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/50 px-4 py-6"
+                  onClick={() => setScheduleVisitTaskId(null)}
+                >
+                  <motion.div
+                    ref={scheduleVisitRef}
+                    tabIndex={-1}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="schedule-visit-title"
+                    initial={{ y: 24, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ y: 24, opacity: 0 }}
+                    className="pointer-events-auto max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-sky-100 bg-white p-6 shadow-2xl"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-xs font-semibold uppercase text-sky-700">Diseños</p>
+                        <h3 id="schedule-visit-title" className="mt-1 text-lg font-semibold text-gray-900">Agendar visita</h3>
+                        <p className="mt-1 text-sm text-secondary">{scheduleVisitTask.project}. La tarjeta seguirá en Diseños.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setScheduleVisitTaskId(null)}
+                        className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600"
+                        aria-label="Cerrar formulario"
+                      >
+                        Cerrar
+                      </button>
+                    </div>
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                      <label className="text-xs font-semibold text-gray-600">
+                        Cliente
+                        <input value={visitDraft.client} onChange={(event) => setVisitDraft((draft) => ({ ...draft, client: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm font-normal text-gray-900 outline-none focus:border-sky-500" />
+                      </label>
+                      <label className="text-xs font-semibold text-gray-600">
+                        Correo
+                        <input type="email" value={visitDraft.email} onChange={(event) => setVisitDraft((draft) => ({ ...draft, email: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm font-normal text-gray-900 outline-none focus:border-sky-500" />
+                      </label>
+                      <label className="text-xs font-semibold text-gray-600">
+                        Teléfono
+                        <input value={visitDraft.phone} onChange={(event) => setVisitDraft((draft) => ({ ...draft, phone: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm font-normal text-gray-900 outline-none focus:border-sky-500" />
+                      </label>
+                      <label className="text-xs font-semibold text-gray-600">
+                        Dirección
+                        <input value={visitDraft.location} onChange={(event) => setVisitDraft((draft) => ({ ...draft, location: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm font-normal text-gray-900 outline-none focus:border-sky-500" />
+                      </label>
+                      <label className="text-xs font-semibold text-gray-600">
+                        Fecha
+                        <input type="date" min={new Date().toLocaleDateString("en-CA")} value={visitDraft.date} onChange={(event) => setVisitDraft((draft) => ({ ...draft, date: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm font-normal text-gray-900 outline-none focus:border-sky-500" />
+                      </label>
+                      <label className="text-xs font-semibold text-gray-600">
+                        Hora
+                        <input type="time" value={visitDraft.time} onChange={(event) => setVisitDraft((draft) => ({ ...draft, time: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm font-normal text-gray-900 outline-none focus:border-sky-500" />
+                      </label>
+                    </div>
+                    <div className="mt-4">
+                      <Captcha
+                        ref={visitCaptchaRef}
+                        onVerify={setVisitCaptchaToken}
+                        onExpire={() => setVisitCaptchaToken("")}
+                        onError={() => setVisitCaptchaToken("")}
+                      />
+                    </div>
+                    {visitError ? <p role="alert" className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{visitError}</p> : null}
+                    <div className="mt-5 flex justify-end gap-2">
+                      <button type="button" onClick={() => setScheduleVisitTaskId(null)} className="rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700">Cancelar</button>
+                      <button type="button" disabled={visitSaving || !visitCaptchaToken} onClick={() => void saveScheduledVisit()} className="inline-flex items-center gap-2 rounded-lg bg-sky-700 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
+                        {visitSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarPlus className="h-4 w-4" />}
+                        {visitSaving ? "Guardando..." : "Guardar visita"}
+                      </button>
+                    </div>
+                  </motion.div>
                 </motion.div>
               ) : null}
             </AnimatePresence>,
