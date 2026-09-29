@@ -65,3 +65,30 @@ export const crearIntegrante = async (payload: CrearIntegrantePayload): Promise<
   const response = await axiosInstance.post<ApiResponse<User> | User>("/api/usuarios", body);
   return getUserFromResponse(response.data);
 };
+
+export type ActualizarIntegrantePayload = {
+  nombre: string;
+  correo?: string;
+};
+
+export const actualizarIntegrante = async (
+  id: string,
+  payload: ActualizarIntegrantePayload,
+): Promise<User> => {
+  const body: Record<string, string> = {
+    nombre: payload.nombre.trim(),
+  };
+  if (payload.correo?.trim()) {
+    body.correo = payload.correo.trim();
+  }
+  const response = await axiosInstance.put<ApiResponse<User> | User>(`/api/usuarios/${id}`, body);
+  return getUserFromResponse(response.data);
+};
+
+export const eliminarIntegrante = async (id: string): Promise<void> => {
+  try {
+    await axiosInstance.delete(`/api/usuarios/${id}`);
+  } catch {
+    await axiosInstance.put(`/api/auth/deleteUser/${id}`);
+  }
+};
