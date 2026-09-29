@@ -11,7 +11,11 @@ import {
   type CrearIntegrantePayload,
 } from "@/lib/axios/usuariosApi";
 
-export type TeamMember = { id: string; name: string };
+export type TeamMember = {
+  id: string;
+  name: string;
+  email: string;
+};
 
 type EquipoContextValue = {
   teamMembers: TeamMember[];
@@ -26,8 +30,9 @@ type EquipoContextValue = {
 const EquipoContext = createContext<EquipoContextValue | undefined>(undefined);
 
 const toTeamMember = (user: AssignableUser): TeamMember => ({
-  id: user.id ?? user._id ?? user.correo,
-  name: user.nombre,
+  id: String(user._id ?? user.id ?? ""),
+  name: user.nombre || "",
+  email: user.correo || "",
 });
 
 export function EquipoProvider({ children }: { children: ReactNode }) {
@@ -55,13 +60,7 @@ export function EquipoProvider({ children }: { children: ReactNode }) {
 
   const agregarIntegrante = useCallback(async (payload: CrearIntegrantePayload) => {
     const user = await crearIntegrante(payload);
-    const member = toTeamMember({
-      id: user.id,
-      _id: user._id,
-      nombre: user.nombre,
-      correo: user.correo,
-      rol: user.rol,
-    });
+    const member = toTeamMember(user as AssignableUser);
     setTeamMembers((prev) => [...prev, member]);
     return member;
   }, []);
@@ -69,13 +68,7 @@ export function EquipoProvider({ children }: { children: ReactNode }) {
   const actualizarIntegranteEnEquipo = useCallback(
     async (id: string, payload: ActualizarIntegrantePayload) => {
       const user = await actualizarIntegrante(id, payload);
-      const member = toTeamMember({
-        id: user.id,
-        _id: user._id,
-        nombre: user.nombre,
-        correo: user.correo,
-        rol: user.rol,
-      });
+      const member = toTeamMember(user as AssignableUser);
       setTeamMembers((prev) => prev.map((item) => (item.id === id ? member : item)));
       await recargar();
       return member;
