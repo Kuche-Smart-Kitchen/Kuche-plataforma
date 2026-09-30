@@ -11,7 +11,13 @@ const buildUpstreamUrl = (request: NextRequest) => {
     throw new Error("NEXT_PUBLIC_API_URL o BACKEND_API_URL no está configurada");
   }
 
-  const pathname = request.nextUrl.pathname.replace(/^\/api\/proxy/, "") || "/";
+  let pathname = request.nextUrl.pathname.replace(/^\/api\/proxy\/?/, "") || "/";
+  if (!pathname.startsWith("/")) {
+    pathname = `/${pathname}`;
+  }
+  if (!pathname.startsWith("/api/") && pathname !== "/") {
+    pathname = `/api${pathname}`;
+  }
   const upstreamUrl = new URL(pathname + request.nextUrl.search, backendBaseUrl);
   return upstreamUrl;
 };

@@ -27,8 +27,25 @@ const assignableRoles: UserRole[] = [
   "empleado_general",
 ];
 
+/** En browser el baseURL es `/api/proxy`; rutas sin prefijo `/api` evitan `/api/proxy/api/...`. */
+const resolveUsuariosPath = (id?: string) => {
+  const segment = id ? `usuarios/${encodeURIComponent(id)}` : "usuarios";
+  if (typeof window === "undefined") {
+    return `/api/${segment}`;
+  }
+  return segment;
+};
+
+const resolveAuthUserDeletePath = (id: string) => {
+  const segment = `auth/deleteUser/${encodeURIComponent(id)}`;
+  if (typeof window === "undefined") {
+    return `/api/${segment}`;
+  }
+  return segment;
+};
+
 export const fetchAssignableUsers = async (): Promise<AssignableUser[]> => {
-  const response = await axiosInstance.get<UsersResponse>("/api/usuarios");
+  const response = await axiosInstance.get<UsersResponse>(resolveUsuariosPath());
   return getUsersFromResponse(response.data)
     .filter((user) => user.activo !== false && assignableRoles.includes(user.rol))
     .filter((user) => Boolean(user.nombre?.trim()))
@@ -62,7 +79,7 @@ export const crearIntegrante = async (payload: CrearIntegrantePayload): Promise<
     telefono: payload.telefono?.trim() || "N/A",
     ...(payload.password ? { password: payload.password } : {}),
   };
-  const response = await axiosInstance.post<ApiResponse<User> | User>("/api/usuarios", body);
+  const response = await axiosInstance.post<ApiResponse<User> | User>(resolveUsuariosPath(), body);
   return getUserFromResponse(response.data);
 };
 
@@ -81,14 +98,14 @@ export const actualizarIntegrante = async (
   if (payload.correo?.trim()) {
     body.correo = payload.correo.trim();
   }
-  const response = await axiosInstance.put<ApiResponse<User> | User>(`/api/usuarios/${id}`, body);
+  const response = await axiosInstance.put<ApiResponse<User> | User>(resolveUsuariosPath(id), body);
   return getUserFromResponse(response.data);
 };
 
 export const eliminarIntegrante = async (id: string): Promise<void> => {
   try {
-    await axiosInstance.delete(`/api/usuarios/${id}`);
+    await axiosInstance.delete(resolveUsuariosPath(id));
   } catch {
-    await axiosInstance.put(`/api/auth/deleteUser/${id}`);
+    await axiosInstance.put(resolveAuthUserDeletePath(id));
   }
 };

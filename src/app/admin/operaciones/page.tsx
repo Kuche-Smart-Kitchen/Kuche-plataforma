@@ -44,6 +44,7 @@ export default function OperacionesPage() {
   const [teamSaving, setTeamSaving] = useState(false);
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [editingMemberName, setEditingMemberName] = useState("");
+  const [editingMemberEmail, setEditingMemberEmail] = useState("");
   const [kanbanTasks, setKanbanTasks] = useState<KanbanTask[]>([]);
   const [selectedPublicTaskId, setSelectedPublicTaskId] = useState<string | null>(null);
   const [isPublicEditorOpen, setIsPublicEditorOpen] = useState(false);
@@ -190,6 +191,7 @@ export default function OperacionesPage() {
     setNewMemberEmail("");
     setEditingMemberId(null);
     setEditingMemberName("");
+    setEditingMemberEmail("");
     setTeamError("");
     setIsTeamModalOpen(true);
   };
@@ -197,11 +199,13 @@ export default function OperacionesPage() {
   const cancelMemberEdit = () => {
     setEditingMemberId(null);
     setEditingMemberName("");
+    setEditingMemberEmail("");
     setTeamError("");
   };
 
   const handleSaveMemberEdit = async (id: string) => {
     const name = editingMemberName.trim();
+    const email = editingMemberEmail.trim().toLowerCase();
     if (!name) {
       setTeamError("Escribe el nombre del integrante.");
       return;
@@ -213,7 +217,10 @@ export default function OperacionesPage() {
     setTeamSaving(true);
     setTeamError("");
     try {
-      await actualizarIntegrante(id, { nombre: name });
+      await actualizarIntegrante(id, {
+        nombre: name,
+        ...(email ? { correo: email } : {}),
+      });
       cancelMemberEdit();
     } catch (err) {
       setTeamError(err instanceof Error ? err.message : "No se pudo actualizar el integrante.");
@@ -585,23 +592,25 @@ export default function OperacionesPage() {
                     className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/10 bg-white px-3 py-2"
                   >
                     {editingMemberId === m.id ? (
-                      <>
-                        <input
-                          value={editingMemberName}
-                          onChange={(e) => setEditingMemberName(e.target.value)}
-                          className="min-w-0 flex-1 rounded-xl border border-primary/10 px-3 py-1.5 text-sm outline-none"
-                          placeholder="Nombre"
-                          disabled={teamSaving}
-                        />
-                        <div className="flex shrink-0 gap-2">
-                          <button
-                            type="button"
+                      <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-end">
+                        <div className="flex min-w-0 flex-1 flex-col gap-2">
+                          <input
+                            value={editingMemberName}
+                            onChange={(e) => setEditingMemberName(e.target.value)}
+                            className="w-full rounded-xl border border-primary/20 px-3 py-1.5 text-sm outline-none focus:border-primary"
+                            placeholder="Nombre"
                             disabled={teamSaving}
-                            onClick={() => void handleSaveMemberEdit(m.id)}
-                            className="rounded-full bg-primary px-3 py-1 text-[11px] font-semibold text-white disabled:opacity-60"
-                          >
-                            Guardar
-                          </button>
+                          />
+                          <input
+                            type="email"
+                            value={editingMemberEmail}
+                            onChange={(e) => setEditingMemberEmail(e.target.value)}
+                            className="w-full rounded-xl border border-primary/20 px-3 py-1.5 text-sm outline-none focus:border-primary"
+                            placeholder="Correo electrónico"
+                            disabled={teamSaving}
+                          />
+                        </div>
+                        <div className="flex shrink-0 gap-2">
                           <button
                             type="button"
                             disabled={teamSaving}
@@ -610,11 +619,24 @@ export default function OperacionesPage() {
                           >
                             Cancelar
                           </button>
+                          <button
+                            type="button"
+                            disabled={teamSaving}
+                            onClick={() => void handleSaveMemberEdit(m.id)}
+                            className="rounded-full bg-primary px-3 py-1 text-[11px] font-semibold text-white hover:bg-primary/90 disabled:opacity-60"
+                          >
+                            Guardar
+                          </button>
                         </div>
-                      </>
+                      </div>
                     ) : (
                       <>
-                        <span className="text-sm font-medium text-gray-900">{m.name}</span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-gray-900">{m.name}</p>
+                          {m.email ? (
+                            <p className="truncate text-xs text-secondary">{m.email}</p>
+                          ) : null}
+                        </div>
                         <div className="flex shrink-0 gap-2">
                           <button
                             type="button"
@@ -622,6 +644,7 @@ export default function OperacionesPage() {
                             onClick={() => {
                               setEditingMemberId(m.id);
                               setEditingMemberName(m.name);
+                              setEditingMemberEmail(m.email || "");
                               setTeamError("");
                             }}
                             className="inline-flex items-center gap-1 rounded-full border border-primary/10 px-3 py-1 text-[11px] font-semibold text-secondary hover:bg-primary/5"
