@@ -412,6 +412,8 @@ export default function CotizadorPage() {
   ]);
   const [clientOptions, setClientOptions] = useState<ClientDataOption[]>([]);
   const [activeTask, setActiveTask] = useState<KanbanTask | null>(null);
+  const [urlTaskId, setUrlTaskId] = useState("");
+  const hasLinkedTask = Boolean(activeTask?.id || urlTaskId);
   const [catalogoKuche, setCatalogoKuche] = useState(initialCatalogoKuche);
   const [client, setClient] = useState("");
   const [clientPhone, setClientPhone] = useState("");
@@ -670,7 +672,8 @@ export default function CotizadorPage() {
     setClients(initialClientsList);
     setClientOptions(extracted);
 
-    const taskId = new URLSearchParams(window.location.search).get("taskId");
+    const taskId = new URLSearchParams(window.location.search).get("taskId")?.trim() ?? "";
+    setUrlTaskId(taskId);
     if (!taskId) return;
 
     const task = tasks.find((candidate) => candidate.id === taskId);
@@ -709,10 +712,6 @@ export default function CotizadorPage() {
       if (matched.deliveryWeeksMax && !deliveryWeeksMax) setDeliveryWeeksMax(matched.deliveryWeeksMax);
       if (matched.phone && !clientPhone) setClientPhone(matched.phone);
       if (matched.email && !clientEmail) setClientEmail(matched.email);
-      if (matched.taskId) {
-        const foundTask = getTasksFromLocalStorage().find((t) => t.id === matched.taskId);
-        if (foundTask) setActiveTask(foundTask);
-      }
     }
   };
 
@@ -1044,7 +1043,7 @@ export default function CotizadorPage() {
   };
 
   const handleFinishCotizacion = async () => {
-    if (isFinishingCotizacion) return;
+    if (isFinishingCotizacion || !hasLinkedTask) return;
     setIsFinishingCotizacion(true);
     setFinishCotizacionError(null);
 
@@ -1067,19 +1066,14 @@ export default function CotizadorPage() {
       };
 
       const currentTasks = getTasksFromLocalStorage();
-      const targetTaskId = activeTask?.id || new URLSearchParams(window.location.search).get("taskId");
-
-      let targetTask = targetTaskId
+      const targetTaskId = activeTask?.id || urlTaskId;
+      const targetTask = targetTaskId
         ? currentTasks.find((t) => t.id === targetTaskId) || activeTask
-        : activeTask;
+        : null;
 
-      if (!targetTask && client.trim()) {
-        targetTask =
-          currentTasks.find(
-            (t) =>
-              t.project?.trim().toLowerCase() === client.trim().toLowerCase() ||
-              t.title?.trim().toLowerCase() === client.trim().toLowerCase(),
-          ) ?? null;
+      if (!targetTask) {
+        setFinishCotizacionError("No se encontró la tarjeta de trabajo vinculada.");
+        return;
       }
 
       const patch: Partial<KanbanTask> = {
@@ -1094,47 +1088,25 @@ export default function CotizadorPage() {
         location: location.trim() || targetTask?.location || "",
       };
 
-      if (targetTask) {
-        const updatedTask: KanbanTask = {
-          ...targetTask,
-          ...patch,
-          cotizacionesFormales: [
-            ...(targetTask.cotizacionesFormales?.filter(
-              (c) => c.projectType !== formalData.projectType,
-            ) ?? []),
-            formalData,
-          ],
-        };
+      const updatedTask: KanbanTask = {
+        ...targetTask,
+        ...patch,
+        cotizacionesFormales: [
+          ...(targetTask.cotizacionesFormales?.filter(
+            (c) => c.projectType !== formalData.projectType,
+          ) ?? []),
+          formalData,
+        ],
+      };
 
-        const nextTasks = currentTasks.map((t) => (t.id === targetTask!.id ? updatedTask : t));
-        saveKanbanTasksToLocalStorage(nextTasks);
-        notifyKanbanTasksUpdated(nextTasks);
+      const nextTasks = currentTasks.map((t) => (t.id === targetTask.id ? updatedTask : t));
+      saveKanbanTasksToLocalStorage(nextTasks);
+      notifyKanbanTasksUpdated(nextTasks);
 
-        await Promise.allSettled([
-          syncTaskStageWithBackend(targetTask, "contrato"),
-          syncTaskPatchWithBackend(targetTask, patch),
-        ]);
-      } else {
-        const newTask: KanbanTask = {
-          id: `task-${Date.now()}`,
-          title: client.trim() || "Proyecto sin nombre",
-          project: client.trim() || "Proyecto sin nombre",
-          stage: "contrato",
-          status: "pendiente",
-          followUpStatus: "pendiente",
-          followUpEnteredAt: Date.now(),
-          assignedTo: [],
-          citaStarted: true,
-          citaFinished: true,
-          location: location.trim() || undefined,
-          cotizacionFormalData: formalData,
-          cotizacionesFormales: [formalData],
-          createdAt: Date.now(),
-        };
-        const nextTasks = [...currentTasks, newTask];
-        saveKanbanTasksToLocalStorage(nextTasks);
-        notifyKanbanTasksUpdated(nextTasks);
-      }
+      await Promise.allSettled([
+        syncTaskStageWithBackend(targetTask, "contrato"),
+        syncTaskPatchWithBackend(targetTask, patch),
+      ]);
 
       const currentUser = authApi.getUserFromStorage();
       const redirectTarget = currentUser?.rol === "admin" ? "/admin/operaciones" : "/dashboard/empleado";
@@ -2772,33 +2744,34 @@ export default function CotizadorPage() {
           </p>
         ) : null}
 
-        {/* Sección final: Terminar cotización y pasar de etapa */}
-        <div className="mt-8 rounded-3xl border border-emerald-200 bg-emerald-50/80 p-6 shadow-md backdrop-blur-md">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-800">
-                Finalizar cotización
-              </p>
-              <h3 className="mt-1 text-lg font-semibold text-emerald-950">
-                Completar y pasar a seguimiento
-              </h3>
-              <p className="mt-1 text-sm text-emerald-800">
-                Guarda los datos técnicos y económicos de la cotización formal, actualiza el estatus del proyecto y regresa al tablero de trabajo.
-              </p>
-              {finishCotizacionError ? (
-                <p className="mt-2 text-sm font-semibold text-rose-600">{finishCotizacionError}</p>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              onClick={() => void handleFinishCotizacion()}
-              disabled={isFinishingCotizacion}
-              className="shrink-0 rounded-2xl bg-emerald-700 px-6 py-3.5 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-800 focus-visible:outline focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-wait disabled:opacity-60"
-            >
-              {isFinishingCotizacion ? "Terminando cotización..." : "Terminar cotización"}
-            </button>
+        {hasLinkedTask ? (
+          <div className="mt-8 rounded-3xl border border-emerald-200 bg-emerald-50/80 p-6 shadow-md backdrop-blur-md">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-800">
+                    Finalizar cotización
+                  </p>
+                  <h3 className="mt-1 text-lg font-semibold text-emerald-950">
+                    Completar y pasar a seguimiento
+                  </h3>
+                  <p className="mt-1 text-sm text-emerald-800">
+                    Guarda los datos técnicos y económicos de la cotización formal, actualiza el estatus del proyecto y regresa al tablero de trabajo.
+                  </p>
+                  {finishCotizacionError ? (
+                    <p className="mt-2 text-sm font-semibold text-rose-600">{finishCotizacionError}</p>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleFinishCotizacion()}
+                  disabled={isFinishingCotizacion}
+                  className="shrink-0 rounded-2xl bg-emerald-700 px-6 py-3.5 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-800 focus-visible:outline focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {isFinishingCotizacion ? "Terminando cotización..." : "Terminar cotización"}
+                </button>
+              </div>
           </div>
-        </div>
+        ) : null}
       </section>
 
       <div
