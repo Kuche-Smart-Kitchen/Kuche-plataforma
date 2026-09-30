@@ -362,6 +362,8 @@ export type KanbanTableroProps = {
   teamMembers?: { id: string; name: string }[];
   /** Si false, no se muestra el botón Eliminar tarea (ej. vista empleado). Por defecto true. */
   allowDeleteTask?: boolean;
+  /** Habilita la aprobación administrativa de diseños en el tablero de Operaciones. */
+  allowDesignApproval?: boolean;
   /** Llamado después de descartar un cliente en Seguimiento (ej. admin redirige a clientes-descartados). */
   onAfterDiscard?: () => void;
 };
@@ -373,6 +375,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     refreshTrigger = 0,
     teamMembers,
     allowDeleteTask = true,
+    allowDesignApproval = false,
     onAfterDiscard,
   } = props;
   const { actualizar: actualizarTareaEnBackend, asignarTrabajadores } = useTareasContext();
@@ -411,6 +414,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const [visitCaptchaToken, setVisitCaptchaToken] = useState("");
   const [visitSaving, setVisitSaving] = useState(false);
   const [visitError, setVisitError] = useState<string | null>(null);
+  const [approvingDesignTaskId, setApprovingDesignTaskId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const activeTaskRef = useRef<HTMLElement | null>(null);
   const panelScrollRef = useRef<HTMLElement | null>(null);
@@ -883,14 +887,25 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
   const approveDesignAsAdmin = async (taskId: string) => {
     const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
-    updateTask(taskId, (task) => ({ ...task, designApprovedByAdmin: true }));
+    if (
+      !taskSnapshot ||
+      taskSnapshot.stage !== "disenos" ||
+      !taskSnapshot.files?.length ||
+      taskSnapshot.designFeedback
+    ) return;
 
-    if (taskSnapshot) {
+    setApprovingDesignTaskId(taskId);
+    try {
       const ok = await syncTaskPatchWithBackend(taskSnapshot, { designApprovedByAdmin: true });
       if (!ok) {
         setBackendSyncMessage("No se pudo persistir la aprobación de diseño en backend.");
         window.setTimeout(() => setBackendSyncMessage(null), 4500);
+        return;
       }
+      updateTask(taskId, (task) => ({ ...task, designApprovedByAdmin: true }));
+      showUploadToast("success", "Diseño aprobado. Ya puedes agendar la visita.");
+    } finally {
+      setApprovingDesignTaskId(null);
     }
   };
 
@@ -1485,6 +1500,24 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                                   Subir archivo
                                 </button>
                               ) : null}
+                              {allowDesignApproval &&
+                              task.stage === "disenos" &&
+                              Boolean(task.files?.length) &&
+                              !task.designApprovedByAdmin &&
+                              !task.designFeedback ? (
+                                <button
+                                  type="button"
+                                  disabled={approvingDesignTaskId === task.id}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void approveDesignAsAdmin(task.id);
+                                  }}
+                                  className="inline-flex min-h-[32px] w-auto items-center gap-1 rounded-full bg-emerald-700 px-2.5 py-1 text-[11px] font-semibold leading-tight text-white disabled:cursor-wait disabled:opacity-60"
+                                >
+                                  <CheckCircle2 className="h-3 w-3 shrink-0" />
+                                  {approvingDesignTaskId === task.id ? "Aprobando..." : "Aprobar diseño"}
+                                </button>
+                              ) : null}
                               {task.stage === "disenos" && task.designApprovedByAdmin && !task.designApprovedByClient ? (
                                 <button
                                   type="button"
@@ -2017,7 +2050,27 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                           Subir archivo
                         </button>
                       ) : !activeTask.designApprovedByAdmin ? (
-                        <span className="text-sm text-amber-600 font-medium">Esperando aprobación del admin</span>
+                        activeTask.designFeedback ? (
+                          <button
+                            type="button"
+                            onClick={() => setUploadTaskId(activeTask.id)}
+                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white"
+                          >
+                            Actualizar diseño
+                          </button>
+                        ) : allowDesignApproval ? (
+                          <button
+                            type="button"
+                            disabled={approvingDesignTaskId === activeTask.id}
+                            onClick={() => void approveDesignAsAdmin(activeTask.id)}
+                            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full bg-emerald-700 px-3 py-1.5 text-xs font-semibold leading-tight text-white disabled:cursor-wait disabled:opacity-60"
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                            {approvingDesignTaskId === activeTask.id ? "Aprobando..." : "Aprobar diseño"}
+                          </button>
+                        ) : (
+                          <span className="text-sm text-amber-600 font-medium">Esperando aprobación del admin</span>
+                        )
                       ) : !activeTask.designApprovedByClient ? (
                         <>
                           <button

@@ -84,6 +84,8 @@ Plaintext
                      └─ (Dispara actualización de UI y avanza la tarjeta de estatus)
 
 5. Contrato backend pendiente
-La ruta `PATCH /api/visitas/:id/status` y los campos `tareaId` / `operationalStatus` deben existir
-en backend para que el ciclo operativo persista entre sesiones. La aprobación de la tarjeta reutiliza
-la actualización existente `PATCH /api/tareas/:id`.
+El detalle de rutas, métodos, payloads, permisos, transiciones, respuestas y casos de aceptación está en
+[`CONTRATO_BACKEND_OPERACIONES_AGENDA.md`](CONTRATO_BACKEND_OPERACIONES_AGENDA.md). La ruta nueva
+`PATCH /api/visitas/:id/status` y los campos `tareaId` / `operationalStatus` deben existir en backend
+para que el ciclo operativo persista entre sesiones. La aprobación de la tarjeta reutiliza la
+actualización existente `PATCH /api/tareas/:id`.

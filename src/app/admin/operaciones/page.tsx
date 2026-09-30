@@ -295,6 +295,7 @@ export default function OperacionesPage() {
           refreshTrigger={refreshTrigger}
           teamMembers={teamMembers}
           allowDeleteTask={true}
+          allowDesignApproval={true}
         />
       </motion.section>
 
