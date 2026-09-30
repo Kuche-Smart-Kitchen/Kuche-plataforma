@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Loader2, Minus, MoreVertical, Plus, Star } from "lucide-react";
+import { CheckCircle2, Loader2, Minus, MoreVertical, Plus, Star } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
@@ -420,6 +420,7 @@ export default function CotizadorPage() {
   const [clientEmail, setClientEmail] = useState("");
   const [isFinishingCotizacion, setIsFinishingCotizacion] = useState(false);
   const [finishCotizacionError, setFinishCotizacionError] = useState<string | null>(null);
+  const [finishCotizacionMessage, setFinishCotizacionMessage] = useState<string | null>(null);
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
   const [newClientName, setNewClientName] = useState("");
   const [newClientPhone, setNewClientPhone] = useState("");
@@ -1042,71 +1043,100 @@ export default function CotizadorPage() {
     setIsClientModalOpen(false);
   };
 
-  const handleFinishCotizacion = async () => {
-    if (isFinishingCotizacion || !hasLinkedTask) return;
-    setIsFinishingCotizacion(true);
-    setFinishCotizacionError(null);
+  const buildCotizacionFormalDataFromForm = (): CotizacionFormalData => ({
+    client: client.trim() || "Cliente sin nombre",
+    projectType: projectType || "—",
+    location: location.trim() || "Ubicación sin definir",
+    date: formatDeliveryWeeksLabel(deliveryWeeksMin, deliveryWeeksMax) || "Por definir",
+    rangeLabel: formatCurrency(totalNeto),
+    cubierta: effectiveMaterialBaseId || "—",
+    frente: effectiveColorId || "—",
+    herraje: "—",
+    largo: largo.trim() || undefined,
+    alto: alto.trim() || undefined,
+    costoBase: totales.costoBaseDirecto,
+    subtotal: totales.subtotalComercial,
+    iva: totales.montoIva,
+    total: totales.totalNeto,
+  });
 
-    try {
-      const formalData: CotizacionFormalData = {
-        client: client.trim() || "Cliente sin nombre",
-        projectType: projectType || "—",
-        location: location.trim() || "Ubicación sin definir",
-        date: formatDeliveryWeeksLabel(deliveryWeeksMin, deliveryWeeksMax) || "Por definir",
-        rangeLabel: formatCurrency(totalNeto),
-        cubierta: effectiveMaterialBaseId || "—",
-        frente: effectiveColorId || "—",
-        herraje: "—",
-        largo: largo.trim() || undefined,
-        alto: alto.trim() || undefined,
-        costoBase: totales.costoBaseDirecto,
-        subtotal: totales.subtotalComercial,
-        iva: totales.montoIva,
-        total: totales.totalNeto,
-      };
+  const resolveLinkedTargetTask = (): KanbanTask | null => {
+    if (!hasLinkedTask) return null;
+    const targetTaskId = activeTask?.id || urlTaskId;
+    if (!targetTaskId) return null;
+    const currentTasks = getTasksFromLocalStorage();
+    return (
+      currentTasks.find((t) => t.id === targetTaskId) ??
+      (activeTask?.id === targetTaskId ? activeTask : null)
+    );
+  };
 
-      const currentTasks = getTasksFromLocalStorage();
-      const targetTaskId = activeTask?.id || urlTaskId;
-      const targetTask = targetTaskId
-        ? currentTasks.find((t) => t.id === targetTaskId) || activeTask
-        : null;
+  const persistFormalSpaceToLinkedTask = async (options: {
+    advanceToContrato: boolean;
+  }): Promise<KanbanTask | null> => {
+    const targetTask = resolveLinkedTargetTask();
+    if (!targetTask) {
+      setFinishCotizacionError("No se encontró la tarjeta de trabajo vinculada.");
+      return null;
+    }
 
-      if (!targetTask) {
-        setFinishCotizacionError("No se encontró la tarjeta de trabajo vinculada.");
-        return;
-      }
+    const formalData = buildCotizacionFormalDataFromForm();
+    const cotizacionesFormales = [...(targetTask.cotizacionesFormales ?? []), formalData];
 
-      const patch: Partial<KanbanTask> = {
-        stage: "contrato",
-        status: "pendiente",
-        followUpStatus: "pendiente",
-        followUpEnteredAt: Date.now(),
-        citaStarted: true,
-        citaFinished: true,
-        cotizacionFormalData: formalData,
-        project: client.trim() || targetTask?.project || "Nuevo Proyecto",
-        location: location.trim() || targetTask?.location || "",
-      };
+    const patch: Partial<KanbanTask> = {
+      citaStarted: true,
+      citaFinished: true,
+      cotizacionFormalData: formalData,
+      cotizacionesFormales,
+      project: client.trim() || targetTask.project || "Nuevo Proyecto",
+      location: location.trim() || targetTask.location || "",
+    };
 
-      const updatedTask: KanbanTask = {
-        ...targetTask,
-        ...patch,
-        cotizacionesFormales: [
-          ...(targetTask.cotizacionesFormales?.filter(
-            (c) => c.projectType !== formalData.projectType,
-          ) ?? []),
-          formalData,
-        ],
-      };
+    if (options.advanceToContrato) {
+      patch.stage = "contrato";
+      patch.status = "pendiente";
+      patch.followUpStatus = "pendiente";
+      patch.followUpEnteredAt = Date.now();
+    }
 
-      const nextTasks = currentTasks.map((t) => (t.id === targetTask.id ? updatedTask : t));
-      saveKanbanTasksToLocalStorage(nextTasks);
-      notifyKanbanTasksUpdated(nextTasks);
+    const updatedTask: KanbanTask = { ...targetTask, ...patch };
+    const currentTasks = getTasksFromLocalStorage();
+    const nextTasks = currentTasks.map((t) => (t.id === targetTask.id ? updatedTask : t));
+    saveKanbanTasksToLocalStorage(nextTasks);
+    notifyKanbanTasksUpdated(nextTasks);
+    setActiveTask(updatedTask);
 
+    if (options.advanceToContrato) {
       await Promise.allSettled([
         syncTaskStageWithBackend(targetTask, "contrato"),
         syncTaskPatchWithBackend(targetTask, patch),
       ]);
+    } else {
+      await Promise.allSettled([syncTaskPatchWithBackend(targetTask, patch)]);
+    }
+
+    return updatedTask;
+  };
+
+  const resetCotizadorForNextSpace = () => {
+    setProjectType(CATALOG_PROJECT_TYPES[0]);
+    setLargo("");
+    setAlto("");
+    setQuantities({});
+    setPdfHighlightedItems({});
+    setMaterialBaseItemId(getDefaultMaterialBaseItemId());
+    setColorItemId(getDefaultColorItemId());
+  };
+
+  const handleFinishCotizacion = async () => {
+    if (isFinishingCotizacion || !hasLinkedTask) return;
+    setIsFinishingCotizacion(true);
+    setFinishCotizacionError(null);
+    setFinishCotizacionMessage(null);
+
+    try {
+      const saved = await persistFormalSpaceToLinkedTask({ advanceToContrato: true });
+      if (!saved) return;
 
       const currentUser = authApi.getUserFromStorage();
       const redirectTarget = currentUser?.rol === "admin" ? "/admin/operaciones" : "/dashboard/empleado";
@@ -1114,6 +1144,29 @@ export default function CotizadorPage() {
     } catch (error) {
       setFinishCotizacionError(
         error instanceof Error ? error.message : "No se pudo terminar la cotización",
+      );
+    } finally {
+      setIsFinishingCotizacion(false);
+    }
+  };
+
+  const handleFinishCotizacionAndContinue = async () => {
+    if (isFinishingCotizacion || !hasLinkedTask) return;
+    setIsFinishingCotizacion(true);
+    setFinishCotizacionError(null);
+    setFinishCotizacionMessage(null);
+
+    try {
+      const saved = await persistFormalSpaceToLinkedTask({ advanceToContrato: false });
+      if (!saved) return;
+
+      resetCotizadorForNextSpace();
+      setFinishCotizacionMessage(
+        "Espacio guardado en la tarjeta. Puedes cotizar el siguiente espacio del mismo cliente.",
+      );
+    } catch (error) {
+      setFinishCotizacionError(
+        error instanceof Error ? error.message : "No se pudo guardar la cotización",
       );
     } finally {
       setIsFinishingCotizacion(false);
@@ -1735,7 +1788,7 @@ export default function CotizadorPage() {
   };
 
   return (
-    <div className="space-y-8 pb-24">
+    <div className={`space-y-8 ${hasLinkedTask ? "pb-32 sm:pb-28" : "pb-24"}`}>
       <DashboardBackButton href="/admin" />
       <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-md">
         <p className="text-xs uppercase tracking-[0.3em] text-secondary">COTIZADOR PRO</p>
@@ -2744,38 +2797,60 @@ export default function CotizadorPage() {
           </p>
         ) : null}
 
-        {hasLinkedTask ? (
-          <div className="mt-8 rounded-3xl border border-emerald-200 bg-emerald-50/80 p-6 shadow-md backdrop-blur-md">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-800">
-                    Finalizar cotización
-                  </p>
-                  <h3 className="mt-1 text-lg font-semibold text-emerald-950">
-                    Completar y pasar a seguimiento
-                  </h3>
-                  <p className="mt-1 text-sm text-emerald-800">
-                    Guarda los datos técnicos y económicos de la cotización formal, actualiza el estatus del proyecto y regresa al tablero de trabajo.
-                  </p>
-                  {finishCotizacionError ? (
-                    <p className="mt-2 text-sm font-semibold text-rose-600">{finishCotizacionError}</p>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void handleFinishCotizacion()}
-                  disabled={isFinishingCotizacion}
-                  className="shrink-0 rounded-2xl bg-emerald-700 px-6 py-3.5 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-800 focus-visible:outline focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-wait disabled:opacity-60"
-                >
-                  {isFinishingCotizacion ? "Terminando cotización..." : "Terminar cotización"}
-                </button>
-              </div>
-          </div>
-        ) : null}
       </section>
 
+      {hasLinkedTask ? (
+        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-emerald-200/90 bg-white/95 px-4 py-3 shadow-[0_-6px_24px_rgba(0,0,0,0.07)] backdrop-blur-md">
+          <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="max-w-xl text-xs text-secondary">
+              Guarda cada espacio en la tarjeta del cliente. Con{" "}
+              <span className="font-semibold text-emerald-800">Terminar y continuar</span> el formulario se
+              reinicia para otro espacio (baño, clóset, etc.). Con{" "}
+              <span className="font-semibold text-emerald-800">Terminar</span> cierras la cotización formal y pasas a
+              seguimiento.
+            </p>
+            <div className="flex shrink-0 flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                disabled={isFinishingCotizacion}
+                onClick={() => void handleFinishCotizacion()}
+                className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-60"
+              >
+                {isFinishingCotizacion ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Guardando...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-4 w-4" />
+                    Terminar
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                disabled={isFinishingCotizacion}
+                onClick={() => void handleFinishCotizacionAndContinue()}
+                className="flex items-center justify-center gap-2 rounded-2xl border-2 border-emerald-600 bg-white px-5 py-2.5 text-sm font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-50 disabled:cursor-wait disabled:opacity-60"
+              >
+                Terminar y continuar
+              </button>
+            </div>
+          </div>
+          {finishCotizacionError ? (
+            <p className="mx-auto mt-2 max-w-6xl text-sm text-rose-600">{finishCotizacionError}</p>
+          ) : null}
+          {finishCotizacionMessage ? (
+            <p className="mx-auto mt-2 max-w-6xl text-sm font-medium text-emerald-700">{finishCotizacionMessage}</p>
+          ) : null}
+        </div>
+      ) : null}
+
       <div
-        className="fixed bottom-6 right-6 z-40 w-[260px] rounded-3xl border border-white/70 bg-white/90 p-4 shadow-2xl backdrop-blur-md"
+        className={`fixed right-6 z-40 w-[260px] rounded-3xl border border-white/70 bg-white/90 p-4 shadow-2xl backdrop-blur-md ${
+          hasLinkedTask ? "bottom-28" : "bottom-6"
+        }`}
       >
         <p className="text-xs uppercase tracking-[0.25em] text-secondary">Total Neto</p>
         <p className="mt-2 text-2xl font-semibold text-accent">{formatCurrency(totalNeto)}</p>
