@@ -25,6 +25,7 @@ import {
   kanbanStorageKey,
   citaReturnUrlStorageKey,
   getPreliminarList,
+  getTasksFromLocalStorage,
   saveKanbanTasksToLocalStorage,
   seguimientoProjectStoragePrefix,
   type KanbanTask,
@@ -36,6 +37,7 @@ import {
   isCocinasProjectTypeForConIsla,
   normalizeLegacyProjectTypeToCatalog,
 } from "@/lib/catalog-project-types";
+import { getSectionAInitialValues } from "./logica_Levantamiento_y_cotizacion/sectionA";
 import {
   APPLIANCE_CATEGORIAS,
   APPLIANCE_ITEMS,
@@ -545,6 +547,7 @@ export default function CotizadorPreliminarPage() {
   const router = useRouter();
   const [activeCitaTaskId, setActiveCitaTaskId] = useState<string | null>(null);
   const [activeCitaTask, setActiveCitaTask] = useState<KanbanTask | null>(null);
+  const hasActiveCitaSession = Boolean(activeCitaTaskId);
   const [clientName, setClientName] = useState("");
   const [projectType, setProjectType] = useState<string>(CATALOG_PROJECT_TYPES[0]);
   const [location, setLocation] = useState("");
@@ -964,27 +967,45 @@ export default function CotizadorPreliminarPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const taskId = window.localStorage.getItem(activeCitaTaskStorageKey);
-    if (taskId) {
-      setActiveCitaTaskId(taskId);
-      const stored = window.localStorage.getItem(kanbanStorageKey);
-      if (stored) {
-        try {
-          const tasks = JSON.parse(stored) as KanbanTask[];
-          const task = tasks.find((t) => t.id === taskId);
-          if (task) {
-            setActiveCitaTask(task);
-            if (task.project) setClientName(task.project);
-            const lastPre = getPreliminarList(task).at(-1);
-            if (lastPre?.projectType?.trim()) {
-              setProjectType(normalizeLegacyProjectTypeToCatalog(lastPre.projectType));
-            }
-          }
-        } catch {
-          // ignore
-        }
-      }
+
+    const urlTaskId =
+      new URLSearchParams(window.location.search).get("taskId")?.trim() ?? "";
+    const storedTaskId = window.localStorage.getItem(activeCitaTaskStorageKey)?.trim() ?? "";
+    const taskId = urlTaskId || storedTaskId;
+    if (!taskId) return;
+
+    if (urlTaskId) {
+      window.localStorage.setItem(activeCitaTaskStorageKey, urlTaskId);
     }
+
+    setActiveCitaTaskId(taskId);
+
+    const findTaskById = (id: string): KanbanTask | undefined => {
+      const fromRuntime = getTasksFromLocalStorage().find((t) => t.id === id);
+      if (fromRuntime) return fromRuntime;
+
+      const stored = window.localStorage.getItem(kanbanStorageKey);
+      if (!stored) return undefined;
+      try {
+        const tasks = JSON.parse(stored) as KanbanTask[];
+        return tasks.find((t) => t.id === id);
+      } catch {
+        return undefined;
+      }
+    };
+
+    const task = findTaskById(taskId);
+    if (!task) return;
+
+    setActiveCitaTask(task);
+    const initial = getSectionAInitialValues(task);
+    if (initial.clientName) setClientName(initial.clientName);
+    if (initial.location) setLocation(initial.location);
+    if (initial.projectType) setProjectType(initial.projectType);
+    if (initial.largo) setLargo(initial.largo);
+    if (initial.alto) setAlto(initial.alto);
+    if (initial.deliveryWeeksMin) setDeliveryWeeksMin(initial.deliveryWeeksMin);
+    if (initial.deliveryWeeksMax) setDeliveryWeeksMax(initial.deliveryWeeksMax);
   }, []);
 
   const validatePreliminarSections = (): string | null => {
@@ -1528,7 +1549,7 @@ export default function CotizadorPreliminarPage() {
 
   return (
     <main
-      className={`min-h-screen bg-background px-4 py-10 text-primary ${activeCitaTask ? "pb-36 sm:pb-32" : "pb-10"}`}
+      className={`min-h-screen bg-background px-4 py-10 text-primary ${hasActiveCitaSession ? "pb-36 sm:pb-32" : "pb-10"}`}
     >
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
         <DashboardBackButton href="/admin" preferCitaReturnUrl />
@@ -1540,7 +1561,7 @@ export default function CotizadorPreliminarPage() {
           </p>
         </header>
 
-        {activeCitaTask ? (
+        {hasActiveCitaSession ? (
           <div className="rounded-2xl border-2 border-emerald-300 bg-emerald-50 p-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100">
@@ -1548,7 +1569,7 @@ export default function CotizadorPreliminarPage() {
               </div>
               <div>
                 <p className="text-sm font-semibold text-emerald-800">
-                  Cita activa: {activeCitaTask.project}
+                  Cita activa: {activeCitaTask?.project ?? activeCitaTask?.title ?? "Cliente"}
                 </p>
                 <p className="text-xs text-emerald-600">
                   Completa el formulario; al pie tienes <strong>Terminar</strong> y{" "}
@@ -3720,7 +3741,7 @@ export default function CotizadorPreliminarPage() {
           </div>
         </SectionCard>
       </div>
-      {activeCitaTask ? (
+      {hasActiveCitaSession ? (
         <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-emerald-200/90 bg-white/95 px-4 py-3 shadow-[0_-6px_24px_rgba(0,0,0,0.07)] backdrop-blur-md">
           <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="max-w-xl text-xs text-secondary">
@@ -3754,7 +3775,7 @@ export default function CotizadorPreliminarPage() {
       ) : null}
       <div
         className={`fixed right-6 z-40 w-[min(260px,calc(100vw-2rem))] rounded-3xl border border-white/70 bg-white/90 p-4 shadow-2xl backdrop-blur-md ${
-          activeCitaTask ? "bottom-28" : "top-24"
+          hasActiveCitaSession ? "bottom-28" : "top-24"
         }`}
       >
         <p className="text-xs uppercase tracking-[0.25em] text-secondary">Rango estimado</p>
