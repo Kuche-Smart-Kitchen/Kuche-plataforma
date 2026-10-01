@@ -50,9 +50,37 @@ import {
 } from "@/lib/kanban";
 import { dueDateToSortTimestamp, formatDueDateTimeDisplay } from "@/lib/kanban-due-datetime";
 import { subirArchivoCliente } from "@/lib/axios/archivosClienteApi";
-import { agendarVisita } from "@/lib/axios/visitasApi";
+import { obtenerDisponibilidadDia } from "@/lib/axios/citasApi";
+import { agendarVisita, obtenerDisponibilidadVisita } from "@/lib/axios/visitasApi";
 
 const currentUser = "Valeria";
+const VISIT_TIME_SLOTS = Array.from({ length: 9 }, (_, index) => `${String(index + 9).padStart(2, "0")}:00`);
+
+const getTimeInMinutes = (value: string) => {
+  const [hours, minutes] = value.slice(0, 5).split(":").map(Number);
+  return Number.isInteger(hours) && Number.isInteger(minutes) ? hours * 60 + minutes : null;
+};
+
+const getVisitRequestErrorMessage = (error: unknown) => {
+  if (error && typeof error === "object") {
+    const requestError = error as {
+      message?: unknown;
+      response?: { status?: number; data?: unknown };
+    };
+    const responseData = requestError.response?.data;
+    if (typeof responseData === "string" && responseData.trim()) return responseData;
+    if (responseData && typeof responseData === "object") {
+      const body = responseData as Record<string, unknown>;
+      if (typeof body.message === "string" && body.message.trim()) return body.message;
+      if (typeof body.error === "string" && body.error.trim()) return body.error;
+    }
+    if (requestError.response?.status === 409) {
+      return "Conflicto del backend (409): revisa si el horario está ocupado o si ya existe una visita para esta tarjeta.";
+    }
+    if (typeof requestError.message === "string" && requestError.message.trim()) return requestError.message;
+  }
+  return "No se pudo registrar la visita.";
+};
 
 const statusStyles: Record<TaskStatus, string> = {
   pendiente: "bg-rose-50 text-rose-600",
@@ -804,6 +832,26 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     setVisitSaving(true);
     setVisitError(null);
     try {
+      const [visitsAvailability, appointmentsAvailability] = await Promise.all([
+        obtenerDisponibilidadVisita(visitDraft.date),
+        obtenerDisponibilidadDia(visitDraft.date),
+      ]);
+      if (!visitsAvailability.success || !appointmentsAvailability.success) {
+        throw new Error("No se pudo confirmar la disponibilidad. Intenta de nuevo en unos segundos.");
+      }
+      const requestedMinutes = getTimeInMinutes(visitDraft.time);
+      const occupiedTimes = [
+        ...(visitsAvailability.horariosOcupados ?? []),
+        ...(appointmentsAvailability.horariosOcupados ?? []),
+      ];
+      const isOccupied = requestedMinutes !== null && occupiedTimes.some((time) => {
+        const occupiedMinutes = getTimeInMinutes(time);
+        return occupiedMinutes !== null && Math.abs(occupiedMinutes - requestedMinutes) <= 60;
+      });
+      if (isOccupied) {
+        throw new Error("Ese horario ya está ocupado por una cita o visita. Elige otra hora.");
+      }
+
       const response = await agendarVisita(
         {
           fechaProgramada: new Date(`${visitDraft.date}T${visitDraft.time}:00`).toISOString(),
@@ -823,7 +871,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     } catch (error) {
       setVisitCaptchaToken("");
       visitCaptchaRef.current?.reset();
-      setVisitError(error instanceof Error ? error.message : "No se pudo registrar la visita.");
+      setVisitError(getVisitRequestErrorMessage(error));
     } finally {
       setVisitSaving(false);
     }
@@ -2686,7 +2734,9 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                       </label>
                       <label className="text-xs font-semibold text-gray-600">
                         Hora
-                        <input type="time" value={visitDraft.time} onChange={(event) => setVisitDraft((draft) => ({ ...draft, time: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm font-normal text-gray-900 outline-none focus:border-sky-500" />
+                        <select value={visitDraft.time} onChange={(event) => setVisitDraft((draft) => ({ ...draft, time: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm font-normal text-gray-900 outline-none focus:border-sky-500">
+                          {VISIT_TIME_SLOTS.map((time) => <option key={time} value={time}>{time}</option>)}
+                        </select>
                       </label>
                     </div>
                     <div className="mt-4">

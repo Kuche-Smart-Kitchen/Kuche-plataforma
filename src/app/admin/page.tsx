@@ -434,7 +434,7 @@ export default function AdminPage() {
     {
       title: "Proyectos inactivos",
       value: isHydrated ? discardedClients.toString() : "—",
-      href: "/admin/proyectos-inactivos",
+      href: "/admin/clientes-descartados",
       icon: XCircle,
       accent: "from-slate-700 to-slate-500",
       tone: "bg-slate-100 text-slate-700",

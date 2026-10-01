@@ -33,6 +33,9 @@ const toStringValue = (value: unknown): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
+const toPhoneValue = (value: unknown): string | undefined =>
+  typeof value === "number" && Number.isFinite(value) ? String(value) : toStringValue(value);
+
 const toFeedbackString = (value: unknown): string | undefined => {
   if (value === null || value === "") return "";
   if (typeof value === "string") return value.trim();
@@ -180,12 +183,24 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     "";
   const clientEmail =
     toStringValue(cliente?.correo) ??
+    toStringValue(cliente?.email) ??
     toStringValue(cita?.correoCliente) ??
-    toStringValue(raw.correoCliente);
+    toStringValue(cita?.email) ??
+    toStringValue(raw.correoCliente) ??
+    toStringValue(raw.emailCliente) ??
+    toStringValue(raw.clientEmail) ??
+    toStringValue(raw.email);
   const clientPhone =
-    toStringValue(cliente?.telefono) ??
-    toStringValue(cita?.telefonoCliente) ??
-    toStringValue(raw.telefonoCliente);
+    toPhoneValue(cliente?.telefono) ??
+    toPhoneValue(cliente?.phone) ??
+    toPhoneValue(cita?.telefonoCliente) ??
+    toPhoneValue(cita?.telefono) ??
+    toPhoneValue(cita?.phone) ??
+    toPhoneValue(raw.telefonoCliente) ??
+    toPhoneValue(raw.telefono) ??
+    toPhoneValue(raw.phoneCliente) ??
+    toPhoneValue(raw.clientPhone) ??
+    toPhoneValue(raw.phone);
   const scheduledAt =
     toStringValue(raw.fechaLimite) ??
     toStringValue(raw.scheduledAt) ??

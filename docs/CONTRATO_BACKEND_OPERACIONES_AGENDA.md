@@ -73,16 +73,18 @@ captcha-token: <token Turnstile>
 
 `estado` se omite en esta creación y debe tomar el default vigente (`solicitada`). `operationalStatus` se omite y debe inicializarse en `pending`. El backend debe guardar y devolver ambos campos nuevos (`tareaId`, `operationalStatus`) además de los campos de Visita existentes.
 
-Aplicar en backend al crear **y editar**: `fechaProgramada` futura, `correoCliente` válido y ausencia de otra visita activa (`solicitada`, `programada` o `confirmada`) dentro de ±1 hora. El modal de Kanban no consulta disponibilidad antes del POST, por lo que esta validación no puede depender del cliente. `GET /api/visitas/disponibilidad?fecha=YYYY-MM-DD` (fallback `/api/visitas/horarios-ocupados`) debe seguir devolviendo `success`, `fecha` y `horariosOcupados` para el formulario de Agenda.
+Aplicar en backend al crear **y editar**: `fechaProgramada` futura, `correoCliente` válido y ausencia de otra visita activa (`solicitada`, `programada` o `confirmada`) dentro de ±1 hora. El modal de Kanban consulta antes del POST tanto `GET /api/visitas/disponibilidad?fecha=YYYY-MM-DD` como `GET /api/citas/disponibilidad?fecha=YYYY-MM-DD` y bloquea los horarios ocupados; de todas formas, la validación final debe ser atómica en backend porque otro usuario puede reservar el horario entre la consulta y la creación. Ambos endpoints deben devolver `success`, `fecha` y `horariosOcupados`.
 
 ### Autorización del vínculo
 
-El cliente HTTP actual configura la creación de visitas para omitir el bearer token y enviar captcha. El captcha protege la creación pública, pero **no autoriza** enlazar una tarea interna. Antes de habilitar `tareaId` en producción, coordinar una de estas opciones:
+El cliente HTTP distingue los dos casos: una visita pública sin `tareaId` omite el bearer token y envía captcha; una visita creada desde una tarjeta incluye `tareaId`, envía captcha y adjunta el bearer token de la sesión. El captcha protege la creación pública, pero **no autoriza** enlazar una tarea interna. El backend debe aplicar autorización condicional:
 
-- Preferida: distinguir la creación interna con `tareaId`, exigir bearer token y rol autorizado para ella, y ajustar el frontend para enviar el token en ese caso. Mantener la creación pública sin `tareaId` bajo el contrato actual de captcha.
-- Alternativa: exponer una ruta autenticada dedicada a creación de visitas internas y actualizar el frontend para usarla; mantener `POST /api/visitas/agendarVisita` público solo para visitas sin vínculo.
+- Con `tareaId`: exigir bearer token y rol autorizado para Operaciones/Agenda. Mantener captcha si el middleware de creación lo exige, pero no usarlo como autorización.
+- Sin `tareaId`: conservar el flujo público existente con captcha.
 
-En ambos casos, validar en backend que la tarea existe, está en `disenos`, tiene `designApprovedByAdmin: true` y pertenece al proyecto/cliente enviado. No aceptar un `tareaId` arbitrario por el solo hecho de que el captcha sea válido.
+Si el backend no permite autorización condicional en la ruta actual, acordar antes de cambiar el contrato una ruta interna autenticada dedicada; no aceptar el `tareaId` en la ruta pública.
+
+Validar en backend que la tarea existe, está en `disenos`, tiene `designApprovedByAdmin: true` y pertenece al proyecto/cliente enviado. No aceptar un `tareaId` arbitrario por el solo hecho de que el captcha sea válido.
 
 ### Respuesta mínima esperada
 
@@ -173,7 +175,7 @@ Valores permitidos: `pending`, `in_progress`, `completed`. La ruta persiste el v
 | `pending` | `completed` | Rechazar con 409; primero se debe comenzar. |
 | `completed` | `pending` o `in_progress` | Rechazar con 409; no reabrir con esta ruta. |
 
-Rechazar estados desconocidos con 400, visitas inexistentes con 404, falta de sesión/permisos con 401/403 y transiciones no permitidas con 409. Una visita con `estado: "cancelada"` no debe poder iniciarse ni terminarse.
+Rechazar estados desconocidos con 400, visitas inexistentes con 404, falta de sesión/permisos con 401/403 y transiciones no permitidas con 409. Una visita con `estado: "cancelada"` no debe poder iniciarse ni terminarse. Para cualquier 409, devolver una respuesta JSON con un `message` legible que identifique el conflicto (horario ocupado, visita duplicada para la tarea o transición inválida); el frontend la presenta al operador.
 
 ## 7. Aprobar diseño y avanzar la tarea
 

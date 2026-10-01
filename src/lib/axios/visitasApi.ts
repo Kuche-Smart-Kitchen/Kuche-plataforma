@@ -39,10 +39,13 @@ export const agendarVisita = async (
   captchaToken?: string,
 ): Promise<ApiResponse<Record<string, unknown>>> => {
   let lastError: unknown;
+  const requestConfig = payload.tareaId
+    ? ({ skipAuthRedirect: true } as AxiosRequestConfig)
+    : publicVisitRequestConfig;
   for (const route of visitCreateRoutes) {
     try {
       const response = await axiosInstance.post<ApiResponse<Record<string, unknown>>>(route, payload, {
-        ...publicVisitRequestConfig,
+        ...requestConfig,
         headers: captchaToken ? { "captcha-token": captchaToken.trim() } : undefined,
       });
       return response.data;
