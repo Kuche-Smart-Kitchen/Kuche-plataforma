@@ -28,38 +28,47 @@ export interface ClienteArchivo {
   updatedAt?: string;
 }
 
-const normalizeArchivosData = (data: unknown): ClienteArchivo[] => {
+const normalizeClienteArchivo = (value: unknown): ClienteArchivo | null => {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const url = String(record.url ?? record.secureUrl ?? record.sharedUrl ?? record.link ?? "").trim();
+  if (!url) return null;
+
+  return {
+    _id: String(record._id ?? record.id ?? record.publicId ?? record.pathLower ?? url),
+    clienteId: String(record.clienteId ?? record.clientId ?? ""),
+    tareasId: String(record.tareasId ?? record.tareaId ?? record.taskId ?? "") || undefined,
+    tipo: String(record.tipo ?? record.type ?? "otro"),
+    nombre: String(record.nombre ?? record.name ?? record.fileName ?? "Archivo"),
+    url,
+    key: String(record.key ?? record.pathLower ?? record.path ?? "") || undefined,
+    provider: String(record.provider ?? "") || undefined,
+    mimeType: String(record.mimeType ?? record.mimetype ?? "") || undefined,
+    nivel: record.nivel === "final" || record.level === "final"
+      ? "final"
+      : record.nivel === "preliminar" || record.level === "preliminar"
+        ? "preliminar"
+        : undefined,
+    createdAt: String(record.createdAt ?? "") || undefined,
+    updatedAt: String(record.updatedAt ?? "") || undefined,
+  };
+};
+
+const normalizeArchivosData = (data: unknown, depth = 0): ClienteArchivo[] => {
+  if (depth > 4) return [];
   if (Array.isArray(data)) {
-    return data as ClienteArchivo[];
+    return data.map(normalizeClienteArchivo).filter((file): file is ClienteArchivo => file !== null);
   }
+  if (!data || typeof data !== "object") return [];
 
-  if (data && typeof data === "object") {
-    const record = data as Record<string, unknown>;
-    const candidates = [record.archivos, record.files, record.result, record.results, record.data];
+  const record = data as Record<string, unknown>;
+  const directFile = normalizeClienteArchivo(record.archivo ?? record.file ?? record);
+  if (directFile) return [directFile];
 
-    for (const candidate of candidates) {
-      if (Array.isArray(candidate)) {
-        return candidate
-          .map((value) => {
-            if (!value || typeof value !== "object") return null;
-            const record = value as Record<string, unknown>;
-            const id = String(record._id ?? record.id ?? record.publicId ?? "");
-            const url = String(record.url ?? record.secureUrl ?? "");
-            if (!url) return null;
-            return {
-              ...record,
-              _id: id || url,
-              nombre: String(record.nombre ?? record.name ?? "Archivo"),
-              url,
-              clienteId: String(record.clienteId ?? ""),
-              tipo: String(record.tipo ?? "otro"),
-            } as ClienteArchivo;
-          })
-          .filter((value): value is ClienteArchivo => value !== null);
-      }
-    }
+  for (const key of ["archivos", "files", "items", "result", "results", "data"]) {
+    const normalized = normalizeArchivosData(record[key], depth + 1);
+    if (normalized.length > 0) return normalized;
   }
-
   return [];
 };
 
@@ -70,6 +79,7 @@ const readRequestConfig = {
 
 const obtenerArchivosDesdeRutas = async (paths: string[]): Promise<ApiResponse<ClienteArchivo[]>> => {
   let lastMessage = "No se pudieron cargar los archivos";
+  let receivedSuccessfulResponse = false;
   for (const path of paths) {
     try {
       const response = await axiosInstance.get<ApiResponse<ClienteArchivo[]>>(path, readRequestConfig as never);
@@ -78,17 +88,16 @@ const obtenerArchivosDesdeRutas = async (paths: string[]): Promise<ApiResponse<C
         lastMessage = payload.message || lastMessage;
         continue;
       }
-      return {
-        success: true,
-        message: payload.message || "Archivos cargados",
-        data: normalizeArchivosData(payload),
-      };
+      receivedSuccessfulResponse = true;
+      const files = normalizeArchivosData(payload);
+      if (files.length > 0) return { success: true, message: payload.message || "Archivos cargados", data: files };
     } catch (error) {
       const axiosError = error as { response?: { status?: number; data?: { message?: string } } };
       lastMessage = axiosError.response?.data?.message || (error instanceof Error ? error.message : lastMessage);
       if (axiosError.response?.status && axiosError.response.status !== 404) break;
     }
   }
+  if (receivedSuccessfulResponse) return { success: true, data: [], message: "No hay archivos registrados." };
   return { success: false, message: lastMessage };
 };
 

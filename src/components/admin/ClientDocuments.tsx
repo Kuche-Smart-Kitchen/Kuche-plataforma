@@ -10,6 +10,7 @@ import {
   type ClienteArchivo,
 } from "@/lib/axios/archivosClienteApi";
 import { ExpedientePdfSections } from "@/components/admin/ExpedientePdfSections";
+import { toDropboxDownloadUrl } from "@/lib/dropbox-url";
 
 export type ClientDocumentsProps = {
   task: KanbanTask;
@@ -84,7 +85,7 @@ export function ClientDocuments({ task }: ClientDocumentsProps) {
                     <Eye className="h-3 w-3" />
                     Ver
                   </a>
-                  <a href={file.url} download={file.nombre} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-100">
+                  <a href={toDropboxDownloadUrl(file.url) ?? file.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-100">
                     <Download className="h-3 w-3" />
                     Descargar
                   </a>
