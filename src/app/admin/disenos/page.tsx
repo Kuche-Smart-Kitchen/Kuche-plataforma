@@ -497,11 +497,11 @@ export default function DisenosPage() {
         setApprovalError("No se puede aprobar: no se encontró un diseño final cargado y registrado.");
         return;
       }
-      const saved = await approveClientDesignWithBackend(taskSnapshot);
-      if (!saved) {
+      const result = await approveClientDesignWithBackend(taskSnapshot);
+      if (!result.success) {
         await syncKanbanTasksFromBackend();
         setProjects(designProjectsFromTasks(getTasksFromLocalStorage()));
-        setApprovalError("El backend no confirmó la aprobación del cliente ni el avance a Cotización.");
+        setApprovalError(result.message || "El backend no confirmó la aprobación del cliente ni el avance a Cotización.");
         return;
       }
       setProjects(designProjectsFromTasks(getTasksFromLocalStorage()));

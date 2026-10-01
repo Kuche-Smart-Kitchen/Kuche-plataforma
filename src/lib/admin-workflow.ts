@@ -12,6 +12,7 @@ import {
   type KanbanItem,
 } from "@/lib/axios/kanbanApi";
 import { actualizarTarea, asignarTrabajadoresTarea, cambiarEtapa } from "@/lib/axios/tareasApi";
+import { actualizarEstadoOperativoVisita, obtenerVisitas } from "@/lib/axios/visitasApi";
 import {
   getTasksFromLocalStorage,
   mergeKanbanTaskLists,
@@ -379,32 +380,116 @@ export async function syncTaskPatchWithBackend(task: KanbanTask, patch: Partial<
   }
 }
 
-export async function approveClientDesignWithBackend(task: KanbanTask): Promise<boolean> {
+export async function approveClientDesignWithBackend(
+  task: KanbanTask,
+): Promise<{ success: boolean; message?: string }> {
   if (
     task.stage !== "disenos" ||
     !task.designApprovedByAdmin ||
     !task.files?.some((file) => file.nivel === "final")
-  ) return false;
+  ) return { success: false, message: "La tarea requiere etapa Diseños, aprobación administrativa y archivo final." };
 
-  const patch: Partial<KanbanTask> = {
-    designApprovedByClient: true,
-    stage: "cotizacion",
-    status: "pendiente",
-    citaStarted: false,
-    citaFinished: false,
-  };
-  const saved = await syncTaskPatchWithBackend(task, patch);
-  if (!saved) return false;
+  const taskId = task.id.trim();
+  if (!taskId) return { success: false, message: "No se encontró el ID de la tarea." };
 
   try {
+    const visitsResponse = await obtenerVisitas();
+    if (!visitsResponse.success || !Array.isArray(visitsResponse.data)) {
+      return { success: false, message: visitsResponse.message || "No se pudieron consultar las visitas vinculadas." };
+    }
+
+    const relatedVisits = visitsResponse.data.filter((visit) => {
+      const rawTaskId = visit.tareaId;
+      const linkedTaskId = typeof rawTaskId === "string"
+        ? rawTaskId
+        : rawTaskId && typeof rawTaskId === "object"
+          ? String((rawTaskId as Record<string, unknown>)._id ?? (rawTaskId as Record<string, unknown>).id ?? "")
+          : "";
+      return linkedTaskId === taskId;
+    });
+    const activeVisits = relatedVisits.filter(
+      (item) => !["cancelada", "cancelado"].includes(String(item.estado ?? "").toLowerCase()),
+    );
+    const visit = activeVisits.find((item) => item.operationalStatus === "completed")
+      ?? activeVisits.find((item) => item.operationalStatus === "in_progress")
+      ?? activeVisits.find((item) => item.operationalStatus === "pending");
+
+    if (!visit) {
+      if (relatedVisits.length > 0) {
+        return { success: false, message: "No se puede aprobar el diseño desde una visita cancelada." };
+      }
+      return { success: false, message: "No existe una visita vinculada y activa para esta tarea. Agenda una visita desde Operaciones." };
+    }
+
+    const visitId = String(visit._id ?? visit.id ?? "");
+    if (!visitId) return { success: false, message: "La visita vinculada no tiene un ID válido." };
+
+    let operationalStatus = visit.operationalStatus;
+    if (operationalStatus === "pending") {
+      const startResponse = await actualizarEstadoOperativoVisita(visitId, "in_progress");
+      if (
+        !startResponse.success ||
+        startResponse.data?.operationalStatus !== "in_progress"
+      ) {
+        return { success: false, message: startResponse.message || "Backend no confirmó el inicio de la visita." };
+      }
+      operationalStatus = "in_progress";
+    }
+
+    if (operationalStatus === "in_progress") {
+      const finishResponse = await actualizarEstadoOperativoVisita(visitId, "completed");
+      if (
+        !finishResponse.success ||
+        finishResponse.data?.operationalStatus !== "completed"
+      ) {
+        return { success: false, message: finishResponse.message || "Backend no confirmó la finalización de la visita." };
+      }
+    }
+
+    const patch: Partial<KanbanTask> = {
+      designApprovedByClient: true,
+      stage: "cotizacion",
+      status: "pendiente",
+      citaStarted: false,
+      citaFinished: false,
+    };
+    const taskResponse = await actualizarTarea(taskId, buildTaskPatchPayload(task, patch));
+    const updatedTask = taskResponse.success ? taskResponse.data : null;
+    const confirmed = Boolean(
+      taskResponse.success &&
+      updatedTask?.designApprovedByClient === true &&
+      updatedTask?.etapa === "cotizacion" &&
+      updatedTask?.estado === "pendiente" &&
+      updatedTask?.citaStarted === false &&
+      updatedTask?.citaFinished === false,
+    );
+    if (!confirmed) {
+      return { success: false, message: taskResponse.message || "Backend no confirmó la aprobación del cliente ni el avance a Cotización." };
+    }
+
     const refreshedTasks = await fetchBackendKanbanTasks();
-    const refreshedTask = refreshedTasks.find((item) => item.id === task.id);
-    if (!refreshedTask?.designApprovedByClient || refreshedTask.stage !== "cotizacion") return false;
+    const refreshedTask = refreshedTasks.find((item) => item.id === taskId);
+    if (!refreshedTask?.designApprovedByClient || refreshedTask.stage !== "cotizacion") {
+      return { success: false, message: "La respuesta fue correcta, pero Kanban no devolvió la tarea actualizada." };
+    }
     saveKanbanTasksToLocalStorage(refreshedTasks);
-    return true;
+    return { success: true };
   } catch (error) {
-    console.warn("No se pudo verificar la aprobación del cliente en backend", { taskId: task.id, error });
-    return false;
+    const requestError = error as {
+      response?: { status?: number; data?: { message?: string } };
+      message?: string;
+    };
+    const status = requestError.response?.status;
+    const message = requestError.response?.data?.message || requestError.message;
+    console.error("Error aprobando diseño del cliente", {
+      status,
+      message,
+      response: requestError.response?.data,
+    });
+    return {
+      success: false,
+      message: message || "No se pudo completar la aprobación del cliente.",
+    };
   }
 }
 

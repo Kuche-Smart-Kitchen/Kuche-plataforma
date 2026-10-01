@@ -18,9 +18,9 @@ import {
 } from "@/lib/axios/visitasApi";
 import { obtenerTodasLasCitas } from "@/lib/axios/citasApi";
 import {
+  approveClientDesignWithBackend,
   fetchBackendKanbanTasks,
   syncKanbanTasksFromBackend,
-  syncTaskPatchWithBackend,
 } from "@/lib/admin-workflow";
 import { kanbanTasksUpdatedEventName } from "@/lib/kanban";
 
@@ -96,6 +96,13 @@ const isFutureEvent = (date: string, time: string) =>
 const isActiveVisitStatus = (status: string) =>
   status !== "cancelada" && status !== "cancelado" && status !== "completada" && status !== "completed";
 
+const getRelatedId = (value: unknown): string | undefined => {
+  if (typeof value === "string") return value;
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  return typeof record._id === "string" ? record._id : typeof record.id === "string" ? record.id : undefined;
+};
+
 export default function AgendaPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [citas, setCitas] = useState<CitaAlert[]>([]);
@@ -158,7 +165,7 @@ export default function AgendaPage() {
             status: visita.estado === "solicitada" || visita.estado === "programada" ? "Pendiente" : "Confirmada",
             email: typeof visita.correoCliente === "string" ? visita.correoCliente : "",
             phone: typeof visita.telefonoCliente === "string" ? visita.telefonoCliente : "",
-              taskId: typeof visita.tareaId === "string" ? visita.tareaId : typeof visita.taskId === "string" ? visita.taskId : undefined,
+              taskId: getRelatedId(visita.tareaId) ?? getRelatedId(visita.taskId),
               resourceStatus: typeof visita.estado === "string" ? visita.estado.toLowerCase() : "solicitada",
               operationalStatus:
                 visita.operationalStatus === "in_progress" || visita.operationalStatus === "completed"
@@ -432,7 +439,9 @@ export default function AgendaPage() {
     setFormError(null);
     try {
       const response = await actualizarEstadoOperativoVisita(appointment.id, status);
-      if (!response.success) throw new Error(response.message || "No se pudo actualizar el estado de la visita.");
+      if (!response.success || response.data?.operationalStatus !== status) {
+        throw new Error(response.message || `Backend no confirmó el estado ${status} de la visita.`);
+      }
       setAppointments((previous) => previous.map((item) =>
         item.id === appointment.id ? { ...item, operationalStatus: status } : item,
       ));
@@ -456,17 +465,11 @@ export default function AgendaPage() {
       if (!task || task.stage !== "disenos" || !task.designApprovedByAdmin) {
         throw new Error("La tarjeta no está en Diseños o aún no tiene aprobación administrativa.");
       }
-      const visitResponse = await actualizarEstadoOperativoVisita(appointment.id, "completed");
-      if (!visitResponse.success) throw new Error(visitResponse.message || "No se pudo terminar la visita.");
-      const patch = {
-        designApprovedByClient: true,
-        stage: "cotizacion" as const,
-        status: "pendiente" as const,
-        citaStarted: false,
-        citaFinished: false,
-      };
-      const taskSaved = await syncTaskPatchWithBackend(task, patch);
-      if (!taskSaved) throw new Error("No se pudo avanzar la tarjeta en el tablero.");
+      if (appointment.operationalStatus !== "completed") {
+        throw new Error("Primero inicia y termina la visita desde sus controles operativos.");
+      }
+      const approvalResult = await approveClientDesignWithBackend(task);
+      if (!approvalResult.success) throw new Error(approvalResult.message || "No se pudo aprobar el diseño del cliente.");
 
       setAppointments((previous) => previous.map((item) =>
         item.id === appointment.id

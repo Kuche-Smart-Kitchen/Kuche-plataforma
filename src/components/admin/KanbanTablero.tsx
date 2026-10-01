@@ -1023,9 +1023,9 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     setApprovingClientTaskId(taskId);
     setBackendSyncMessage(null);
     try {
-      const saved = await approveClientDesignWithBackend(taskSnapshot);
-      if (!saved) {
-        setBackendSyncMessage("Backend no confirmó la aprobación del cliente ni el avance a Cotización. Revisa la respuesta del servidor e inténtalo de nuevo.");
+      const result = await approveClientDesignWithBackend(taskSnapshot);
+      if (!result.success) {
+        setBackendSyncMessage(result.message || "Backend no confirmó la aprobación del cliente ni el avance a Cotización.");
         window.setTimeout(() => setBackendSyncMessage(null), 6000);
         return;
       }

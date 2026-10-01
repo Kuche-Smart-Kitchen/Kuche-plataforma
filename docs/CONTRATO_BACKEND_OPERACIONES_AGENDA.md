@@ -25,7 +25,7 @@ No se necesita crear `GET /api/agenda/events` ni `PATCH /api/cards/:id/client-ap
 2. El botón **Agendar visita** crea un recurso Visita asociado a la tarea mediante `tareaId`. Crear la visita **no** cambia `tarea.etapa` ni marca `designApprovedByClient`.
 3. Agenda carga citas y visitas por separado. Oculta citas/visitas pasadas e inactivas. Una visita presencial terminada permanece visible mientras el diseño asociado no esté aprobado por el cliente.
 4. En el detalle de la visita, el operador registra en orden `pending` → `in_progress` → `completed`.
-5. Una vez terminada la visita, el operador puede registrar la aprobación del cliente. El frontend primero confirma `operationalStatus: "completed"` y después actualiza la tarea asociada por `PATCH /api/tareas/:id`.
+5. Una vez terminada la visita, el operador puede registrar la aprobación del cliente. Si el botón se pulsa desde Operaciones o Aprobación de Diseños, el frontend localiza la visita por `tareaId`; si está `pending`, la pasa primero a `in_progress` y luego a `completed`; si ya está `in_progress`, solo solicita `completed`; si ya está `completed`, no repite la llamada. Después actualiza la tarea con `PATCH /api/tareas/:id`.
 6. La tarea queda en `etapa: "cotizacion"`, conserva `estado: "pendiente"` y `designApprovedByClient: true`. La Agenda la oculta cuando vuelve a cargar; el Kanban refresca la tarjeta en Cotización.
 
 **Importante sobre el actor:** el botón se llama “Aprobar diseño por el cliente”, pero en la pantalla administrativa es un operador quien registra esa decisión. Si se requiere aprobación autenticada directamente por el cliente, debe definirse un flujo y autorización de cliente separados; esta ruta administrativa no constituye evidencia de identidad del cliente.
@@ -184,7 +184,7 @@ Content-Type: application/json
 { "status": "in_progress" }
 ```
 
-Valores permitidos: `pending`, `in_progress`, `completed`. La ruta persiste el valor en `Visita.operationalStatus` y devuelve la Visita actualizada en `data`. No modifica `Visita.estado`, `fechaProgramada` ni la tarea.
+Valores permitidos: `pending`, `in_progress`, `completed`. La ruta persiste el valor en `Visita.operationalStatus` y devuelve `{ "success": true, "data": { "operationalStatus": "in_progress" } }`. El frontend exige `success === true` y el estado actualizado exacto en `data`. No modifica `Visita.estado`, `fechaProgramada` ni la tarea.
 
 ### Transiciones
 
@@ -222,9 +222,27 @@ Content-Type: application/json
 
 Estos nombres corresponden al payload del backend. El modelo local usa `stage` y `status`, pero el adaptador del frontend los transforma a `etapa` y `estado` antes de enviar. `designApprovedByAdmin` debe seguir verdadero.
 
-El backend debe validar que la tarea existe, está en `disenos`, `designApprovedByAdmin` es verdadero, contiene un archivo `archivos[].nivel: "final"` y hay una visita asociada por `tareaId` con `operationalStatus: "completed"`. La actualización debe guardar los cinco campos de manera coherente; luego devolver `{ success: true, data: <tarea actualizada> }`. Si las precondiciones no se cumplen, responder 409 sin modificar la tarea.
+El usuario debe autenticarse con bearer token y tener rol `admin`. El backend debe validar que la tarea existe, está en `disenos`, `designApprovedByAdmin` es verdadero, contiene un archivo `archivos[].nivel: "final"` y hay una visita asociada por `tareaId` con `operationalStatus: "completed"`. La actualización debe guardar los cinco campos de manera coherente y devolverlos en `data`. El frontend exige `success === true` y confirma todos los campos antes de actualizar la UI:
 
-La UI ejecuta dos escrituras secuenciales al aprobar: primero `PATCH /api/visitas/:id/status` con `completed`, después `PATCH /api/tareas/:id`. No son una transacción distribuida. Ambas escrituras deben ser idempotentes; si falla la segunda, la visita queda terminada y el operador puede reintentar la aprobación sin repetir la visita. Si se necesita atomicidad estricta, backend debe ofrecer una operación transaccional única y coordinar un cambio de ruta frontend antes de implementarla.
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "ID_TAREA",
+    "id": "ID_TAREA",
+    "etapa": "cotizacion",
+    "estado": "pendiente",
+    "designApprovedByAdmin": true,
+    "designApprovedByClient": true,
+    "citaStarted": false,
+    "citaFinished": false
+  }
+}
+```
+
+Si las precondiciones no se cumplen, responder 409 sin modificar la tarea. Sin rol admin responder 403. El endpoint debe aceptar reintentos cuando la visita ya esté `completed`.
+
+La UI ejecuta las escrituras secuenciales descritas arriba. No son una transacción distribuida. Si falla el PATCH de tarea después de completar la visita, reintentar solo la aprobación de tarea; no repetir ni reabrir la visita. Para 409/403, el backend debe devolver un `message` legible; el frontend conserva la tarjeta y presenta ese mensaje. La guía detallada está en [`GUIA_FRONTEND_CONFIRMACION_APROBACION_DISENO.md`](GUIA_FRONTEND_CONFIRMACION_APROBACION_DISENO.md).
 
 ## 8. Citas tradicionales y filtros de Agenda
 
