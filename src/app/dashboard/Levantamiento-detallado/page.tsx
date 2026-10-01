@@ -78,6 +78,7 @@ import {
 import { createPreliminarSeguimientoPdfKey, saveFormalPdf } from "@/lib/formal-pdf-storage";
 import { formatDeliveryWeeksLabel } from "@/lib/delivery-weeks";
 import { emptyWhenZeroIntString, emptyWhenZeroNumericString } from "@/lib/numeric-input-empty-zero";
+import { fetchBackendKanbanTasks } from "@/lib/admin-workflow";
 import ApplianceTypeImage from "@/components/levantamiento/ApplianceTypeImage";
 import HorizontalScrollStrip from "@/components/levantamiento/HorizontalScrollStrip";
 import LightingTypeImage from "@/components/levantamiento/LightingTypeImage";
@@ -547,6 +548,8 @@ export default function CotizadorPreliminarPage() {
   const router = useRouter();
   const [activeCitaTaskId, setActiveCitaTaskId] = useState<string | null>(null);
   const [activeCitaTask, setActiveCitaTask] = useState<KanbanTask | null>(null);
+  const [isLoadingActiveCitaTask, setIsLoadingActiveCitaTask] = useState(false);
+  const [activeCitaTaskLoadError, setActiveCitaTaskLoadError] = useState<string | null>(null);
   const hasActiveCitaSession = Boolean(activeCitaTaskId);
   const [clientName, setClientName] = useState("");
   const [projectType, setProjectType] = useState<string>(CATALOG_PROJECT_TYPES[0]);
@@ -968,6 +971,7 @@ export default function CotizadorPreliminarPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
+    let cancelled = false;
     const urlTaskId =
       new URLSearchParams(window.location.search).get("taskId")?.trim() ?? "";
     const storedTaskId = window.localStorage.getItem(activeCitaTaskStorageKey)?.trim() ?? "";
@@ -979,8 +983,9 @@ export default function CotizadorPreliminarPage() {
     }
 
     setActiveCitaTaskId(taskId);
+    setActiveCitaTaskLoadError(null);
 
-    const findTaskById = (id: string): KanbanTask | undefined => {
+    const findCachedTaskById = (id: string): KanbanTask | undefined => {
       const fromRuntime = getTasksFromLocalStorage().find((t) => t.id === id);
       if (fromRuntime) return fromRuntime;
 
@@ -994,18 +999,49 @@ export default function CotizadorPreliminarPage() {
       }
     };
 
-    const task = findTaskById(taskId);
-    if (!task) return;
+    const loadTask = async () => {
+      let task = findCachedTaskById(taskId);
+      if (!task) {
+        setIsLoadingActiveCitaTask(true);
+        try {
+          const backendTasks = await fetchBackendKanbanTasks();
+          if (cancelled) return;
+          saveKanbanTasksToLocalStorage(backendTasks);
+          task = backendTasks.find((item) => item.id === taskId);
+        } catch (error) {
+          if (!cancelled) {
+            setActiveCitaTaskLoadError(
+              error instanceof Error
+                ? `No se pudo cargar la tarea desde backend: ${error.message}`
+                : "No se pudo cargar la tarea desde backend.",
+            );
+          }
+        } finally {
+          if (!cancelled) setIsLoadingActiveCitaTask(false);
+        }
+      }
 
-    setActiveCitaTask(task);
-    const initial = getSectionAInitialValues(task);
-    if (initial.clientName) setClientName(initial.clientName);
-    if (initial.location) setLocation(initial.location);
-    if (initial.projectType) setProjectType(initial.projectType);
-    if (initial.largo) setLargo(initial.largo);
-    if (initial.alto) setAlto(initial.alto);
-    if (initial.deliveryWeeksMin) setDeliveryWeeksMin(initial.deliveryWeeksMin);
-    if (initial.deliveryWeeksMax) setDeliveryWeeksMax(initial.deliveryWeeksMax);
+      if (cancelled) return;
+      if (!task) {
+        setActiveCitaTaskLoadError("No se encontró la tarea de la cita en el Kanban. Regresa a Operaciones y ábrela de nuevo.");
+        return;
+      }
+
+      setActiveCitaTask(task);
+      const initial = getSectionAInitialValues(task);
+      if (initial.clientName) setClientName(initial.clientName);
+      if (initial.location) setLocation(initial.location);
+      if (initial.projectType) setProjectType(initial.projectType);
+      if (initial.largo) setLargo(initial.largo);
+      if (initial.alto) setAlto(initial.alto);
+      if (initial.deliveryWeeksMin) setDeliveryWeeksMin(initial.deliveryWeeksMin);
+      if (initial.deliveryWeeksMax) setDeliveryWeeksMax(initial.deliveryWeeksMax);
+    };
+
+    void loadTask();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const validatePreliminarSections = (): string | null => {
@@ -1560,6 +1596,17 @@ export default function CotizadorPreliminarPage() {
             Estimación rápida para prospectos. No sustituye una cotización formal.
           </p>
         </header>
+
+        {isLoadingActiveCitaTask ? (
+          <p role="status" className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+            Cargando la tarea de la cita desde el tablero...
+          </p>
+        ) : null}
+        {activeCitaTaskLoadError ? (
+          <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+            {activeCitaTaskLoadError}
+          </p>
+        ) : null}
 
         {hasActiveCitaSession ? (
           <div className="rounded-2xl border-2 border-emerald-300 bg-emerald-50 p-4">

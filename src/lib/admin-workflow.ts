@@ -290,6 +290,10 @@ export async function syncKanbanTasksFromBackend(): Promise<KanbanTask[] | null>
 }
 
 const isObjectId = (value: string) => /^[a-fA-F0-9]{24}$/.test(value);
+const isMissingRouteError = (error: unknown) => {
+  const status = (error as { response?: { status?: number } })?.response?.status;
+  return status === 404 || status === 405;
+};
 
 const buildTaskPatchPayload = (task: KanbanTask, patch: Partial<KanbanTask>): Record<string, unknown> => {
   const snapshot = { ...task, ...patch };
@@ -535,6 +539,9 @@ export async function syncCitaStartWithBackend(task: KanbanTask): Promise<boolea
     const response = await iniciarCita(citaId);
     return response.success;
   } catch (error) {
+    if (isMissingRouteError(error)) {
+      return syncTaskPatchWithBackend(task, { citaStarted: true });
+    }
     console.warn("No se pudo sincronizar inicio de cita en backend", { citaId, error });
     return false;
   }
@@ -554,6 +561,19 @@ export async function syncCitaFinishWithBackend(task: KanbanTask): Promise<boole
     }
     return true;
   } catch (error) {
+    if (isMissingRouteError(error)) {
+      const patch: Partial<KanbanTask> = {
+        citaStarted: true,
+        citaFinished: true,
+        stage: "disenos",
+        status: "pendiente",
+      };
+      const [stageSaved, taskSaved] = await Promise.all([
+        syncTaskStageWithBackend(task, "disenos"),
+        syncTaskPatchWithBackend(task, patch),
+      ]);
+      return stageSaved && taskSaved;
+    }
     console.warn("No se pudo sincronizar finalizacion de cita en backend", { citaId, error });
     return false;
   }
