@@ -24,7 +24,11 @@ import {
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
-import { syncTaskPatchWithBackend } from "@/lib/admin-workflow";
+import {
+  approveClientDesignWithBackend,
+  syncKanbanTasksFromBackend,
+  syncTaskPatchWithBackend,
+} from "@/lib/admin-workflow";
 import {
   getTasksFromLocalStorage,
   kanbanStorageKey,
@@ -36,7 +40,7 @@ import {
 import { downloadTaskFile } from "@/lib/task-file-download";
 import { toDropboxDirectImageUrl } from "@/lib/dropbox-url";
 
-type ProjectStatus = "Pendiente" | "Aprobado" | "Revisión";
+type ProjectStatus = "Pendiente" | "Aprobado" | "Revisión" | "Listo para aprobación";
 
 type DesignProject = {
   id: string;
@@ -47,12 +51,16 @@ type DesignProject = {
   files: TaskFile[];
   date: string;
   status: ProjectStatus;
+  designApprovedByAdmin: boolean;
+  designApprovedByClient: boolean;
+  finalDesignUploaded: boolean;
 };
 
 const statusStyles: Record<ProjectStatus, string> = {
   Pendiente: "bg-amber-100 text-amber-700",
   Aprobado: "bg-emerald-100 text-emerald-700",
   Revisión: "bg-rose-100 text-rose-700",
+  "Listo para aprobación": "bg-blue-100 text-blue-700",
 };
 
 const filters = ["Todos", "Pendientes", "Aprobados"] as const;
@@ -221,6 +229,7 @@ function designProjectsFromTasks(tasks: KanbanTask[]): DesignProject[] {
     .map((task) => {
       const firstImage = task.files?.find(isImageFile);
       const image = firstImage?.src ?? null;
+      const finalDesignUploaded = Boolean(task.files?.some((file) => file.nivel === "final"));
       return {
         id: task.id,
         taskId: task.id,
@@ -229,11 +238,16 @@ function designProjectsFromTasks(tasks: KanbanTask[]): DesignProject[] {
         image,
         files: task.files ?? [],
         date: formatDesignDate(task.createdAt),
-        status: (task.designApprovedByAdmin
-          ? "Aprobado"
-          : task.designFeedback && !task.designApprovedByAdmin
-            ? "Revisión"
-            : "Pendiente") as ProjectStatus,
+        status: (task.designFeedback && !task.designApprovedByAdmin
+          ? "Revisión"
+          : !task.designApprovedByAdmin
+            ? "Pendiente"
+            : finalDesignUploaded
+              ? "Listo para aprobación"
+              : "Aprobado") as ProjectStatus,
+        designApprovedByAdmin: Boolean(task.designApprovedByAdmin),
+        designApprovedByClient: Boolean(task.designApprovedByClient),
+        finalDesignUploaded,
       };
     });
 }
@@ -252,6 +266,7 @@ export default function DisenosPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
   const [confirmingClientId, setConfirmingClientId] = useState<string | null>(null);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
   const dragStartRef = useRef<{ pointerX: number; pointerY: number; posX: number; posY: number } | null>(
     null,
@@ -394,7 +409,7 @@ export default function DisenosPage() {
   const filteredProjects = useMemo(() => {
     if (filter === "Todos") return projects;
     if (filter === "Pendientes") return projects.filter((p) => p.status === "Pendiente");
-    return projects.filter((p) => p.status === "Aprobado");
+    return projects.filter((p) => p.designApprovedByAdmin);
   }, [filter, projects]);
 
   const previewIndex = useMemo(
@@ -450,53 +465,47 @@ export default function DisenosPage() {
   const handleApprove = async (taskId: string) => {
     const currentTasks = getTasksFromLocalStorage();
     const taskSnapshot = currentTasks.find((task) => task.id === taskId);
-    const nextTasks = currentTasks.map((task) =>
-      task.id === taskId ? { ...task, designApprovedByAdmin: true } : task,
-    );
-
-    const persisted = notifyKanbanTasksUpdated(nextTasks);
-    if (persisted) {
-      setProjects(designProjectsFromTasks(nextTasks));
-      window.dispatchEvent(new CustomEvent(kanbanTasksUpdatedEventName, { detail: { tasks: nextTasks } }));
+    if (!taskSnapshot) {
+      setApprovalError("No se encontró la tarea en el tablero. Actualiza la página e inténtalo de nuevo.");
+      return;
     }
 
-    if (taskSnapshot) {
-      const ok = await syncTaskPatchWithBackend(taskSnapshot, { designApprovedByAdmin: true });
-      if (!ok) {
-        console.warn("No se pudo sincronizar la aprobación de diseño con el backend.");
-      }
+    setApprovalError(null);
+    const saved = await syncTaskPatchWithBackend(taskSnapshot, { designApprovedByAdmin: true });
+    if (!saved) {
+      setApprovalError("No se pudo guardar la aprobación administrativa en backend.");
+      return;
     }
-
+    const refreshedTasks = await syncKanbanTasksFromBackend();
+    const refreshedTask = refreshedTasks?.find((task) => task.id === taskId);
+    if (!refreshedTask?.designApprovedByAdmin) {
+      setApprovalError("El backend no confirmó la aprobación administrativa. La tarjeta no se actualizó.");
+      return;
+    }
+    setProjects(designProjectsFromTasks(refreshedTasks ?? []));
+    window.dispatchEvent(new Event(kanbanTasksUpdatedEventName));
     setActiveFeedbackId(null);
   };
 
   const handleConfirmClientApproval = async (taskId: string) => {
     setConfirmingClientId(taskId);
-    const patch = {
-      designApprovedByClient: true,
-      stage: "cotizacion" as const,
-      status: "pendiente" as const,
-      citaStarted: false,
-      citaFinished: false,
-    };
+    setApprovalError(null);
 
     try {
-      const currentTasks = getTasksFromLocalStorage();
-      const taskSnapshot = currentTasks.find((task) => task.id === taskId);
-      const nextTasks = currentTasks.map((task) => (task.id === taskId ? { ...task, ...patch } : task));
-
-      const persisted = notifyKanbanTasksUpdated(nextTasks);
-      if (persisted) {
-        setProjects(designProjectsFromTasks(nextTasks));
-        window.dispatchEvent(new CustomEvent(kanbanTasksUpdatedEventName, { detail: { tasks: nextTasks } }));
+      const taskSnapshot = getTasksFromLocalStorage().find((task) => task.id === taskId);
+      if (!taskSnapshot || !taskSnapshot.files?.some((file) => file.nivel === "final")) {
+        setApprovalError("No se puede aprobar: no se encontró un diseño final cargado y registrado.");
+        return;
       }
-
-      if (taskSnapshot) {
-        const ok = await syncTaskPatchWithBackend(taskSnapshot, patch);
-        if (!ok) {
-          console.warn("No se pudo sincronizar la aprobación del cliente con el backend.");
-        }
+      const saved = await approveClientDesignWithBackend(taskSnapshot);
+      if (!saved) {
+        await syncKanbanTasksFromBackend();
+        setProjects(designProjectsFromTasks(getTasksFromLocalStorage()));
+        setApprovalError("El backend no confirmó la aprobación del cliente ni el avance a Cotización.");
+        return;
       }
+      setProjects(designProjectsFromTasks(getTasksFromLocalStorage()));
+      window.dispatchEvent(new Event(kanbanTasksUpdatedEventName));
     } finally {
       setConfirmingClientId(null);
     }
@@ -537,6 +546,11 @@ export default function DisenosPage() {
         <p className="mt-2 text-sm text-gray-500">
           Revisa y autoriza los renders o planos subidos desde el tablero antes de la presentación al cliente.
         </p>
+        {approvalError ? (
+          <p role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">
+            {approvalError}
+          </p>
+        ) : null}
         <div className="mt-4 flex flex-wrap gap-2">
           {filters.map((item) => {
             const isActive = filter === item;
@@ -645,7 +659,7 @@ export default function DisenosPage() {
                           </button>
                         </div>
                       </motion.div>
-                    ) : project.status === "Pendiente" || project.status === "Revisión" ? (
+                    ) : !project.designApprovedByAdmin ? (
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
@@ -664,7 +678,7 @@ export default function DisenosPage() {
                           Solicitar cambios
                         </button>
                       </div>
-                    ) : (
+                    ) : project.finalDesignUploaded && !project.designApprovedByClient ? (
                       <button
                         type="button"
                         disabled={confirmingClientId === project.taskId}
@@ -676,6 +690,14 @@ export default function DisenosPage() {
                           ? "Confirmando…"
                           : "Confirmar aprobación del cliente"}
                       </button>
+                    ) : project.designApprovedByClient ? (
+                      <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">
+                        Aprobación del cliente guardada.
+                      </p>
+                    ) : (
+                      <p className="rounded-xl bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800">
+                        Esperando que se cargue el diseño final desde Operaciones.
+                      </p>
                     )}
                   </div>
                 </div>

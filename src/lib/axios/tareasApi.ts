@@ -57,6 +57,7 @@ export interface ArchivoExternoPayload {
   provider?: "cloudinary" | "dropbox" | "local" | string;
   mimeType?: string;
   clienteId?: string;
+  nivel?: "preliminar" | "final";
 }
 
 /** Registra en la tarea archivo(s) ya subidos externamente (p. ej. directo a Cloudinary desde el navegador). */

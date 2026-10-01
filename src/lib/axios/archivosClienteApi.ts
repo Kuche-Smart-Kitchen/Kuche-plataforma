@@ -23,6 +23,7 @@ export interface ClienteArchivo {
   key?: string;
   provider?: "cloudinary" | "dropbox" | "local" | string;
   mimeType?: string;
+  nivel?: "preliminar" | "final";
   createdAt?: string;
   updatedAt?: string;
 }
@@ -164,6 +165,7 @@ export const subirArchivoCliente = async (
       key: `cloudinary:${uploaded.publicId}`,
       provider: "cloudinary",
       mimeType: file.type,
+      nivel: opciones.nivel,
     };
 
     const registro = await agregarArchivosTarea(tareasId, [
@@ -175,6 +177,7 @@ export const subirArchivoCliente = async (
         provider: "cloudinary",
         mimeType: archivo.mimeType,
         clienteId: normalizedClienteId,
+        nivel: opciones.nivel,
       },
     ]);
 

@@ -37,11 +37,13 @@ sube el archivo directo del navegador a Cloudinary y luego registra la URL en la
         "key": "cloudinary:<public_id>",
         "provider": "cloudinary",
         "mimeType": "application/pdf",
-        "clienteId": "<codigoProyecto>"
+        "clienteId": "<codigoProyecto>",
+        "nivel": "final"
       }
     ]
   }
   ```
+- `nivel` es opcional (`preliminar` | `final`) y se envía para distinguir el diseño inicial del diseño final presentado al cliente. Para un diseño final, el backend debe persistirlo en el archivo de la tarea y devolverlo dentro de `archivos[]` en las respuestas de Kanban.
 - `tareasId` = `KanbanTask.id` del cliente (id real de la tarea/cita en backend).
 - `clienteId` = `KanbanTask.codigoProyecto` (código público del proyecto, ej. `K-8821`).
 

@@ -14,6 +14,7 @@ Este documento define el contrato necesario para conectar el flujo de Operacione
 | Visitas | `DELETE /api/visitas/:id` | Existente | Eliminar una visita desde Agenda. |
 | Visitas | `PATCH /api/visitas/:id/status` | **Nuevo requerido** | Cambiar el estado operativo presencial. |
 | Tareas/Kanban | `GET /api/kanban/citas`, `/api/kanban/disenos`, `/api/kanban/cotizacion`, `/api/kanban/contrato` | Existentes | Cargar y refrescar tarjetas para el tablero y validar la tarea vinculada. |
+| Archivos de tarea | `POST /api/tareas/:id/archivos` | Existente; agregar/retornar metadata `nivel` | Registrar el archivo final y permitir reconocerlo tras refrescar. |
 | Tareas/Kanban | `PATCH /api/tareas/:id` | Existente; ampliar/confirmar campos | Registrar aprobación del cliente y avanzar la tarjeta de Diseños a Cotización. |
 
 No se necesita crear `GET /api/agenda/events` ni `PATCH /api/cards/:id/client-approve-design`. La Agenda combina los GET de citas y visitas; la actualización de la tarjeta reutiliza `/api/tareas/:id`.
@@ -46,6 +47,26 @@ Los estados de agenda existentes permanecen independientes del estado presencial
 | `operationalStatus` | enum | Sí en lectura; default al crear | Nuevo estado presencial: `pending`, `in_progress` o `completed`. Default: `pending`. |
 
 No reutilizar `fechaAgendada` (pertenece a Cita), `status` como alias de `estado`, ni los estados de citas (`programada`, `en_proceso`, etc.) para el ciclo presencial. `operationalStatus` es el nombre de campo persistido y `status` solo es el nombre del parámetro del endpoint nuevo.
+
+### Metadata del diseño final
+
+La subida usa Cloudinary y registra el archivo mediante la ruta existente `POST /api/tareas/:id/archivos`. Para los archivos de tipo `diseno`, el frontend manda el campo opcional `nivel`:
+
+```json
+{
+  "archivos": [
+    {
+      "nombre": "render-final.pdf",
+      "url": "https://res.cloudinary.com/example/render-final.pdf",
+      "tipo": "diseno",
+      "clienteId": "K-8821",
+      "nivel": "final"
+    }
+  ]
+}
+```
+
+El backend debe persistir `nivel: "final"` en el archivo asociado a la tarea y devolverlo dentro de `archivos[]` en `GET /api/kanban/disenos` (o en el endpoint Kanban que devuelva esa tarjeta). La UI usa ese dato para ocultar subida de archivo, subida de diseño final y agendamiento, y dejar disponible únicamente la aprobación del cliente. Archivos anteriores registrados sin `nivel` no se pueden clasificar con certeza: deben migrarse o volver a cargarse como finales.
 
 ## 4. Crear una visita desde Kanban
 
@@ -201,7 +222,7 @@ Content-Type: application/json
 
 Estos nombres corresponden al payload del backend. El modelo local usa `stage` y `status`, pero el adaptador del frontend los transforma a `etapa` y `estado` antes de enviar. `designApprovedByAdmin` debe seguir verdadero.
 
-El backend debe validar que la tarea existe, está en `disenos`, `designApprovedByAdmin` es verdadero y hay una visita asociada por `tareaId` con `operationalStatus: "completed"`. La actualización debe guardar los cinco campos de manera coherente; luego devolver `{ success: true, data: <tarea actualizada> }`. Si las precondiciones no se cumplen, responder 409 sin modificar la tarea.
+El backend debe validar que la tarea existe, está en `disenos`, `designApprovedByAdmin` es verdadero, contiene un archivo `archivos[].nivel: "final"` y hay una visita asociada por `tareaId` con `operationalStatus: "completed"`. La actualización debe guardar los cinco campos de manera coherente; luego devolver `{ success: true, data: <tarea actualizada> }`. Si las precondiciones no se cumplen, responder 409 sin modificar la tarea.
 
 La UI ejecuta dos escrituras secuenciales al aprobar: primero `PATCH /api/visitas/:id/status` con `completed`, después `PATCH /api/tareas/:id`. No son una transacción distribuida. Ambas escrituras deben ser idempotentes; si falla la segunda, la visita queda terminada y el operador puede reintentar la aprobación sin repetir la visita. Si se necesita atomicidad estricta, backend debe ofrecer una operación transaccional única y coordinar un cambio de ruta frontend antes de implementarla.
 
@@ -225,6 +246,7 @@ No buscar vínculos entre Cita y Visita por coincidencia de email/nombre: la rel
 
 - [ ] Agregar `tareaId` opcional e indexado a Visita; conservarlo al editar y devolverlo al listar.
 - [ ] Agregar `operationalStatus` con default `pending` y enum `pending | in_progress | completed`.
+- [ ] En `POST /api/tareas/:id/archivos`, aceptar, persistir y devolver `nivel: "preliminar" | "final"` para los archivos de diseño; incluirlo en las respuestas Kanban.
 - [ ] Implementar `PATCH /api/visitas/:id/status` con autenticación, autorización, transiciones e idempotencia descritas arriba.
 - [ ] Asegurar que el alta vinculada con `tareaId` requiere autorización interna y valida tarea/etapa/aprobación; coordinar el envío del token con frontend.
 - [ ] Confirmar que `PATCH /api/tareas/:id` acepta y persiste `designApprovedByClient`, `etapa`, `estado`, `citaStarted` y `citaFinished`; agregar validación de visita completada antes de aprobar.
@@ -234,8 +256,9 @@ No buscar vínculos entre Cita y Visita por coincidencia de email/nombre: la rel
 
 1. Una tarea en `disenos` sin aprobación administrativa no puede crear una visita vinculada.
 2. Una visita creada conserva `tareaId` y aparece en `GET /api/visitas/` con `operationalStatus: "pending"`.
-3. Iniciar cambia solo `operationalStatus` a `in_progress`; terminar lo cambia a `completed`; ninguno cambia `estado` de agenda ni etapa Kanban.
-4. No se puede aprobar el diseño desde una visita pendiente o en proceso.
-5. Aprobar tras completar la visita deja `designApprovedByClient: true` y mueve la tarea a `cotizacion` sin cerrar la tarea (`estado: "pendiente"`).
-6. Si se recarga la aplicación, la visita conserva su estado y la tarjeta sigue en la etapa persistida.
-7. Una cita tradicional no adquiere `tareaId` ni pasa por las rutas operativas de Visita.
+3. Una carga de diseño final se guarda con `archivos[].nivel: "final"` y sigue identificada así después de un GET Kanban.
+4. Iniciar cambia solo `operationalStatus` a `in_progress`; terminar lo cambia a `completed`; ninguno cambia `estado` de agenda ni etapa Kanban.
+5. No se puede aprobar el diseño desde una visita pendiente o en proceso.
+6. Aprobar tras completar la visita deja `designApprovedByClient: true` y mueve la tarea a `cotizacion` sin cerrar la tarea (`estado: "pendiente"`).
+7. Si se recarga la aplicación, la visita conserva su estado, el archivo final conserva `nivel: "final"` y la tarjeta sigue en la etapa persistida.
+8. Una cita tradicional no adquiere `tareaId` ni pasa por las rutas operativas de Visita.

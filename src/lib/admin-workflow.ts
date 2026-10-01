@@ -228,6 +228,7 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
         id: toStringValue(file.id) ?? `${toStringValue(raw._id) ?? toStringValue(raw.id) ?? "task"}-file-${index}`,
         name: toStringValue(file.nombre) ?? `Archivo ${index + 1}`,
         type: inferFileType(file.tipo, file.nombre, file.url),
+        nivel: file.nivel === "final" || file.level === "final" ? "final" as const : file.nivel === "preliminar" || file.level === "preliminar" ? "preliminar" as const : undefined,
         src: toStringValue(file.url),
       })),
     priority: normalizePriority(raw.prioridad),
@@ -374,6 +375,35 @@ export async function syncTaskPatchWithBackend(task: KanbanTask, patch: Partial<
     return response.success !== false;
   } catch (error) {
     console.warn("No se pudo sincronizar avance de tarea en backend", { taskId, patch, error });
+    return false;
+  }
+}
+
+export async function approveClientDesignWithBackend(task: KanbanTask): Promise<boolean> {
+  if (
+    task.stage !== "disenos" ||
+    !task.designApprovedByAdmin ||
+    !task.files?.some((file) => file.nivel === "final")
+  ) return false;
+
+  const patch: Partial<KanbanTask> = {
+    designApprovedByClient: true,
+    stage: "cotizacion",
+    status: "pendiente",
+    citaStarted: false,
+    citaFinished: false,
+  };
+  const saved = await syncTaskPatchWithBackend(task, patch);
+  if (!saved) return false;
+
+  try {
+    const refreshedTasks = await fetchBackendKanbanTasks();
+    const refreshedTask = refreshedTasks.find((item) => item.id === task.id);
+    if (!refreshedTask?.designApprovedByClient || refreshedTask.stage !== "cotizacion") return false;
+    saveKanbanTasksToLocalStorage(refreshedTasks);
+    return true;
+  } catch (error) {
+    console.warn("No se pudo verificar la aprobación del cliente en backend", { taskId: task.id, error });
     return false;
   }
 }
