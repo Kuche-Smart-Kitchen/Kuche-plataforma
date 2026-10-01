@@ -132,6 +132,74 @@ export interface SubirArchivoClienteOpciones {
   nivel?: "preliminar" | "final";
 }
 
+export interface SubirDisenoDropboxOpciones {
+  tareaId: string;
+  clienteId: string;
+  nivel: "preliminar" | "final";
+}
+
+/** Sube diseños al backend, que los almacena en Dropbox y registra su relación con tarea/cliente. */
+export const subirDisenoDropbox = async (
+  file: File,
+  opciones: SubirDisenoDropboxOpciones,
+): Promise<ApiResponse<ClienteArchivo>> => {
+  const tareaId = opciones.tareaId.trim();
+  const clienteId = opciones.clienteId.trim();
+  if (!tareaId || !clienteId) {
+    return { success: false, message: "Falta el ID de tarea o cliente para registrar el diseño." };
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("clienteId", clienteId);
+  formData.append("tipo", "diseno");
+  formData.append("nivel", opciones.nivel);
+
+  try {
+    const response = await axiosInstance.post<ApiResponse<Record<string, unknown>>>(
+      `/api/tareas/${encodeURIComponent(tareaId)}/archivos/dropbox`,
+      formData,
+      { headers: { "Content-Type": "multipart/form-data" } },
+    );
+    if (!response.data.success) return response.data;
+
+    const payload = response.data.data;
+    const archivo = payload.archivo && typeof payload.archivo === "object"
+      ? payload.archivo as Record<string, unknown>
+      : payload.file && typeof payload.file === "object"
+        ? payload.file as Record<string, unknown>
+        : payload;
+    const url = String(archivo.url ?? archivo.sharedUrl ?? archivo.link ?? "");
+    if (!url) {
+      return { success: false, message: "Dropbox guardó el diseño, pero backend no devolvió un enlace del archivo." };
+    }
+
+    return {
+      success: true,
+      message: response.data.message,
+      data: {
+        _id: String(archivo._id ?? archivo.id ?? archivo.pathLower ?? url),
+        clienteId,
+        tareasId: tareaId,
+        tipo: "diseno",
+        nombre: String(archivo.nombre ?? archivo.name ?? file.name),
+        url,
+        key: String(archivo.key ?? archivo.pathLower ?? archivo.path ?? ""),
+        provider: "dropbox",
+        mimeType: String(archivo.mimeType ?? file.type),
+        nivel: opciones.nivel,
+        createdAt: typeof archivo.createdAt === "string" ? archivo.createdAt : undefined,
+      },
+    };
+  } catch (error) {
+    const requestError = error as { response?: { data?: { message?: string } }; message?: string };
+    return {
+      success: false,
+      message: requestError.response?.data?.message || requestError.message || "No se pudo subir el diseño a Dropbox.",
+    };
+  }
+};
+
 /**
  * Sube el archivo directo del navegador a Cloudinary (sin pasar por el backend/proxy, evitando
  * el límite de payload de la función serverless) y luego registra la URL resultante en la tarea.

@@ -19,6 +19,7 @@ export type TaskFile = {
   id: string;
   name: string;
   type: "pdf" | "render" | "otro";
+  provider?: "cloudinary" | "dropbox" | "local" | string;
   nivel?: "preliminar" | "final";
   /** Data URL (base64): vista previa y descarga en admin; opcional si falló la lectura o es dato legado. */
   src?: string;

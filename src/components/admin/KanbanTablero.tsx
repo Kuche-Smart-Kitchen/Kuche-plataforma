@@ -50,7 +50,7 @@ import {
   getCotizacionesFormalesList,
 } from "@/lib/kanban";
 import { dueDateToSortTimestamp, formatDueDateTimeDisplay } from "@/lib/kanban-due-datetime";
-import { subirArchivoCliente } from "@/lib/axios/archivosClienteApi";
+import { subirArchivoCliente, subirDisenoDropbox } from "@/lib/axios/archivosClienteApi";
 import { obtenerDisponibilidadDia } from "@/lib/axios/citasApi";
 import { agendarVisita, obtenerDisponibilidadVisita } from "@/lib/axios/visitasApi";
 
@@ -988,8 +988,13 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
     setDropboxUploading(true);
     try {
-      const result = await subirArchivoCliente(file, clienteId, "diseno", {
-        tareasId: taskSnapshot?.id,
+      if (!taskSnapshot?.id) {
+        showUploadToast("error", "No se encontró la tarea para relacionar el diseño.");
+        return;
+      }
+      const result = await subirDisenoDropbox(file, {
+        tareaId: taskSnapshot.id,
+        clienteId,
         nivel: "final",
       });
 
@@ -1002,6 +1007,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
         id: result.data?._id || `final-${Date.now()}`,
         name: result.data?.nombre || file.name,
         type: inferFileType(file.name),
+        provider: "dropbox",
         nivel: "final",
         src: result.data?.url,
       };
@@ -1189,7 +1195,17 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const type = inferFileType(file.name);
-      const result = await subirArchivoCliente(file, clienteId, tipo, { tareasId: taskSnapshot?.id });
+      if (!taskSnapshot?.id) {
+        failedNames.push(file.name);
+        continue;
+      }
+      const result = tipo === "diseno"
+        ? await subirDisenoDropbox(file, {
+            tareaId: taskSnapshot.id,
+            clienteId,
+            nivel: "preliminar",
+          })
+        : await subirArchivoCliente(file, clienteId, tipo, { tareasId: taskSnapshot.id });
 
       if (!result.success || !result.data) {
         failedNames.push(file.name);
@@ -1200,6 +1216,8 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
         id: result.data._id ?? `file-${Date.now()}-${i}-${file.name}`,
         name: result.data.nombre ?? file.name,
         type,
+        provider: result.data.provider,
+        nivel: result.data.nivel,
         src: result.data.url,
       });
     }

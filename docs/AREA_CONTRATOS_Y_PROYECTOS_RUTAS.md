@@ -6,8 +6,10 @@ Documenta el flujo usado en el expediente de **Clientes en proceso** y **Cliente
 ## 1. Subir contrato firmado (`ContratoUploadButton`)
 
 Componente: `src/components/admin/ContratoUploadButton.tsx`.
-Mismo mecanismo que el resto de archivos del cliente (diseños, cotización formal, hoja de taller):
-sube el archivo directo del navegador a Cloudinary y luego registra la URL en la tarea.
+Este flujo aplica a contratos, cotizaciones formales, hojas de taller y demás documentos de proyecto:
+sube el archivo directo del navegador a Cloudinary y luego registra la URL en la tarea. Los diseños
+son la excepción: iniciales y finales van a Dropbox mediante el contrato de
+[`CONTRATO_BACKEND_DISENOS_DROPBOX.md`](CONTRATO_BACKEND_DISENOS_DROPBOX.md).
 
 ### Paso 1 — Subida directa a Cloudinary
 
@@ -37,13 +39,11 @@ sube el archivo directo del navegador a Cloudinary y luego registra la URL en la
         "key": "cloudinary:<public_id>",
         "provider": "cloudinary",
         "mimeType": "application/pdf",
-        "clienteId": "<codigoProyecto>",
-        "nivel": "final"
+        "clienteId": "<codigoProyecto>"
       }
     ]
   }
   ```
-- `nivel` es opcional (`preliminar` | `final`) y se envía para distinguir el diseño inicial del diseño final presentado al cliente. Para un diseño final, el backend debe persistirlo en el archivo de la tarea y devolverlo dentro de `archivos[]` en las respuestas de Kanban.
 - `tareasId` = `KanbanTask.id` del cliente (id real de la tarea/cita en backend).
 - `clienteId` = `KanbanTask.codigoProyecto` (código público del proyecto, ej. `K-8821`).
 

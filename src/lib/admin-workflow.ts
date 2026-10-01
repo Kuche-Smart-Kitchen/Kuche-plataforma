@@ -229,6 +229,7 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
         id: toStringValue(file.id) ?? `${toStringValue(raw._id) ?? toStringValue(raw.id) ?? "task"}-file-${index}`,
         name: toStringValue(file.nombre) ?? `Archivo ${index + 1}`,
         type: inferFileType(file.tipo, file.nombre, file.url),
+        provider: toStringValue(file.provider),
         nivel: file.nivel === "final" || file.level === "final" ? "final" as const : file.nivel === "preliminar" || file.level === "preliminar" ? "preliminar" as const : undefined,
         src: toStringValue(file.url),
       })),
