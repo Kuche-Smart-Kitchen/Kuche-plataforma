@@ -33,6 +33,7 @@ import {
 } from "@/lib/admin-workflow";
 import { syncSeguimientoEstadoFromKanbanConfirm } from "@/lib/seguimiento-project";
 import {
+  activeCitaTaskStorageKey,
   kanbanColumns,
   initialKanbanTasks,
   kanbanTasksUpdatedEventName,
@@ -897,10 +898,18 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
         window.setTimeout(() => setBackendSyncMessage(null), 4500);
       }
     }
-    if (canContinue) router.push(`/dashboard/Levantamiento-detallado?taskId=${encodeURIComponent(taskId)}`);
+    if (canContinue) {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(activeCitaTaskStorageKey, taskId);
+      }
+      router.push(`/dashboard/Levantamiento-detallado?taskId=${encodeURIComponent(taskId)}`);
+    }
   };
 
   const resumeCita = (taskId: string) => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(activeCitaTaskStorageKey, taskId);
+    }
     router.push(`/dashboard/Levantamiento-detallado?taskId=${encodeURIComponent(taskId)}`);
   };
 
