@@ -8,13 +8,16 @@ import {
   fetchAssignableUsers,
   type ActualizarIntegrantePayload,
   type AssignableUser,
+  normalizeIntegranteRoleForUi,
   type CrearIntegrantePayload,
+  type IntegranteRolSelectable,
 } from "@/lib/axios/usuariosApi";
 
 export type TeamMember = {
   id: string;
   name: string;
   email: string;
+  role: IntegranteRolSelectable;
 };
 
 type EquipoContextValue = {
@@ -33,6 +36,7 @@ const toTeamMember = (user: AssignableUser): TeamMember => ({
   id: String(user._id ?? user.id ?? ""),
   name: user.nombre || "",
   email: user.correo || "",
+  role: normalizeIntegranteRoleForUi(user.rol),
 });
 
 export function EquipoProvider({ children }: { children: ReactNode }) {

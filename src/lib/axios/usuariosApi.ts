@@ -19,6 +19,23 @@ const getUsersFromResponse = (payload: UsersResponse): User[] => {
 
 export type AssignableUser = Pick<User, "id" | "_id" | "nombre" | "correo" | "rol">;
 
+export const INTEGRANTE_ROL_OPTIONS = [
+  { label: "Administrador", value: "admin" },
+  { label: "Empleado", value: "empleado" },
+  { label: "Arquitecto", value: "arquitecto" },
+  { label: "Ingeniero", value: "ingeniero" },
+] as const satisfies ReadonlyArray<{ label: string; value: UserRole }>;
+
+export type IntegranteRolSelectable = (typeof INTEGRANTE_ROL_OPTIONS)[number]["value"];
+
+export const normalizeIntegranteRoleForUi = (rol: UserRole): IntegranteRolSelectable => {
+  if (rol === "empleado_general") return "empleado";
+  if (INTEGRANTE_ROL_OPTIONS.some((option) => option.value === rol)) {
+    return rol as IntegranteRolSelectable;
+  }
+  return "empleado";
+};
+
 const assignableRoles: UserRole[] = [
   "admin",
   "ingeniero",
@@ -86,6 +103,8 @@ export const crearIntegrante = async (payload: CrearIntegrantePayload): Promise<
 export type ActualizarIntegrantePayload = {
   nombre: string;
   correo?: string;
+  rol?: UserRole;
+  password?: string;
 };
 
 export const actualizarIntegrante = async (
@@ -97,6 +116,12 @@ export const actualizarIntegrante = async (
   };
   if (payload.correo?.trim()) {
     body.correo = payload.correo.trim();
+  }
+  if (payload.rol) {
+    body.rol = payload.rol;
+  }
+  if (payload.password?.trim()) {
+    body.password = payload.password.trim();
   }
   const response = await axiosInstance.put<ApiResponse<User> | User>(resolveUsuariosPath(id), body);
   return getUserFromResponse(response.data);

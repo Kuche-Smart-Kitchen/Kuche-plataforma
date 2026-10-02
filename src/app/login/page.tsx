@@ -8,9 +8,14 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, Lock, User } from "lucide-react";
 import { useAuthContext } from "@/contexts/AuthContext";
 import Captcha from "@/components/ui/Captcha";
+import {
+  isLocalLoginCaptchaBypass,
+  LOCAL_LOGIN_CAPTCHA_BYPASS,
+} from "@/lib/login-captcha-bypass";
 import { getLoginRedirectForUser } from "@/lib/role-routes";
 
 export default function LoginPage() {
+  const localCaptchaBypass = isLocalLoginCaptchaBypass();
   const router = useRouter();
   const { isAuthenticated, loading, login, user } = useAuthContext();
   const [correo, setCorreo] = useState("");
@@ -28,7 +33,10 @@ export default function LoginPage() {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!captchaToken) {
+    const effectiveCaptchaToken =
+      captchaToken ?? (localCaptchaBypass ? LOCAL_LOGIN_CAPTCHA_BYPASS : null);
+
+    if (!effectiveCaptchaToken) {
       setStatus("error");
       setErrorMessage("Por favor completa el captcha");
       return;
@@ -37,7 +45,7 @@ export default function LoginPage() {
     setStatus("loading");
     setErrorMessage("");
 
-    const result = await login(correo.trim(), password, captchaToken);
+    const result = await login(correo.trim(), password, effectiveCaptchaToken);
     if (result.success && result.user) {
       router.push(getLoginRedirectForUser(result.user));
       return;
@@ -139,15 +147,26 @@ export default function LoginPage() {
                 </div>
               </label>
 
-              <Captcha
-                onVerify={(token) => setCaptchaToken(token)}
-                onExpire={() => setCaptchaToken(null)}
-                onError={() => setCaptchaToken(null)}
-              />
+              {localCaptchaBypass ? (
+                <p className="rounded-xl border border-dashed border-primary/15 bg-primary/5 px-3 py-2 text-center text-xs text-secondary">
+                  Modo local: captcha omitido
+                </p>
+              ) : (
+                <Captcha
+                  onVerify={(token) => setCaptchaToken(token)}
+                  onExpire={() => setCaptchaToken(null)}
+                  onError={() => setCaptchaToken(null)}
+                />
+              )}
 
               <button
                 type="submit"
-                disabled={status === "loading" || !correo || !password || !captchaToken}
+                disabled={
+                  status === "loading" ||
+                  !correo ||
+                  !password ||
+                  (!localCaptchaBypass && !captchaToken)
+                }
                 className="flex w-full items-center justify-center rounded-2xl bg-accent py-3 text-sm font-semibold text-white shadow-lg transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {status === "loading" ? "Validando..." : "Entrar"}
