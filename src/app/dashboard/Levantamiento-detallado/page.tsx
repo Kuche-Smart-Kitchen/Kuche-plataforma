@@ -133,6 +133,47 @@ const parseMeasure = (raw: string | undefined): number | null => {
   return Number.isFinite(v) ? v : null;
 };
 
+/** Meta por slot: usuario editó A2 (fin vano → fin muro) a mano; no sobrescribir con autocálculo. */
+const WALL_SLOT_META_A2_MANUAL = "__a2FinMuroManual";
+const WALL_FIELD_FIN_VANO_FIN_MURO = "dist-fin-vano-fin-muro";
+const WALL_HORIZONTAL_SUM_TOLERANCE_M = 0.02;
+
+function formatSuggestedWallA2(l: number, a: number, vanoWidth: number): string {
+  const raw = Math.max(0, l - a - vanoWidth);
+  return (Math.round(raw * 1000) / 1000).toFixed(2);
+}
+
+function computeSuggestedWallA2(
+  typeId: string,
+  measures: Record<string, string>,
+): string | null {
+  if (typeId !== "pared-ventana" && typeId !== "pared-puerta") return null;
+  const l = parseMeasure(measures["largo-muro"]);
+  const a = parseMeasure(
+    typeId === "pared-ventana" ? measures["dist-inicio-vano"] : measures["dist-marco-referencia"],
+  );
+  const vano = parseMeasure(measures["ancho-vano"]);
+  if (l === null || a === null || vano === null) return null;
+  return formatSuggestedWallA2(l, a, vano);
+}
+
+function wallHorizontalTramoMismatchWarning(
+  typeId: string,
+  measures: Record<string, string>,
+): string | null {
+  if (typeId !== "pared-ventana" && typeId !== "pared-puerta") return null;
+  const l = parseMeasure(measures["largo-muro"]);
+  const a = parseMeasure(
+    typeId === "pared-ventana" ? measures["dist-inicio-vano"] : measures["dist-marco-referencia"],
+  );
+  const vano = parseMeasure(measures["ancho-vano"]);
+  const a2 = parseMeasure(measures[WALL_FIELD_FIN_VANO_FIN_MURO]);
+  if (l === null || a === null || vano === null || a2 === null) return null;
+  const sum = a + vano + a2;
+  if (Math.abs(sum - l) <= WALL_HORIZONTAL_SUM_TOLERANCE_M) return null;
+  return `Aviso: La suma de tramos (${sum.toFixed(2)} m) difiere del largo total L (${l.toFixed(2)} m)`;
+}
+
 const WALL_COUNT_OPTIONS = [1, 2, 3, 4] as const;
 
 const wallCountSvgProps = {
@@ -746,21 +787,73 @@ export default function CotizadorPreliminarPage() {
     });
   };
 
-  const patchWallSlotField = (slotIndex: number, fieldKey: string, value: string) => {
+  const patchWallSlotField = (
+    slotIndex: number,
+    fieldKey: string,
+    value: string,
+    options?: { autoA2?: boolean },
+  ) => {
     setLevantamiento((prev) => {
       const k = wallSlotKey(slotIndex);
       const cur = prev.wallMeasures[k] ?? { [WALL_SLOT_META_TYPE]: "" };
       const typeId = (cur[WALL_SLOT_META_TYPE] ?? "").trim();
       if (!typeId) return prev;
+
+      let next: Record<string, string> = { ...cur, [fieldKey]: value };
+
+      if (fieldKey === WALL_FIELD_FIN_VANO_FIN_MURO && !options?.autoA2) {
+        if (value.trim()) next[WALL_SLOT_META_A2_MANUAL] = "1";
+        else {
+          const { [WALL_SLOT_META_A2_MANUAL]: _drop, ...rest } = next;
+          next = rest;
+        }
+      }
+
+      const a2DriverKeys =
+        typeId === "pared-ventana"
+          ? (["largo-muro", "dist-inicio-vano", "ancho-vano"] as const)
+          : typeId === "pared-puerta"
+            ? (["largo-muro", "dist-marco-referencia", "ancho-vano"] as const)
+            : null;
+
+      if (
+        a2DriverKeys &&
+        fieldKey !== WALL_FIELD_FIN_VANO_FIN_MURO &&
+        (a2DriverKeys as readonly string[]).includes(fieldKey)
+      ) {
+        const manual = next[WALL_SLOT_META_A2_MANUAL] === "1";
+        const a2Empty = !(next[WALL_FIELD_FIN_VANO_FIN_MURO] ?? "").trim();
+        if (!manual || a2Empty) {
+          const suggested = computeSuggestedWallA2(typeId, next);
+          if (suggested !== null) next[WALL_FIELD_FIN_VANO_FIN_MURO] = suggested;
+        }
+      }
+
       return {
         ...prev,
         wallMeasures: {
           ...prev.wallMeasures,
-          [k]: { ...cur, [fieldKey]: value },
+          [k]: next,
         },
       };
     });
   };
+
+  /** Rellena A2 sugerido al abrir un muro con L, A y ancho de vano ya capturados (sin pisar edición manual). */
+  useEffect(() => {
+    const k = wallSlotKey(currentWallIndex);
+    const cur = levantamiento.wallMeasures[k];
+    if (!cur) return;
+    const typeId = (cur[WALL_SLOT_META_TYPE] ?? "").trim();
+    if (typeId !== "pared-ventana" && typeId !== "pared-puerta") return;
+    if (cur[WALL_SLOT_META_A2_MANUAL] === "1") return;
+    const suggested = computeSuggestedWallA2(typeId, cur);
+    if (suggested === null) return;
+    const current = (cur[WALL_FIELD_FIN_VANO_FIN_MURO] ?? "").trim();
+    if (current === suggested) return;
+    patchWallSlotField(currentWallIndex, WALL_FIELD_FIN_VANO_FIN_MURO, suggested, { autoA2: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync A2 al cambiar slot o medidas conductoras
+  }, [currentWallIndex, levantamiento.wallMeasures]);
 
   const clearWallSlotType = (slotIndex: number) => {
     setLevantamiento((prev) => {
@@ -2379,6 +2472,18 @@ export default function CotizadorPreliminarPage() {
                                       </label>
                                     ))}
                                   </div>
+                                  {group.id === "ubicacion" &&
+                                  item &&
+                                  (item.id === "pared-ventana" || item.id === "pared-puerta")
+                                    ? (() => {
+                                        const msg = wallHorizontalTramoMismatchWarning(item.id, m);
+                                        return msg ? (
+                                          <p className="mt-2 text-[10px] font-semibold normal-case leading-snug tracking-normal text-amber-700">
+                                            {msg}
+                                          </p>
+                                        ) : null;
+                                      })()
+                                    : null}
                                 </div>
                               ))}
                               {wallFieldGroups.length === 0 ? (

@@ -596,7 +596,7 @@ export function WallIconVentana({ className, focusedGroup, ...rest }: WallIconIn
     const letter = ac(i);
     return d ? `${letter}: ${d.label} (m). ${d.verifyHint ?? ""}` : letter;
   };
-  const grp = (i: number) => wallCotaFocusGroup(ac(i));
+  const grp = (i: number) => wallCotaFocusGroup(ac(i), "pared-ventana");
   const sAv = ventanaMegaCotaVisual(focusedGroup, grp(2));
   const sHv = ventanaMegaCotaVisual(focusedGroup, grp(3));
 
@@ -797,6 +797,20 @@ export function WallIconVentana({ className, focusedGroup, ...rest }: WallIconIn
         wallKey="pared-ventana"
         indexInDiagram={6}
       />
+      <MegaArchitectCota
+        focusedGroup={focusedGroup}
+        cotaGroup={grp(7)}
+        letter={ac(7)}
+        title={tit(7)}
+        x1={670}
+        y1={320}
+        x2={920}
+        y2={320}
+        cx={795}
+        cy={320}
+        wallKey="pared-ventana"
+        indexInDiagram={7}
+      />
     </svg>
   );
 }
@@ -811,13 +825,14 @@ export function WallIconPuerta({ className, focusedGroup, ...rest }: WallIconInn
     const letter = ac(i);
     return d ? `${letter}: ${d.label} (m). ${d.verifyHint ?? ""}` : letter;
   };
-  const grp = (i: number) => wallCotaFocusGroup(ac(i));
+  const grp = (i: number) => wallCotaFocusGroup(ac(i), "pared-puerta");
   const s0 = ventanaMegaCotaVisual(focusedGroup, grp(0));
   const s1 = ventanaMegaCotaVisual(focusedGroup, grp(1));
   const s2 = ventanaMegaCotaVisual(focusedGroup, grp(2));
   const s3 = ventanaMegaCotaVisual(focusedGroup, grp(3));
   const s4 = ventanaMegaCotaVisual(focusedGroup, grp(4));
   const s5 = ventanaMegaCotaVisual(focusedGroup, grp(5));
+  const s6 = ventanaMegaCotaVisual(focusedGroup, grp(6));
 
   return (
     <svg {...svgBase} viewBox="0 0 1000 700" aria-hidden>
@@ -1189,6 +1204,67 @@ export function WallIconPuerta({ className, focusedGroup, ...rest }: WallIconInn
           style={{ pointerEvents: "none" }}
         >
           {ac(5)}
+        </text>
+      </g>
+      {/* Grupo 3 · A2 (fin vano → fin muro), misma Y que A */}
+      <g
+        className="pointer-events-none transition-all duration-300 ease-out"
+        style={{ isolation: "isolate", opacity: s6.groupOpacity }}
+      >
+        <title>{tit(6)}</title>
+        <line
+          x1={650}
+          y1={390}
+          x2={920}
+          y2={390}
+          stroke={s6.lineStroke}
+          strokeWidth={s6.swMain}
+          strokeLinecap="square"
+          strokeDasharray={s6.dashMain}
+        />
+        <line
+          x1={650}
+          y1={370}
+          x2={650}
+          y2={410}
+          stroke={s6.lineStroke}
+          strokeWidth={s6.swTick}
+          strokeLinecap="square"
+          strokeDasharray={s6.dashTick}
+        />
+        <line
+          x1={920}
+          y1={370}
+          x2={920}
+          y2={410}
+          stroke={s6.lineStroke}
+          strokeWidth={s6.swTick}
+          strokeLinecap="square"
+          strokeDasharray={s6.dashTick}
+        />
+        <circle
+          id={`wall-cota-circle-pared-puerta-6-${ac(6)}`}
+          className="wall-cota-id-circle"
+          cx={785}
+          cy={390}
+          r={s6.r}
+          fill={COTA_FILL}
+          stroke="white"
+          strokeWidth={6}
+          paintOrder="stroke fill"
+        />
+        <text
+          x={785}
+          y={390}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fill="#fff"
+          fontSize={s6.fs}
+          fontWeight={700}
+          fontFamily="ui-sans-serif, system-ui, sans-serif"
+          style={{ pointerEvents: "none" }}
+        >
+          {ac(6)}
         </text>
       </g>
     </svg>
