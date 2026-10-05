@@ -137,6 +137,7 @@ export default function OperacionesPage() {
         asignadoA: assignees,
         prioridad: newTaskPriority,
         ubicacion: newTaskLocation.trim() || undefined,
+        mapsUrl: newTaskMapsUrl.trim() || undefined,
         notas: "",
         codigoProyecto,
         fechaLimite: newTaskDueDate.trim() || undefined,
