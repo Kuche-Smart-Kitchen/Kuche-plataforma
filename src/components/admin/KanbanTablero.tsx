@@ -1,6 +1,6 @@
  "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
@@ -457,6 +457,9 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const uploadTaskRef = useRef<HTMLDivElement | null>(null);
   const uploadAcceptedDesignsRef = useRef<HTMLDivElement | null>(null);
   const deleteConfirmRef = useRef<HTMLDivElement | null>(null);
+  const deleteTaskTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const skipPanelTrapInitialFocusRef = useRef(false);
+  const restoreFocusToDeleteTriggerRef = useRef(false);
   const cotizacionEntregadaRef = useRef<HTMLDivElement | null>(null);
   const scheduleVisitRef = useRef<HTMLDivElement | null>(null);
   const visitCaptchaRef = useRef<CaptchaRef | null>(null);
@@ -505,15 +508,16 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     setDropboxStagingFile(null);
   });
   useEscapeClose(Boolean(deleteConfirmTaskId) && !deleteTaskInProgress, () => {
-    setDeleteConfirmTaskId(null);
-    setDeleteConfirmError(null);
+    closeDeleteConfirm();
   });
   useEscapeClose(Boolean(cotizacionEntregadaTaskId), () => setCotizacionEntregadaTaskId(null));
   useEscapeClose(Boolean(scheduleVisitTaskId), () => setScheduleVisitTaskId(null));
-  useFocusTrap(Boolean(activeTaskId) && !deleteConfirmTaskId, activeTaskRef);
+  useFocusTrap(Boolean(activeTaskId) && !deleteConfirmTaskId, activeTaskRef, {
+    skipInitialFocusRef: skipPanelTrapInitialFocusRef,
+  });
   useFocusTrap(Boolean(uploadTaskId), uploadTaskRef);
   useFocusTrap(Boolean(uploadAcceptedDesignsTaskId), uploadAcceptedDesignsRef);
-  useFocusTrap(Boolean(deleteConfirmTaskId), deleteConfirmRef);
+  useFocusTrap(Boolean(deleteConfirmTaskId), deleteConfirmRef, { deferInitialFocus: true });
   useFocusTrap(Boolean(cotizacionEntregadaTaskId), cotizacionEntregadaRef);
   useFocusTrap(Boolean(scheduleVisitTaskId), scheduleVisitRef);
   // Al abrir el panel de detalle, aseguramos que se muestre desde el inicio.
@@ -1104,9 +1108,25 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
   const closeDeleteConfirm = () => {
     if (deleteTaskInProgress) return;
+    skipPanelTrapInitialFocusRef.current = true;
+    restoreFocusToDeleteTriggerRef.current = true;
     setDeleteConfirmTaskId(null);
     setDeleteConfirmError(null);
   };
+
+  useLayoutEffect(() => {
+    if (!restoreFocusToDeleteTriggerRef.current) return;
+    restoreFocusToDeleteTriggerRef.current = false;
+    if (deleteConfirmTaskId !== null) return;
+    if (!activeTaskId) return;
+    const trigger = deleteTaskTriggerRef.current;
+    if (!trigger) return;
+    try {
+      trigger.focus({ preventScroll: true });
+    } catch {
+      trigger.focus();
+    }
+  }, [deleteConfirmTaskId, activeTaskId]);
 
   const confirmDeleteTask = async () => {
     const taskId = deleteConfirmTaskId;
@@ -2460,6 +2480,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                 {allowDeleteTask && teamMembers && teamMembers.length > 0 ? (
                   <div className="border-t border-primary/10 pt-6">
                     <button
+                      ref={deleteTaskTriggerRef}
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -2480,37 +2501,27 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
           )
         : null}
 
-      {mounted
+      {mounted && deleteConfirmTaskId
         ? createPortal(
-            <AnimatePresence mode="sync">
-              {deleteConfirmTaskId ? (
-                <motion.div
-                  key={deleteConfirmTaskId}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0, pointerEvents: "none" }}
-                  transition={{ duration: 0.2 }}
-                  className="pointer-events-auto fixed inset-0 z-[110] flex items-center justify-center bg-black/50 px-4"
-                  onClick={() => {
-                    if (ignoreDeleteBackdropClickRef.current) return;
-                    closeDeleteConfirm();
-                  }}
-                  onMouseDown={(e) => {
-                    if (ignoreDeleteBackdropClickRef.current) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }
-                  }}
-                >
-            <motion.div
+            <div
+              className="pointer-events-auto fixed inset-0 z-[110] flex items-center justify-center bg-black/50 px-4"
+              onClick={() => {
+                if (ignoreDeleteBackdropClickRef.current) return;
+                closeDeleteConfirm();
+              }}
+              onMouseDown={(e) => {
+                if (ignoreDeleteBackdropClickRef.current) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
+              }}
+            >
+            <div
               ref={deleteConfirmRef}
               tabIndex={-1}
               role="dialog"
               aria-modal="true"
               aria-labelledby="delete-confirm-title"
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
               className="pointer-events-auto w-full max-w-sm rounded-3xl border border-rose-200 bg-white p-6 shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
@@ -2555,10 +2566,8 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                   )}
                 </button>
               </div>
-            </motion.div>
-                </motion.div>
-              ) : null}
-            </AnimatePresence>,
+            </div>
+            </div>,
             document.body,
           )
         : null}

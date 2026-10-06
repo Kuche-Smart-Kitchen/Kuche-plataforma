@@ -12,9 +12,17 @@ const focusableSelectors = [
   "[tabindex]:not([tabindex='-1'])",
 ].join(", ");
 
+export type UseFocusTrapOptions = {
+  /** Espera un frame extra antes del foco inicial (útil tras montar modales sin animación de entrada). */
+  deferInitialFocus?: boolean;
+  /** Si está en true al activar el trap, no ejecuta focusFirst (p. ej. reanudar panel tras cerrar otro modal). */
+  skipInitialFocusRef?: RefObject<boolean>;
+};
+
 export const useFocusTrap = (
   isOpen: boolean,
   containerRef: RefObject<HTMLElement | null>,
+  options?: UseFocusTrapOptions,
 ) => {
   useEffect(() => {
     if (!isOpen) {
@@ -87,13 +95,24 @@ export const useFocusTrap = (
       }
     };
 
-    // Retrasamos el focus para dar tiempo a que el overlay/panel se pinte con `fixed/absolute`,
-    // evitando que el foco dispare un scroll brusco de la ventana.
-    const rafId = window.requestAnimationFrame(() => focusFirst());
+    const scheduleInitialFocus = () => {
+      if (options?.deferInitialFocus) {
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => focusFirst());
+        });
+        return;
+      }
+      window.requestAnimationFrame(() => focusFirst());
+    };
+
+    if (options?.skipInitialFocusRef?.current) {
+      options.skipInitialFocusRef.current = false;
+    } else {
+      scheduleInitialFocus();
+    }
     document.addEventListener("keydown", handleKeyDown);
     return () => {
-      window.cancelAnimationFrame(rafId);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isOpen, containerRef]);
+  }, [isOpen, containerRef, options?.deferInitialFocus, options?.skipInitialFocusRef]);
 };
