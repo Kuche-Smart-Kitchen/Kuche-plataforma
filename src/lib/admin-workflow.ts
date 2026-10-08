@@ -268,25 +268,57 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
   };
 };
 
-export async function fetchBackendKanbanTasks(): Promise<KanbanTask[]> {
-  const responses = await Promise.all([
-    obtenerKanbanCitas().then((response) => ({ response, sourceType: "cita" })),
-    obtenerKanbanDisenos().then((response) => ({ response, sourceType: "tarea" })),
-    obtenerKanbanCotizacion().then((response) => ({ response, sourceType: "tarea" })),
-    obtenerKanbanContrato().then((response) => ({ response, sourceType: "tarea" })),
-  ]);
+export type KanbanBackendColumn = "citas" | "disenos" | "cotizacion" | "contrato";
 
-  const mapped = responses.flatMap(({ response, sourceType }) => {
-    if (!response.success || !response.data) return [];
-    return response.data.map((item) => ({ ...mapKanbanItemToTask(item), sourceType }));
-  });
+export type FetchBackendKanbanTasksResult = {
+  tasks: KanbanTask[];
+  failedColumns: KanbanBackendColumn[];
+};
+
+const KANBAN_BACKEND_COLUMNS: {
+  column: KanbanBackendColumn;
+  sourceType: "cita" | "tarea";
+  fetch: () => ReturnType<typeof obtenerKanbanCitas>;
+}[] = [
+  { column: "citas", sourceType: "cita", fetch: obtenerKanbanCitas },
+  { column: "disenos", sourceType: "tarea", fetch: obtenerKanbanDisenos },
+  { column: "cotizacion", sourceType: "tarea", fetch: obtenerKanbanCotizacion },
+  { column: "contrato", sourceType: "tarea", fetch: obtenerKanbanContrato },
+];
+
+export async function fetchBackendKanbanTasksWithStatus(): Promise<FetchBackendKanbanTasksResult> {
+  const responses = await Promise.all(
+    KANBAN_BACKEND_COLUMNS.map(async (spec) => ({
+      column: spec.column,
+      sourceType: spec.sourceType,
+      response: await spec.fetch(),
+    })),
+  );
+
+  const failedColumns: KanbanBackendColumn[] = [];
+  const mapped: KanbanTask[] = [];
+
+  for (const { column, sourceType, response } of responses) {
+    if (!response.success || !response.data) {
+      failedColumns.push(column);
+      continue;
+    }
+    for (const item of response.data) {
+      mapped.push({ ...mapKanbanItemToTask(item), sourceType });
+    }
+  }
 
   const unique = new Map<string, KanbanTask>();
   for (const task of mapped) {
     unique.set(task.id, task);
   }
 
-  return Array.from(unique.values());
+  return { tasks: Array.from(unique.values()), failedColumns };
+}
+
+export async function fetchBackendKanbanTasks(): Promise<KanbanTask[]> {
+  const { tasks } = await fetchBackendKanbanTasksWithStatus();
+  return tasks;
 }
 
 export async function syncKanbanTasksFromBackend(): Promise<KanbanTask[] | null> {

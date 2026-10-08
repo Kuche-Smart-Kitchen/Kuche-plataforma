@@ -24,6 +24,8 @@ import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useTareasContext } from "@/contexts/TareasContext";
 import {
   fetchBackendKanbanTasks,
+  fetchBackendKanbanTasksWithStatus,
+  type KanbanBackendColumn,
   approveClientDesignWithBackend,
   syncCitaFinishWithBackend,
   syncCitaStartWithBackend,
@@ -49,6 +51,7 @@ import {
   type CotizacionFormalData,
   stageStyles,
   getCotizacionesFormalesList,
+  mergeKanbanTaskLists,
 } from "@/lib/kanban";
 import { dueDateToSortTimestamp, formatDueDateTimeDisplay } from "@/lib/kanban-due-datetime";
 import { subirArchivoCliente, subirDisenoDropbox } from "@/lib/axios/archivosClienteApi";
@@ -385,6 +388,53 @@ const hydrateKanbanTasksFromLocalStorage = (
 const KANBAN_PERSIST_ERROR =
   "No se pudo guardar el tablero: almacenamiento lleno. Libera espacio del navegador o reduce tareas/archivos.";
 
+const SYNC_FOCUS_THROTTLE_MS = 5000;
+const KANBAN_BACKEND_COLUMN_COUNT = 4;
+
+const KANBAN_COLUMN_TO_STAGE: Record<KanbanBackendColumn, TaskStage> = {
+  citas: "citas",
+  disenos: "disenos",
+  cotizacion: "cotizacion",
+  contrato: "contrato",
+};
+
+/** Conserva tarjetas de columnas cuyo fetch falló (503, red, etc.). */
+const mergeBackendWithPreservedFailedColumns = (
+  current: KanbanTask[],
+  backendTasks: KanbanTask[],
+  failedColumns: KanbanBackendColumn[],
+): KanbanTask[] => {
+  if (failedColumns.length === 0) return backendTasks;
+  if (failedColumns.length >= KANBAN_BACKEND_COLUMN_COUNT) {
+    return current.length > 0 ? current : backendTasks;
+  }
+
+  const failedStages = new Set(failedColumns.map((column) => KANBAN_COLUMN_TO_STAGE[column]));
+  const backendIds = new Set(backendTasks.map((task) => task.id));
+  const preserved = current.filter((task) => failedStages.has(task.stage) && !backendIds.has(task.id));
+  const combined = [...backendTasks, ...preserved];
+  const unique = new Map<string, KanbanTask>();
+  for (const task of combined) {
+    unique.set(task.id, task);
+  }
+  return Array.from(unique.values());
+};
+
+const kanbanTasksEqualForRender = (previous: KanbanTask[], next: KanbanTask[]): boolean => {
+  if (previous.length !== next.length) return false;
+  const byId = (tasks: KanbanTask[]) => [...tasks].sort((a, b) => a.id.localeCompare(b.id));
+  const sortedPrevious = byId(previous);
+  const sortedNext = byId(next);
+  for (let index = 0; index < sortedPrevious.length; index += 1) {
+    const a = sortedPrevious[index];
+    const b = sortedNext[index];
+    if (a.id !== b.id || a.stage !== b.stage || a.status !== b.status) {
+      return false;
+    }
+  }
+  return true;
+};
+
 export type KanbanTableroProps = {
   /** Filtrar por nombre de empleado. null = ver todo, string = solo ese empleado. */
   filterByEmployee?: string | null;
@@ -465,6 +515,8 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const cotizacionEntregadaRef = useRef<HTMLDivElement | null>(null);
   const scheduleVisitRef = useRef<HTMLDivElement | null>(null);
   const visitCaptchaRef = useRef<CaptchaRef | null>(null);
+  const lastSyncTimeRef = useRef(0);
+  const isSyncingRef = useRef(false);
 
   const commitKanbanTasks = useCallback((nextTasks: KanbanTask[]) => {
     kanbanTasksRef.current = nextTasks;
@@ -474,8 +526,23 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   }, []);
 
   const hydrateAndApplyTasks = useCallback(
-    (rawTasks: KanbanTask[], persistIfChanged = false) => {
-      const { tasks, changed } = hydrateKanbanTasksFromLocalStorage(rawTasks);
+    (
+      rawTasks: KanbanTask[],
+      persistIfChanged = false,
+      options?: { failedColumns?: KanbanBackendColumn[] },
+    ) => {
+      const failedColumns = options?.failedColumns ?? [];
+      let mergedInput = mergeBackendWithPreservedFailedColumns(
+        kanbanTasksRef.current,
+        rawTasks,
+        failedColumns,
+      );
+      mergedInput = mergeKanbanTaskLists(kanbanTasksRef.current, mergedInput);
+
+      const { tasks, changed } = hydrateKanbanTasksFromLocalStorage(mergedInput);
+      if (kanbanTasksEqualForRender(kanbanTasksRef.current, tasks)) {
+        return kanbanTasksRef.current;
+      }
       kanbanTasksRef.current = tasks;
       setKanbanTasks(tasks);
       if (persistIfChanged && changed && tasks.length > 0) {
@@ -486,6 +553,20 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     },
     [],
   );
+
+  const syncFromBackend = useCallback(async () => {
+    if (isSyncingRef.current) return;
+    isSyncingRef.current = true;
+    try {
+      const { tasks: backendTasks, failedColumns } = await fetchBackendKanbanTasksWithStatus();
+      hydrateAndApplyTasks(backendTasks, backendTasks.length > 0, { failedColumns });
+      lastSyncTimeRef.current = Date.now();
+    } catch (error) {
+      console.warn("No se pudieron cargar las tareas del kanban desde backend.", error);
+    } finally {
+      isSyncingRef.current = false;
+    }
+  }, [hydrateAndApplyTasks]);
 
   useEffect(() => {
     setMounted(true);
@@ -541,24 +622,19 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const syncFromBackend = async () => {
-      try {
-        const backendTasks = await fetchBackendKanbanTasks();
-        hydrateAndApplyTasks(backendTasks, backendTasks.length > 0);
-      } catch (error) {
-        console.warn("No se pudieron cargar las tareas del kanban desde backend.", error);
-        hydrateAndApplyTasks([], false);
-      }
-    };
-
     void syncFromBackend();
+
+    const shouldThrottleWindowSync = () =>
+      Date.now() - lastSyncTimeRef.current < SYNC_FOCUS_THROTTLE_MS;
+
     const handleFocus = () => {
+      if (shouldThrottleWindowSync()) return;
       void syncFromBackend();
     };
     const handleVisibility = () => {
-      if (document.visibilityState === "visible") {
-        void syncFromBackend();
-      }
+      if (document.visibilityState !== "visible") return;
+      if (shouldThrottleWindowSync()) return;
+      void syncFromBackend();
     };
     const handleKanbanTasksUpdated = () => void syncFromBackend();
     window.addEventListener("focus", handleFocus);
@@ -569,23 +645,12 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       window.removeEventListener(kanbanTasksUpdatedEventName, handleKanbanTasksUpdated);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [hydrateAndApplyTasks]);
+  }, [syncFromBackend]);
 
   useEffect(() => {
     if (typeof window === "undefined" || refreshTrigger === 0) return;
-
-    const refreshFromBackend = async () => {
-      try {
-        const backendTasks = await fetchBackendKanbanTasks();
-        hydrateAndApplyTasks(backendTasks, backendTasks.length > 0);
-      } catch (error) {
-        console.warn("No se pudo refrescar el kanban desde backend.", error);
-        hydrateAndApplyTasks([], false);
-      }
-    };
-
-    void refreshFromBackend();
-  }, [refreshTrigger, hydrateAndApplyTasks]);
+    void syncFromBackend();
+  }, [refreshTrigger, syncFromBackend]);
 
   useEffect(() => {
     const autoDiscardExpiredFollowUps = () => {
