@@ -64,6 +64,15 @@ const toDueDateString = (value: unknown): string | undefined => {
   return new Date(parsed).toISOString().slice(0, 16);
 };
 
+const toNumberValue = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) ? value : undefined;
+
+/** ISO de backend -> `YYYY-MM-DD` para inputs `type=date`. */
+const toDateOnlyString = (value: unknown): string | undefined => {
+  const raw = toStringValue(value);
+  return raw && /^\d{4}-\d{2}-\d{2}/.test(raw) ? raw.slice(0, 10) : undefined;
+};
+
 const normalizeStage = (value: unknown): TaskStage => {
   const normalized = toStringValue(value)?.toLowerCase();
   if (normalized === "citas") return "citas";
@@ -251,6 +260,11 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
       toStringValue(raw.codigoCliente) ??
       toStringValue(raw.clienteId) ??
       toStringValue(raw.clientId),
+    contractDate: toDateOnlyString(raw.fechaContrato),
+    estimatedDeliveryDate: toDateOnlyString(raw.fechaEntrega),
+    projectTypeSummary: toStringValue(raw.tipo),
+    presupuestoTotal: toNumberValue(raw.presupuestoTotal),
+    totalPagado: toNumberValue(raw.totalPagado),
   };
 };
 

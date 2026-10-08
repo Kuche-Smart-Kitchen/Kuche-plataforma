@@ -1,247 +1,143 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarRange, Package, Pencil, CalendarClock } from "lucide-react";
-import {
-  getAggregatedDeliveryWeeksFromTask,
-  getConfirmedCardProjectLines,
-  type KanbanTask,
-} from "@/lib/kanban";
+import { CalendarRange } from "lucide-react";
+import { getAggregatedDeliveryWeeksFromTask, type KanbanTask } from "@/lib/kanban";
 import { formatApproximateDeliveryWindowEs } from "@/lib/delivery-weeks";
+import {
+  actualizarDatosContratoProyecto,
+  TIPOS_PROYECTO,
+  type TipoProyecto,
+} from "@/lib/axios/proyectosApi";
 
 type Props = {
   task: KanbanTask;
   onUpdate: (next: KanbanTask) => void;
 };
 
-function formatIsoDateEs(iso: string): string {
-  const d = new Date(`${iso.trim()}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" });
-}
+const inputClass =
+  "mt-2 w-full rounded-lg border border-emerald-200 bg-white px-2 py-2 text-sm text-gray-900 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400";
+
+const labelClass = "block text-[11px] font-medium text-emerald-900/90";
 
 export function ConfirmedClientContractFields({ task, onUpdate }: Props) {
-  const hasSavedContractDate = Boolean(task.contractDate?.trim());
-  const hasSavedDeliveryDate = Boolean(task.estimatedDeliveryDate?.trim());
+  const [tipo, setTipo] = useState(task.projectTypeSummary ?? "");
+  const [contractDate, setContractDate] = useState(task.contractDate ?? "");
+  const [deliveryDate, setDeliveryDate] = useState(task.estimatedDeliveryDate ?? "");
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
-  const [contractDate, setContractDate] = useState(() => task.contractDate ?? "");
-  const [editingContract, setEditingContract] = useState(false);
-  const [savedContractFlash, setSavedContractFlash] = useState(false);
-
-  const [deliveryDate, setDeliveryDate] = useState(() => task.estimatedDeliveryDate ?? "");
-  const [editingDelivery, setEditingDelivery] = useState(false);
-  const [savedDeliveryFlash, setSavedDeliveryFlash] = useState(false);
-
-  const projectLines = getConfirmedCardProjectLines(task);
   const aggWeeks = getAggregatedDeliveryWeeksFromTask(task);
   const calendarDelivery =
-    contractDate.trim() && aggWeeks
-      ? formatApproximateDeliveryWindowEs(contractDate.trim(), aggWeeks.min, aggWeeks.max)
+    contractDate && aggWeeks
+      ? formatApproximateDeliveryWindowEs(contractDate, aggWeeks.min, aggWeeks.max)
       : "";
 
-  const persistTaskPatch = (patch: Partial<KanbanTask>) => {
-    onUpdate({ ...task, ...patch });
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const codigo = task.codigoProyecto?.trim();
+    if (!codigo) return;
+
+    setIsSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const response = await actualizarDatosContratoProyecto(codigo, {
+        ...(tipo ? { tipo: tipo as TipoProyecto } : {}),
+        fechaContrato: contractDate,
+        fechaEntrega: deliveryDate,
+      });
+      if (!response.success) {
+        setError(response.message || "No se pudieron guardar los datos del proyecto.");
+        return;
+      }
+      onUpdate({
+        ...task,
+        projectTypeSummary: tipo || undefined,
+        contractDate: contractDate || undefined,
+        estimatedDeliveryDate: deliveryDate || undefined,
+      });
+      setSaved(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudieron guardar los datos del proyecto.");
+    } finally {
+      setIsSaving(false);
+    }
   };
-
-  const saveContract = () => {
-    if (!window.confirm("¿Estás seguro de establecer esta fecha de contrato?")) return;
-    persistTaskPatch({ contractDate: contractDate.trim() || undefined });
-    setEditingContract(false);
-    setSavedContractFlash(true);
-    window.setTimeout(() => setSavedContractFlash(false), 2000);
-  };
-
-  const saveDelivery = () => {
-    if (!window.confirm("¿Estás seguro de establecer esta fecha estimada de entrega?")) return;
-    persistTaskPatch({ estimatedDeliveryDate: deliveryDate.trim() || undefined });
-    setEditingDelivery(false);
-    setSavedDeliveryFlash(true);
-    window.setTimeout(() => setSavedDeliveryFlash(false), 2000);
-  };
-
-  const cancelContractEdit = () => {
-    setContractDate(task.contractDate ?? "");
-    setEditingContract(false);
-  };
-
-  const cancelDeliveryEdit = () => {
-    setDeliveryDate(task.estimatedDeliveryDate ?? "");
-    setEditingDelivery(false);
-  };
-
-  const showContractEditor = !hasSavedContractDate || editingContract;
-  const showDeliveryEditor = !hasSavedDeliveryDate || editingDelivery;
-
-  const hasProjectData = projectLines.length > 0 || Boolean(aggWeeks) || hasSavedContractDate || hasSavedDeliveryDate;
-  if (!hasProjectData) return null;
 
   return (
-    <div className="rounded-2xl border border-emerald-200/90 bg-emerald-50/60 p-4">
+    <form onSubmit={handleSubmit} className="rounded-2xl border border-emerald-200/90 bg-emerald-50/60 p-4">
       <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-emerald-900">
         <CalendarRange className="h-3.5 w-3.5" />
         Contrato y proyecto
       </p>
 
       <div className="mt-4 space-y-4">
-        {hasSavedContractDate || editingContract ? <div>
-          <label className="block text-[11px] font-medium text-emerald-900/90">Fecha de contrato</label>
-          {showContractEditor ? (
-            <div className="mt-2 space-y-2">
-              <input
-                type="date"
-                value={contractDate}
-                onChange={(e) => setContractDate(e.target.value)}
-                className="w-full rounded-lg border border-emerald-200 bg-white px-2 py-2 text-sm text-gray-900 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400"
-              />
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={saveContract}
-                  className="rounded-lg bg-emerald-700 px-4 py-2 text-xs font-semibold text-white transition hover:bg-emerald-800"
-                >
-                  {savedContractFlash ? "Guardado" : "Guardar"}
-                </button>
-                {hasSavedContractDate ? (
-                  <button
-                    type="button"
-                    onClick={cancelContractEdit}
-                    className="rounded-lg border border-emerald-200 bg-white px-4 py-2 text-xs font-semibold text-emerald-900 hover:bg-emerald-50"
-                  >
-                    Cancelar
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          ) : (
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <p className="text-sm font-medium text-gray-900">{formatIsoDateEs(task.contractDate!)}</p>
-              <button
-                type="button"
-                onClick={() => {
-                  setContractDate(task.contractDate ?? "");
-                  setEditingContract(true);
-                }}
-                className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-white p-1.5 text-emerald-800 shadow-sm hover:bg-emerald-50"
-                title="Editar fecha de contrato"
-                aria-label="Editar fecha de contrato"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
-        </div> : null}
+        <label className={labelClass}>
+          Tipo de proyecto
+          <select
+            value={tipo}
+            onChange={(e) => {
+              setTipo(e.target.value);
+              setSaved(false);
+            }}
+            className={inputClass}
+          >
+            <option value="">Sin definir</option>
+            {TIPOS_PROYECTO.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
 
-        {hasSavedDeliveryDate || editingDelivery ? <div>
-          <label className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-900/90">
-            <CalendarClock className="h-3 w-3 shrink-0" />
-            Fecha estimada de entrega
+        <label className={labelClass}>
+          Fecha de contrato
+          <input
+            type="date"
+            value={contractDate}
+            onChange={(e) => {
+              setContractDate(e.target.value);
+              setSaved(false);
+            }}
+            className={inputClass}
+          />
+        </label>
+
+        <div>
+          <label className={labelClass}>
+            Fecha de entrega
+            <input
+              type="date"
+              value={deliveryDate}
+              onChange={(e) => {
+                setDeliveryDate(e.target.value);
+                setSaved(false);
+              }}
+              className={inputClass}
+            />
           </label>
-          {showDeliveryEditor ? (
-            <div className="mt-2 space-y-2">
-              <input
-                type="date"
-                value={deliveryDate}
-                onChange={(e) => setDeliveryDate(e.target.value)}
-                className="w-full rounded-lg border border-emerald-200 bg-white px-2 py-2 text-sm text-gray-900 shadow-sm focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400"
-              />
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={saveDelivery}
-                  className="rounded-lg bg-emerald-700 px-4 py-2 text-xs font-semibold text-white transition hover:bg-emerald-800"
-                >
-                  {savedDeliveryFlash ? "Guardado" : "Guardar"}
-                </button>
-                {hasSavedDeliveryDate ? (
-                  <button
-                    type="button"
-                    onClick={cancelDeliveryEdit}
-                    className="rounded-lg border border-emerald-200 bg-white px-4 py-2 text-xs font-semibold text-emerald-900 hover:bg-emerald-50"
-                  >
-                    Cancelar
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          ) : (
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <p className="text-sm font-medium text-gray-900">{formatIsoDateEs(task.estimatedDeliveryDate!)}</p>
-              <button
-                type="button"
-                onClick={() => {
-                  setDeliveryDate(task.estimatedDeliveryDate ?? "");
-                  setEditingDelivery(true);
-                }}
-                className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-white p-1.5 text-emerald-800 shadow-sm hover:bg-emerald-50"
-                title="Editar fecha estimada de entrega"
-                aria-label="Editar fecha estimada de entrega"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
-          <p className="mt-1.5 text-[10px] leading-relaxed text-emerald-800/75">
-            Opcional: puedes fijarla a mano; si no, la tarjeta puede usar el cálculo desde cotizador y fecha de contrato.
-          </p>
-        </div> : null}
-
-        {projectLines.length > 0 ? <div>
-          <p className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-900/90">
-            <Package className="h-3 w-3 shrink-0" />
-            Tipos de proyecto
-          </p>
-          {projectLines.length > 0 ? (
-            <ul className="mt-2 space-y-2 rounded-lg border border-emerald-100 bg-white/90 px-3 py-2.5 text-sm text-gray-800">
-              {projectLines.map((line, i) => (
-                <li
-                  key={i}
-                  className="flex flex-col gap-0.5 border-b border-emerald-50 pb-2 last:border-0 last:pb-0"
-                >
-                  <span className="font-medium text-emerald-950">{line.projectType}</span>
-                  <span className="text-xs text-emerald-800/85">{line.weeksLabel}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-2 text-xs text-emerald-800/80">
-              Aún no hay cotizaciones guardadas en esta tarjeta. Cuando se generen desde el tablero, el tipo y las
-              semanas aparecerán aquí.
-            </p>
-          )}
-        </div> : null}
-
-        {aggWeeks ? <div>
-          <p className="text-[11px] font-medium text-emerald-900/90">Entrega estimada (referencia cotizador)</p>
-          {aggWeeks ? (
-            <p className="mt-2 text-sm text-gray-800">
-              <span className="font-medium">Plazo en cotización(es): </span>
-              {aggWeeks.min === aggWeeks.max
-                ? `${aggWeeks.min} semanas aprox.`
-                : `${aggWeeks.min} a ${aggWeeks.max} semanas aprox.`}
-            </p>
-          ) : (
-            <p className="mt-2 text-xs text-emerald-800/80">
-              No se encontraron semanas en las cotizaciones (revisa que el cotizador formal tenga el rango de semanas
-              completado).
-            </p>
-          )}
           {calendarDelivery ? (
-            <p className="mt-3 rounded-lg border border-emerald-100 bg-white/90 px-3 py-2.5 text-sm leading-relaxed text-gray-800">
-              {calendarDelivery}
-            </p>
-          ) : aggWeeks ? (
-            <p className="mt-2 text-xs text-emerald-800/80">
-              Indica la <strong>fecha de contrato</strong> arriba y guárdala para ver fechas aproximadas de entrega en
-              calendario.
+            <p className="mt-2 text-[11px] leading-relaxed text-emerald-800/85">
+              Referencia del cotizador: {calendarDelivery}
             </p>
           ) : null}
-          {hasSavedDeliveryDate ? (
-            <p className="mt-2 text-[10px] text-emerald-800/80">
-              La fecha manual de entrega registrada arriba es la que se muestra en la tarjeta principal (tiene prioridad).
-            </p>
-          ) : null}
-        </div> : null}
+        </div>
       </div>
-    </div>
+
+      {error ? (
+        <p className="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">{error}</p>
+      ) : null}
+
+      <button
+        type="submit"
+        disabled={isSaving || !task.codigoProyecto}
+        className="mt-4 w-full rounded-lg bg-emerald-700 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {isSaving ? "Guardando..." : saved ? "Guardado" : "Guardar"}
+      </button>
+    </form>
   );
 }

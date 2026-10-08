@@ -306,6 +306,8 @@ const normalizeTask = (task: Partial<KanbanTask> & Record<string, unknown>): Kan
       typeof task.estimatedDeliveryDate === "string" ? task.estimatedDeliveryDate : undefined,
     projectTypeSummary:
       typeof task.projectTypeSummary === "string" ? task.projectTypeSummary : undefined,
+    presupuestoTotal: typeof task.presupuestoTotal === "number" ? task.presupuestoTotal : undefined,
+    totalPagado: typeof task.totalPagado === "number" ? task.totalPagado : undefined,
   };
 };
 

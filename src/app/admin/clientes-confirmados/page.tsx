@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -12,17 +12,19 @@ import {
   LayoutTemplate,
   FileSignature,
   CalendarClock,
+  Wallet,
 } from "lucide-react";
 import {
   deriveProjectTypesLabel,
   getAggregatedDeliveryWeeksFromTask,
+  getMontoRestante,
   getTaskCardSubtitle,
   type KanbanTask,
 } from "@/lib/kanban";
 import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
+import { formatCurrencyMXN } from "@/lib/formatters";
 import { ConfirmedClientContractFields } from "@/components/admin/ConfirmedClientContractFields";
 import { ClientDocuments } from "@/components/admin/ClientDocuments";
-import { ContratoUploadButton } from "@/components/admin/ContratoUploadButton";
 import { PublicStatusEditorModal } from "@/components/admin/PublicStatusEditorModal";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
@@ -62,29 +64,29 @@ export default function ClientesConfirmadosPage() {
   const [isHydrated, setIsHydrated] = useState(false);
   const [selectedClient, setSelectedClient] = useState<KanbanTask | null>(null);
   const [isContratoEditorOpen, setIsContratoEditorOpen] = useState(false);
-  const [documentsRefreshKey, setDocumentsRefreshKey] = useState(0);
   const columnCount = useClientCardColumns(3);
   const clientColumns = useMemo(() => {
     if (clients.length === 0) return [];
     return splitIntoColumns(clients, columnCount);
   }, [clients, columnCount]);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const synced = await syncKanbanTasksFromBackend();
-        const tasks = (synced ?? []) as KanbanTask[];
-        const confirmed = tasks.filter((task) => task.followUpStatus === "confirmado");
-        setClients(confirmed);
-      } catch {
-        setClients([]);
-      } finally {
-        setIsHydrated(true);
-      }
-    };
-
-    void load();
+  const loadClients = useCallback(async () => {
+    try {
+      const synced = await syncKanbanTasksFromBackend();
+      const tasks = (synced ?? []) as KanbanTask[];
+      const confirmed = tasks.filter((task) => task.followUpStatus === "confirmado");
+      setClients(confirmed);
+      setSelectedClient((sel) => confirmed.find((t) => t.id === sel?.id) ?? sel);
+    } catch {
+      setClients([]);
+    } finally {
+      setIsHydrated(true);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadClients();
+  }, [loadClients]);
 
   const handleConfirmedTaskUpdate = (updated: KanbanTask) => {
     setClients((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
@@ -161,8 +163,9 @@ export default function ClientesConfirmadosPage() {
               {clientColumns.map((col, colIdx) => (
                 <div key={colIdx} className="flex min-w-0 flex-1 flex-col gap-4">
                   {col.map((client) => {
-                    const projectTypesLabel = deriveProjectTypesLabel(client).trim();
+                    const projectTypesLabel = client.projectTypeSummary?.trim() || deriveProjectTypesLabel(client).trim();
                     const deliverySummary = getCardDeliverySummary(client);
+                    const montoRestante = getMontoRestante(client);
                     const cardSubtitle = getTaskCardSubtitle(client);
                     return (
                     <div
@@ -230,6 +233,19 @@ export default function ClientesConfirmadosPage() {
                               <span className="text-secondary">{deliverySummary}</span>
                             ) : (
                               <span className="text-secondary/90">Por definir</span>
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <Wallet className="mt-0.5 h-4 w-4 shrink-0 opacity-70" />
+                          <span className="min-w-0 leading-snug">
+                            <span className="block text-[10px] font-semibold uppercase tracking-wide text-secondary/90">
+                              Restante por pagar
+                            </span>
+                            {montoRestante !== null ? (
+                              <span className="font-medium text-gray-800">{formatCurrencyMXN(montoRestante)}</span>
+                            ) : (
+                              <span className="text-secondary/90">Sin presupuesto</span>
                             )}
                           </span>
                         </div>
@@ -318,22 +334,16 @@ export default function ClientesConfirmadosPage() {
 
               <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
                 <div className="space-y-8 pb-8">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <button
-                      type="button"
-                      disabled={!selectedClient.codigoProyecto}
-                      onClick={() => setIsContratoEditorOpen(true)}
-                      className="w-full rounded-2xl border border-primary/15 bg-white py-3 text-sm font-semibold text-primary shadow-sm transition hover:bg-primary/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Pagos del proyecto
-                    </button>
-                    <ContratoUploadButton
-                      task={selectedClient}
-                      onUploaded={() => setDocumentsRefreshKey((k) => k + 1)}
-                    />
-                  </div>
+                  <button
+                    type="button"
+                    disabled={!selectedClient.codigoProyecto}
+                    onClick={() => setIsContratoEditorOpen(true)}
+                    className="w-full rounded-2xl border border-primary/15 bg-white py-3 text-sm font-semibold text-primary shadow-sm transition hover:bg-primary/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Pagos del proyecto
+                  </button>
                   <ConfirmedClientContractFields key={selectedClient.id} task={selectedClient} onUpdate={handleConfirmedTaskUpdate} />
-                  <ClientDocuments key={documentsRefreshKey} task={selectedClient} />
+                  <ClientDocuments task={selectedClient} />
                 </div>
               </div>
             </motion.aside>
@@ -348,7 +358,7 @@ export default function ClientesConfirmadosPage() {
           role="admin"
           codigoProyecto={selectedClient.codigoProyecto}
           subtitle={`${selectedClient.project ?? selectedClient.title}`}
-          onSaved={() => handleConfirmedTaskUpdate(selectedClient)}
+          onSaved={() => void loadClients()}
         />
       ) : null}
     </div>

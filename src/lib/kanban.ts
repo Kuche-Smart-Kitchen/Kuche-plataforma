@@ -118,9 +118,19 @@ export type KanbanTask = {
   contractDate?: string;
   /** Admin «Clientes confirmados»: fecha estimada de entrega manual (ISO `YYYY-MM-DD`). */
   estimatedDeliveryDate?: string;
-  /** @deprecated Tipos se leen de cotizaciones en la tarjeta. */
+  /** Tipo de proyecto capturado por el admin (`Proyecto.tipo` en backend). */
   projectTypeSummary?: string;
+  /** `Proyecto.presupuestoTotal` (MXN). */
+  presupuestoTotal?: number;
+  /** Suma de `Proyecto.pagos.*.amount` (MXN). */
+  totalPagado?: number;
 };
+
+/** Monto pendiente por pagar; `null` si el proyecto aún no tiene presupuesto. */
+export function getMontoRestante(task: Pick<KanbanTask, "presupuestoTotal" | "totalPagado">): number | null {
+  if (!task.presupuestoTotal || task.presupuestoTotal <= 0) return null;
+  return Math.max(0, task.presupuestoTotal - (task.totalPagado ?? 0));
+}
 
 /**
  * Segunda línea opcional en tarjetas administrativas: `title` a veces repite `project`

@@ -1,17 +1,17 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, User, X } from "lucide-react";
-import { getTaskCardSubtitle, stageStyles, type KanbanTask } from "@/lib/kanban";
+import { getMontoRestante, getTaskCardSubtitle, stageStyles, type KanbanTask } from "@/lib/kanban";
 import { ClientDocuments } from "@/components/admin/ClientDocuments";
-import { ContratoUploadButton } from "@/components/admin/ContratoUploadButton";
 import { PublicStatusEditorModal } from "@/components/admin/PublicStatusEditorModal";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
 import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
+import { formatCurrencyMXN } from "@/lib/formatters";
 
 const stageLabel: Record<string, string> = {
   citas: "Citas",
@@ -40,22 +40,21 @@ export default function AdminClientesEnProcesoPage() {
   const [isHydrated, setIsHydrated] = useState(false);
   const [selectedClient, setSelectedClient] = useState<KanbanTask | null>(null);
   const [isContratoEditorOpen, setIsContratoEditorOpen] = useState(false);
-  const [documentsRefreshKey, setDocumentsRefreshKey] = useState(0);
+
+  const loadTasks = useCallback(async () => {
+    try {
+      const synced = await syncKanbanTasksFromBackend();
+      setTasks((synced ?? []) as KanbanTask[]);
+    } catch {
+      setTasks([]);
+    } finally {
+      setIsHydrated(true);
+    }
+  }, []);
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const synced = await syncKanbanTasksFromBackend();
-        setTasks((synced ?? []) as KanbanTask[]);
-      } catch {
-        setTasks([]);
-      } finally {
-        setIsHydrated(true);
-      }
-    };
-
-    void load();
-  }, []);
+    void loadTasks();
+  }, [loadTasks]);
 
   const inProgress = getTasksInProgress(tasks, null);
   const columnCount = useClientCardColumns(3);
@@ -135,6 +134,7 @@ export default function AdminClientesEnProcesoPage() {
                 <div key={colIdx} className="flex min-w-0 flex-1 flex-col gap-4">
                   {col.map((task) => {
                     const cardSubtitle = getTaskCardSubtitle(task);
+                    const montoRestante = getMontoRestante(task);
                     return (
                     <div
                       key={task.id}
@@ -166,9 +166,19 @@ export default function AdminClientesEnProcesoPage() {
                         </span>
                       </div>
 
-                      <div className="mt-4 border-t border-gray-100 pt-4 text-xs text-secondary">
-                        Asignado:{" "}
-                        {task.assignedTo?.length ? task.assignedTo.join(", ") : "Sin asignar"}
+                      <div className="mt-4 space-y-2 border-t border-gray-100 pt-4 text-xs text-secondary">
+                        <p>
+                          Asignado:{" "}
+                          {task.assignedTo?.length ? task.assignedTo.join(", ") : "Sin asignar"}
+                        </p>
+                        <p>
+                          Restante por pagar:{" "}
+                          {montoRestante !== null ? (
+                            <span className="font-semibold text-gray-800">{formatCurrencyMXN(montoRestante)}</span>
+                          ) : (
+                            "Sin presupuesto"
+                          )}
+                        </p>
                       </div>
 
                       <button
@@ -254,7 +264,7 @@ export default function AdminClientesEnProcesoPage() {
               </div>
 
               <div className="min-h-0 flex-1 px-6 py-6">
-                <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="mb-6">
                   <button
                     type="button"
                     disabled={!selectedClient.codigoProyecto}
@@ -263,12 +273,8 @@ export default function AdminClientesEnProcesoPage() {
                   >
                     Pagos del proyecto
                   </button>
-                  <ContratoUploadButton
-                    task={selectedClient}
-                    onUploaded={() => setDocumentsRefreshKey((k) => k + 1)}
-                  />
                 </div>
-                <ClientDocuments key={documentsRefreshKey} task={selectedClient} />
+                <ClientDocuments task={selectedClient} />
               </div>
             </motion.div>
           </motion.div>
@@ -282,6 +288,7 @@ export default function AdminClientesEnProcesoPage() {
           role="admin"
           codigoProyecto={selectedClient.codigoProyecto}
           subtitle={`${selectedClient.project ?? selectedClient.title}`}
+          onSaved={() => void loadTasks()}
         />
       ) : null}
     </div>
