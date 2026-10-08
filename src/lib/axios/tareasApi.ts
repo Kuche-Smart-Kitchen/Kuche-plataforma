@@ -49,6 +49,15 @@ export const crearTarea = async (
   return response.data;
 };
 
+export const eliminarTarea = async (
+  id: string,
+): Promise<ApiResponse<Record<string, unknown>>> => {
+  const response = await axiosInstance.delete<ApiResponse<Record<string, unknown>>>(
+    `/api/tareas/${id}`,
+  );
+  return response.data;
+};
+
 export interface ArchivoExternoPayload {
   nombre: string;
   url: string;

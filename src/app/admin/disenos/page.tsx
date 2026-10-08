@@ -710,7 +710,7 @@ export default function DisenosPage() {
       <AnimatePresence>
         {activePreview ? (
           <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -725,9 +725,9 @@ export default function DisenosPage() {
               exit={{ opacity: 0, scale: 0.96 }}
               transition={{ duration: 0.15 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-4xl overflow-hidden rounded-3xl bg-white shadow-2xl"
+              className="flex max-h-[95vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl"
             >
-              <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+              <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-6 py-4">
                 <div>
                   <p className="text-sm font-semibold text-gray-900">{activePreview.clientName}</p>
                   <p className="text-xs text-gray-500">Responsable: {activePreview.designerName}</p>
@@ -740,49 +740,51 @@ export default function DisenosPage() {
                   Cerrar
                 </button>
               </div>
-              <div className="border-b border-gray-100 bg-white px-6 py-4">
-                <p className="text-xs font-semibold text-gray-600">
-                  Descargar sin abrir vista previa
-                </p>
-                <p className="mt-1 text-[11px] text-gray-500">
-                  SketchUp, PDF, imágenes y demás: usa los botones siguientes. La vista de abajo es opcional.
-                </p>
-                <div className="mt-3 flex max-h-36 flex-col gap-2 overflow-y-auto">
-                  {activePreview.files.map((f) => (
-                    <DesignFileDownloadRow
-                      key={f.id}
-                      file={f}
-                      isPreviewSelected={previewFileId === f.id}
-                      onSelectPreview={() => setPreviewFileId(f.id)}
-                    />
-                  ))}
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                <div className="border-b border-gray-100 bg-white px-6 py-4">
+                  <p className="text-xs font-semibold text-gray-600">
+                    Descargar sin abrir vista previa
+                  </p>
+                  <p className="mt-1 text-[11px] text-gray-500">
+                    SketchUp, PDF, imágenes y demás: usa los botones siguientes. La vista de abajo es opcional.
+                  </p>
+                  <div className="mt-3 flex flex-col gap-2">
+                    {activePreview.files.map((f) => (
+                      <DesignFileDownloadRow
+                        key={f.id}
+                        file={f}
+                        isPreviewSelected={previewFileId === f.id}
+                        onSelectPreview={() => setPreviewFileId(f.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div className="border-t border-gray-100 bg-gray-50 px-6 pb-2 pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Vista previa</p>
+                </div>
+                <div className="relative flex min-h-[200px] items-center justify-center bg-gray-100 px-4 pb-6 pt-2">
+                  {activePreviewImageSrc ? (
+                    <>
+                      <PreviewImagePane
+                        src={activePreviewImageSrc}
+                        alt={`Diseño ${activePreview.clientName}`}
+                        onOpenZoom={openZoomViewer}
+                      />
+                      <button
+                        type="button"
+                        onClick={openZoomViewer}
+                        className="absolute right-6 top-2 inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white/90 px-2.5 py-1 text-[10px] font-semibold text-gray-600 shadow-sm backdrop-blur-sm transition hover:bg-white"
+                      >
+                        <Maximize2 className="h-3.5 w-3.5" />
+                        Pantalla completa
+                      </button>
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-500">Sin imagen disponible</p>
+                  )}
                 </div>
               </div>
-              <div className="border-t border-gray-100 bg-gray-50 px-6 pb-2 pt-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Vista previa</p>
-              </div>
-              <div className="relative flex max-h-[55vh] min-h-[200px] items-center justify-center overflow-hidden bg-gray-100 px-4 pb-4">
-                {activePreviewImageSrc ? (
-                  <>
-                    <PreviewImagePane
-                      src={activePreviewImageSrc}
-                      alt={`Diseño ${activePreview.clientName}`}
-                      onOpenZoom={openZoomViewer}
-                    />
-                    <button
-                      type="button"
-                      onClick={openZoomViewer}
-                      className="absolute right-6 top-2 inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white/90 px-2.5 py-1 text-[10px] font-semibold text-gray-600 shadow-sm backdrop-blur-sm transition hover:bg-white"
-                    >
-                      <Maximize2 className="h-3.5 w-3.5" />
-                      Pantalla completa
-                    </button>
-                  </>
-                ) : (
-                  <p className="text-sm text-gray-500">Sin imagen disponible</p>
-                )}
-              </div>
-              <div className="flex items-center justify-between border-t border-gray-100 px-6 py-4">
+              <div className="flex shrink-0 items-center justify-between border-t border-gray-100 bg-white px-6 py-4">
                 <button
                   type="button"
                   onClick={goToPrev}

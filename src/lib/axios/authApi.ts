@@ -1,4 +1,5 @@
 import axiosInstance, { type ApiResponse } from "./axiosConfig";
+import { LOCAL_LOGIN_CAPTCHA_BYPASS } from "@/lib/login-captcha-bypass";
 import { runtimeStore } from "@/lib/runtime-store";
 
 const SESSION_ROUTE = "/api/auth/session";
@@ -177,7 +178,10 @@ export const login = async (
     { email: credentials.correo, contrasena: credentials.password },
   ];
 
-  const token = captchaToken?.trim();
+  let token = captchaToken?.trim();
+  if (token === LOCAL_LOGIN_CAPTCHA_BYPASS) {
+    token = undefined;
+  }
   const requestConfig = token
     ? {
         headers: {

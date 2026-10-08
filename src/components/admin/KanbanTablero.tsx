@@ -1,6 +1,6 @@
  "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
@@ -54,6 +54,7 @@ import { dueDateToSortTimestamp, formatDueDateTimeDisplay } from "@/lib/kanban-d
 import { subirArchivoCliente, subirDisenoDropbox } from "@/lib/axios/archivosClienteApi";
 import { obtenerDisponibilidadDia } from "@/lib/axios/citasApi";
 import { agendarVisita, obtenerDisponibilidadVisita } from "@/lib/axios/visitasApi";
+import { eliminarTarea } from "@/lib/axios/tareasApi";
 
 const currentUser = "Valeria";
 const hasFinalDesign = (task: KanbanTask) => Boolean(task.files?.some((file) => file.nivel === "final"));
@@ -434,6 +435,9 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const [designFilesUploading, setDesignFilesUploading] = useState(false);
   const [panelFilesUploading, setPanelFilesUploading] = useState(false);
   const [deleteConfirmTaskId, setDeleteConfirmTaskId] = useState<string | null>(null);
+  const [deleteTaskInProgress, setDeleteTaskInProgress] = useState(false);
+  const [deleteConfirmError, setDeleteConfirmError] = useState<string | null>(null);
+  const ignoreDeleteBackdropClickRef = useRef(false);
   const [cotizacionEntregadaTaskId, setCotizacionEntregadaTaskId] = useState<string | null>(null);
   const [scheduleVisitTaskId, setScheduleVisitTaskId] = useState<string | null>(null);
   const [visitDraft, setVisitDraft] = useState({
@@ -455,6 +459,9 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const uploadTaskRef = useRef<HTMLDivElement | null>(null);
   const uploadAcceptedDesignsRef = useRef<HTMLDivElement | null>(null);
   const deleteConfirmRef = useRef<HTMLDivElement | null>(null);
+  const deleteTaskTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const skipPanelTrapInitialFocusRef = useRef(false);
+  const restoreFocusToDeleteTriggerRef = useRef(false);
   const cotizacionEntregadaRef = useRef<HTMLDivElement | null>(null);
   const scheduleVisitRef = useRef<HTMLDivElement | null>(null);
   const visitCaptchaRef = useRef<CaptchaRef | null>(null);
@@ -493,7 +500,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     setTaskSaveMessage(null);
   }, []);
 
-  useEscapeClose(Boolean(activeTaskId), () => setActiveTaskId(null));
+  useEscapeClose(Boolean(activeTaskId) && !deleteConfirmTaskId, () => setActiveTaskId(null));
   useEscapeClose(Boolean(uploadTaskId), () => {
     setUploadTaskId(null);
     setDesignStagingFiles([]);
@@ -502,13 +509,17 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     setUploadAcceptedDesignsTaskId(null);
     setDropboxStagingFile(null);
   });
-  useEscapeClose(Boolean(deleteConfirmTaskId), () => setDeleteConfirmTaskId(null));
+  useEscapeClose(Boolean(deleteConfirmTaskId) && !deleteTaskInProgress, () => {
+    closeDeleteConfirm();
+  });
   useEscapeClose(Boolean(cotizacionEntregadaTaskId), () => setCotizacionEntregadaTaskId(null));
   useEscapeClose(Boolean(scheduleVisitTaskId), () => setScheduleVisitTaskId(null));
-  useFocusTrap(Boolean(activeTaskId), activeTaskRef);
+  useFocusTrap(Boolean(activeTaskId) && !deleteConfirmTaskId, activeTaskRef, {
+    skipInitialFocusRef: skipPanelTrapInitialFocusRef,
+  });
   useFocusTrap(Boolean(uploadTaskId), uploadTaskRef);
   useFocusTrap(Boolean(uploadAcceptedDesignsTaskId), uploadAcceptedDesignsRef);
-  useFocusTrap(Boolean(deleteConfirmTaskId), deleteConfirmRef);
+  useFocusTrap(Boolean(deleteConfirmTaskId), deleteConfirmRef, { deferInitialFocus: true });
   useFocusTrap(Boolean(cotizacionEntregadaTaskId), cotizacionEntregadaRef);
   useFocusTrap(Boolean(scheduleVisitTaskId), scheduleVisitRef);
   // Al abrir el panel de detalle, aseguramos que se muestre desde el inicio.
@@ -1086,6 +1097,76 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
   const deleteTask = (taskId: string) => {
     removeTask(taskId);
+  };
+
+  const openDeleteConfirm = (taskId: string) => {
+    setDeleteConfirmError(null);
+    ignoreDeleteBackdropClickRef.current = true;
+    setDeleteConfirmTaskId(taskId);
+    window.setTimeout(() => {
+      ignoreDeleteBackdropClickRef.current = false;
+    }, 400);
+  };
+
+  const closeDeleteConfirm = () => {
+    if (deleteTaskInProgress) return;
+    skipPanelTrapInitialFocusRef.current = true;
+    restoreFocusToDeleteTriggerRef.current = true;
+    setDeleteConfirmTaskId(null);
+    setDeleteConfirmError(null);
+  };
+
+  useLayoutEffect(() => {
+    if (!restoreFocusToDeleteTriggerRef.current) return;
+    restoreFocusToDeleteTriggerRef.current = false;
+    if (deleteConfirmTaskId !== null) return;
+    if (!activeTaskId) return;
+    const trigger = deleteTaskTriggerRef.current;
+    if (!trigger) return;
+    try {
+      trigger.focus({ preventScroll: true });
+    } catch {
+      trigger.focus();
+    }
+  }, [deleteConfirmTaskId, activeTaskId]);
+
+  const confirmDeleteTask = async () => {
+    const taskId = deleteConfirmTaskId;
+    if (!taskId || deleteTaskInProgress) return;
+
+    setDeleteTaskInProgress(true);
+    setDeleteConfirmError(null);
+
+    try {
+      const response = await eliminarTarea(taskId);
+      if (!response.success) {
+        throw new Error(response.message || "No se pudo eliminar la tarea.");
+      }
+      deleteTask(taskId);
+      setDeleteConfirmTaskId(null);
+      setDeleteConfirmError(null);
+      setActiveTaskId(null);
+    } catch (error) {
+      const err = error as { response?: { status?: number; data?: { message?: string } } };
+      const status = err.response?.status;
+      const serverMessage =
+        typeof err.response?.data?.message === "string" ? err.response.data.message.trim() : "";
+      let message = "No se pudo eliminar la tarea. Intenta de nuevo.";
+      if (serverMessage) {
+        message = serverMessage;
+      } else if (error instanceof Error && error.message.trim() && !error.message.includes("Request failed")) {
+        message = error.message;
+      } else if (status === 403) {
+        message = "No tienes permiso para eliminar esta tarea.";
+      } else if (status === 404) {
+        message = "La tarea ya no existe en el servidor.";
+      } else if (status && status >= 500) {
+        message = "Error del servidor al eliminar. Intenta más tarde.";
+      }
+      setDeleteConfirmError(message);
+    } finally {
+      setDeleteTaskInProgress(false);
+    }
   };
 
   const priorityOrder: Record<TaskPriority, number> = { alta: 0, media: 1, baja: 2 };
@@ -2401,8 +2482,12 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                 {allowDeleteTask && teamMembers && teamMembers.length > 0 ? (
                   <div className="border-t border-primary/10 pt-6">
                     <button
+                      ref={deleteTaskTriggerRef}
                       type="button"
-                      onClick={() => setDeleteConfirmTaskId(activeTask.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openDeleteConfirm(activeTask.id);
+                      }}
                       className="w-full rounded-2xl border border-rose-200 bg-rose-50 py-3 text-sm font-semibold text-rose-600 transition hover:bg-rose-100"
                     >
                       Eliminar tarea
@@ -2418,28 +2503,27 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
           )
         : null}
 
-      {mounted
+      {mounted && deleteConfirmTaskId
         ? createPortal(
-            <AnimatePresence mode="sync">
-              {deleteConfirmTaskId ? (
-                <motion.div
-                  key={deleteConfirmTaskId}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0, pointerEvents: "none" }}
-                  transition={{ duration: 0.2 }}
-                  className="pointer-events-auto fixed inset-0 z-[100] flex items-center justify-center bg-black/50 px-4"
-                  onClick={() => setDeleteConfirmTaskId(null)}
-                >
-            <motion.div
+            <div
+              className="pointer-events-auto fixed inset-0 z-[110] flex items-center justify-center bg-black/50 px-4"
+              onClick={() => {
+                if (ignoreDeleteBackdropClickRef.current) return;
+                closeDeleteConfirm();
+              }}
+              onMouseDown={(e) => {
+                if (ignoreDeleteBackdropClickRef.current) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
+              }}
+            >
+            <div
               ref={deleteConfirmRef}
               tabIndex={-1}
               role="dialog"
               aria-modal="true"
               aria-labelledby="delete-confirm-title"
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
               className="pointer-events-auto w-full max-w-sm rounded-3xl border border-rose-200 bg-white p-6 shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
@@ -2454,32 +2538,38 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
               <p className="mt-2 text-center text-sm text-secondary">
                 Esta acción no se puede deshacer. La tarea se quitará del tablero.
               </p>
+              {deleteConfirmError ? (
+                <p className="mt-3 rounded-2xl bg-rose-50 px-3 py-2 text-center text-xs font-semibold text-rose-700">
+                  {deleteConfirmError}
+                </p>
+              ) : null}
               <div className="mt-6 flex gap-3">
                 <button
                   type="button"
-                  onClick={() => setDeleteConfirmTaskId(null)}
-                  className="flex-1 rounded-2xl border border-primary/10 bg-white py-3 text-sm font-semibold text-secondary transition hover:bg-gray-50"
+                  disabled={deleteTaskInProgress}
+                  onClick={closeDeleteConfirm}
+                  className="flex-1 rounded-2xl border border-primary/10 bg-white py-3 text-sm font-semibold text-secondary transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   Cancelar
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (deleteConfirmTaskId) {
-                      deleteTask(deleteConfirmTaskId);
-                      setDeleteConfirmTaskId(null);
-                      setActiveTaskId(null);
-                    }
-                  }}
-                  className="flex-1 rounded-2xl bg-rose-600 py-3 text-sm font-semibold text-white transition hover:bg-rose-700"
+                  disabled={deleteTaskInProgress}
+                  onClick={() => void confirmDeleteTask()}
+                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-2xl bg-rose-600 py-3 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  Sí, eliminar
+                  {deleteTaskInProgress ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                      Eliminando…
+                    </>
+                  ) : (
+                    "Sí, eliminar"
+                  )}
                 </button>
               </div>
-            </motion.div>
-                </motion.div>
-              ) : null}
-            </AnimatePresence>,
+            </div>
+            </div>,
             document.body,
           )
         : null}

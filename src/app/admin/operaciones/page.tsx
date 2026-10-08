@@ -20,7 +20,14 @@ import {
 import { generatePublicProjectCode } from "@/lib/project-code";
 import { fetchBackendKanbanTasks } from "@/lib/admin-workflow";
 import { crearTarea } from "@/lib/axios/tareasApi";
+import {
+  INTEGRANTE_ROL_OPTIONS,
+  type IntegranteRolSelectable,
+} from "@/lib/axios/usuariosApi";
 import { useEquipoContext } from "@/contexts/EquipoContext";
+
+const integranteRolLabel = (role: IntegranteRolSelectable) =>
+  INTEGRANTE_ROL_OPTIONS.find((option) => option.value === role)?.label ?? role;
 
 export default function OperacionesPage() {
   const router = useRouter();
@@ -40,11 +47,15 @@ export default function OperacionesPage() {
   const [assignError, setAssignError] = useState("");
   const [newMemberName, setNewMemberName] = useState("");
   const [newMemberEmail, setNewMemberEmail] = useState("");
+  const [newMemberRole, setNewMemberRole] = useState<IntegranteRolSelectable>("empleado");
+  const [newMemberPassword, setNewMemberPassword] = useState("");
   const [teamError, setTeamError] = useState("");
   const [teamSaving, setTeamSaving] = useState(false);
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [editingMemberName, setEditingMemberName] = useState("");
   const [editingMemberEmail, setEditingMemberEmail] = useState("");
+  const [editingMemberRole, setEditingMemberRole] = useState<IntegranteRolSelectable>("empleado");
+  const [editingMemberPassword, setEditingMemberPassword] = useState("");
   const [kanbanTasks, setKanbanTasks] = useState<KanbanTask[]>([]);
   const [selectedPublicTaskId, setSelectedPublicTaskId] = useState<string | null>(null);
   const [isPublicEditorOpen, setIsPublicEditorOpen] = useState(false);
@@ -126,6 +137,7 @@ export default function OperacionesPage() {
         asignadoA: assignees,
         prioridad: newTaskPriority,
         ubicacion: newTaskLocation.trim() || undefined,
+        mapsUrl: newTaskMapsUrl.trim() || undefined,
         notas: "",
         codigoProyecto,
         fechaLimite: newTaskDueDate.trim() || undefined,
@@ -153,8 +165,17 @@ export default function OperacionesPage() {
   const handleAddMember = async () => {
     const name = newMemberName.trim();
     const correo = newMemberEmail.trim();
+    const password = newMemberPassword;
     if (!name || !correo) {
       setTeamError("Escribe el nombre y el correo del integrante.");
+      return;
+    }
+    if (!password.trim()) {
+      setTeamError("La contraseña inicial es obligatoria.");
+      return;
+    }
+    if (password.length < 6) {
+      setTeamError("La contraseña inicial debe tener al menos 6 caracteres.");
       return;
     }
     if (teamMembers.some((m) => m.name.toLowerCase() === name.toLowerCase())) {
@@ -164,9 +185,11 @@ export default function OperacionesPage() {
     setTeamSaving(true);
     setTeamError("");
     try {
-      await agregarIntegrante({ nombre: name, correo });
+      await agregarIntegrante({ nombre: name, correo, rol: newMemberRole, password });
       setNewMemberName("");
       setNewMemberEmail("");
+      setNewMemberRole("empleado");
+      setNewMemberPassword("");
     } catch (err) {
       setTeamError(err instanceof Error ? err.message : "No se pudo agregar el integrante.");
     } finally {
@@ -189,9 +212,13 @@ export default function OperacionesPage() {
   const openTeamModal = () => {
     setNewMemberName("");
     setNewMemberEmail("");
+    setNewMemberRole("empleado");
+    setNewMemberPassword("");
     setEditingMemberId(null);
     setEditingMemberName("");
     setEditingMemberEmail("");
+    setEditingMemberRole("empleado");
+    setEditingMemberPassword("");
     setTeamError("");
     setIsTeamModalOpen(true);
   };
@@ -200,12 +227,15 @@ export default function OperacionesPage() {
     setEditingMemberId(null);
     setEditingMemberName("");
     setEditingMemberEmail("");
+    setEditingMemberRole("empleado");
+    setEditingMemberPassword("");
     setTeamError("");
   };
 
   const handleSaveMemberEdit = async (id: string) => {
     const name = editingMemberName.trim();
     const email = editingMemberEmail.trim().toLowerCase();
+    const password = editingMemberPassword.trim();
     if (!name) {
       setTeamError("Escribe el nombre del integrante.");
       return;
@@ -220,6 +250,8 @@ export default function OperacionesPage() {
       await actualizarIntegrante(id, {
         nombre: name,
         ...(email ? { correo: email } : {}),
+        rol: editingMemberRole,
+        ...(password ? { password } : {}),
       });
       cancelMemberEdit();
     } catch (err) {
@@ -573,6 +605,27 @@ export default function OperacionesPage() {
                   type="email"
                   className="w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
                 />
+                <select
+                  value={newMemberRole}
+                  onChange={(e) => setNewMemberRole(e.target.value as IntegranteRolSelectable)}
+                  className="w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
+                  disabled={teamSaving}
+                >
+                  {INTEGRANTE_ROL_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="password"
+                  value={newMemberPassword}
+                  onChange={(e) => setNewMemberPassword(e.target.value)}
+                  placeholder="Contraseña inicial (mínimo 6 caracteres)"
+                  className="w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
+                  disabled={teamSaving}
+                  autoComplete="new-password"
+                />
                 <button
                   type="button"
                   disabled={teamSaving}
@@ -609,6 +662,29 @@ export default function OperacionesPage() {
                             placeholder="Correo electrónico"
                             disabled={teamSaving}
                           />
+                          <select
+                            value={editingMemberRole}
+                            onChange={(e) =>
+                              setEditingMemberRole(e.target.value as IntegranteRolSelectable)
+                            }
+                            className="w-full rounded-xl border border-primary/20 px-3 py-1.5 text-sm outline-none focus:border-primary"
+                            disabled={teamSaving}
+                          >
+                            {INTEGRANTE_ROL_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="password"
+                            value={editingMemberPassword}
+                            onChange={(e) => setEditingMemberPassword(e.target.value)}
+                            className="w-full rounded-xl border border-primary/20 px-3 py-1.5 text-sm outline-none focus:border-primary"
+                            placeholder="Nueva contraseña (opcional)"
+                            disabled={teamSaving}
+                            autoComplete="new-password"
+                          />
                         </div>
                         <div className="flex shrink-0 gap-2">
                           <button
@@ -636,6 +712,7 @@ export default function OperacionesPage() {
                           {m.email ? (
                             <p className="truncate text-xs text-secondary">{m.email}</p>
                           ) : null}
+                          <p className="text-xs text-secondary/80">{integranteRolLabel(m.role)}</p>
                         </div>
                         <div className="flex shrink-0 gap-2">
                           <button
@@ -645,6 +722,8 @@ export default function OperacionesPage() {
                               setEditingMemberId(m.id);
                               setEditingMemberName(m.name);
                               setEditingMemberEmail(m.email || "");
+                              setEditingMemberRole(m.role);
+                              setEditingMemberPassword("");
                               setTeamError("");
                             }}
                             className="inline-flex items-center gap-1 rounded-full border border-primary/10 px-3 py-1 text-[11px] font-semibold text-secondary hover:bg-primary/5"

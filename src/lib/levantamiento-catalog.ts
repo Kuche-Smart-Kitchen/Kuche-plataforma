@@ -174,6 +174,12 @@ export const WALL_MEASURE_SCHEMA: Record<string, WallMeasureFieldDef[]> = {
       acronimo: "A",
       verifyHint: "Cota G: desde el extremo de referencia hasta el inicio del vano.",
     },
+    {
+      key: "dist-fin-vano-fin-muro",
+      label: "Distancia desde fin de ventana hasta fin de muro",
+      acronimo: "A2",
+      verifyHint: "Cota A2: tramo horizontal desde la jamba derecha del vano hasta el extremo del muro.",
+    },
   ],
   "pared-puerta": [
     {
@@ -211,6 +217,12 @@ export const WALL_MEASURE_SCHEMA: Record<string, WallMeasureFieldDef[]> = {
       label: "Distancia de techo al marco superior de la puerta",
       acronimo: "TP",
       verifyHint: "Cota F: claro entre techo y dintel de la puerta.",
+    },
+    {
+      key: "dist-fin-vano-fin-muro",
+      label: "Distancia desde fin de puerta hasta fin de muro",
+      acronimo: "A2",
+      verifyHint: "Cota A2: tramo horizontal desde la jamba derecha del vano hasta el extremo del muro.",
     },
   ],
   "pared-2-ventanas": [
@@ -624,7 +636,7 @@ export type WallDiagramFocusGroupId = "general" | "vano" | "ubicacion";
 export function wallCotaFocusGroup(acronym: string, wallId?: string): WallDiagramFocusGroupId {
   const c = acronym.trim();
   if (c === "L" || c === "H") return "general";
-  if (c === "AV0") return "ubicacion";
+  if (c === "A2" || c === "AV0") return "ubicacion";
   if (wallId === "pared-puerta-ventana" && c === "AV2") return "ubicacion";
   if (
     c === "AP" ||
@@ -720,6 +732,7 @@ export const WALL_MEASURE_DIMENSION_LINES: Partial<
     { x1: 41, y1: 144, x2: 41, y2: 105, labelDx: -12, labelDy: 0 },
     { x1: 168, y1: 33, x2: 168, y2: 66, labelDx: 12, labelDy: 0 },
     { x1: 18, y1: 154, x2: 57, y2: 154, labelDx: 0, labelDy: 10 },
+    { x1: 123, y1: 154, x2: 162, y2: 154, labelDx: 0, labelDy: 10 },
   ],
   /** Puerta 66,57 / 48×87 (dintel y=57, piso y=144). */
   "pared-puerta": [
@@ -729,6 +742,7 @@ export const WALL_MEASURE_DIMENSION_LINES: Partial<
     { x1: 129, y1: 57, x2: 129, y2: 144, labelDx: 12, labelDy: 0 },
     { x1: 18, y1: 154, x2: 66, y2: 154, labelDx: 0, labelDy: 10 },
     { x1: 43, y1: 33, x2: 43, y2: 57, labelDx: -12, labelDy: 0 },
+    { x1: 114, y1: 154, x2: 162, y2: 154, labelDx: 0, labelDy: 10 },
   ],
   /** Alineado al icono 1000×700 (muro 120,60 800×520 → escala al lienzo 180+padding). */
   "pared-2-ventanas": [
@@ -807,6 +821,7 @@ export const WALL_MEASURE_BADGE_POSITIONS: Partial<
     { top: "62%", left: "48%" },
     { top: "26%", left: "82%" },
     { top: "86%", left: "24%" },
+    { top: "86%", left: "78%" },
   ],
   "pared-puerta": [
     { top: "84%", left: "50%" },
@@ -815,6 +830,7 @@ export const WALL_MEASURE_BADGE_POSITIONS: Partial<
     { top: "42%", left: "62%" },
     { top: "86%", left: "28%" },
     { top: "22%", left: "82%" },
+    { top: "86%", left: "78%" },
   ],
   "pared-puerta-ventana": [
     { top: "84%", left: "50%" },
