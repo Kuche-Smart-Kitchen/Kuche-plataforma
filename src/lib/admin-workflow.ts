@@ -265,6 +265,7 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     projectTypeSummary: toStringValue(raw.tipo),
     presupuestoTotal: toNumberValue(raw.presupuestoTotal),
     totalPagado: toNumberValue(raw.totalPagado),
+    proyectoId: toStringValue(raw.proyectoId),
   };
 };
 

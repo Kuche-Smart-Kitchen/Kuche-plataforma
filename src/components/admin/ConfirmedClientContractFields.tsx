@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { isAxiosError } from "axios";
 import { CalendarRange } from "lucide-react";
 import { getAggregatedDeliveryWeeksFromTask, type KanbanTask } from "@/lib/kanban";
 import { formatApproximateDeliveryWindowEs } from "@/lib/delivery-weeks";
@@ -60,7 +61,8 @@ export function ConfirmedClientContractFields({ task, onUpdate }: Props) {
       });
       setSaved(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudieron guardar los datos del proyecto.");
+      const backendMessage = isAxiosError(e) ? e.response?.data?.message : undefined;
+      setError(backendMessage || "No se pudieron guardar los datos del proyecto.");
     } finally {
       setIsSaving(false);
     }
@@ -133,11 +135,14 @@ export function ConfirmedClientContractFields({ task, onUpdate }: Props) {
 
       <button
         type="submit"
-        disabled={isSaving || !task.codigoProyecto}
+        disabled={isSaving || !task.codigoProyecto || !task.proyectoId}
         className="mt-4 w-full rounded-lg bg-emerald-700 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {isSaving ? "Guardando..." : saved ? "Guardado" : "Guardar"}
       </button>
+      {!task.proyectoId ? (
+        <p className="mt-2 text-[11px] text-amber-700">Este cliente aún no tiene proyecto vinculado.</p>
+      ) : null}
     </form>
   );
 }
