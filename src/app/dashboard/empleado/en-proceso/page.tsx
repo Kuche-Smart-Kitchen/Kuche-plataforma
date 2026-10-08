@@ -9,8 +9,12 @@ import { ClientDocuments } from "@/components/admin/ClientDocuments";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
 import { useAuthContext } from "@/contexts/AuthContext";
-import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { EMPLEADO_DASHBOARD_USER } from "@/lib/empleado-dashboard-user";
+import {
+  isTaskAssignedToEmpleado,
+  loadKanbanTasksForEmpleadoView,
+  taskIsEnProcesoPipeline,
+} from "@/lib/empleado-kanban-filters";
 
 const stageLabel: Record<string, string> = {
   citas: "Citas",
@@ -19,19 +23,23 @@ const stageLabel: Record<string, string> = {
   contrato: "Seguimiento",
 };
 
-/** Excluye seguimiento ya confirmado o descartado; luego solo tareas asignadas al empleado. */
-function getTasksInProgressForEmpleado(tasks: KanbanTask[], empleado: string): KanbanTask[] {
-  return tasks.filter((task) => {
-    if (task.stage === "contrato" && (task.followUpStatus === "confirmado" || task.followUpStatus === "descartado")) {
-      return false;
-    }
-    return Array.isArray(task.assignedTo) && task.assignedTo.includes(empleado);
-  });
+function getTasksInProgressForEmpleado(
+  tasks: KanbanTask[],
+  empleado: { nombre: string; userId?: string | null },
+): KanbanTask[] {
+  return tasks.filter(
+    (task) => taskIsEnProcesoPipeline(task) && isTaskAssignedToEmpleado(task, empleado),
+  );
 }
 
 export default function EmpleadoClientesEnProcesoPage() {
   const { user } = useAuthContext();
   const currentEmployeeName = user?.nombre?.trim() || EMPLEADO_DASHBOARD_USER;
+  const currentEmployeeId = user?.id ?? user?._id ?? null;
+  const empleadoMatch = useMemo(
+    () => ({ nombre: currentEmployeeName, userId: currentEmployeeId }),
+    [currentEmployeeName, currentEmployeeId],
+  );
   const [tasks, setTasks] = useState<KanbanTask[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
   const [selectedClient, setSelectedClient] = useState<KanbanTask | null>(null);
@@ -41,10 +49,15 @@ export default function EmpleadoClientesEnProcesoPage() {
 
     const loadTasks = async () => {
       if (typeof window === "undefined") return;
-      await syncKanbanTasksFromBackend();
-      if (!cancelled) {
-        setTasks([]);
-        setIsHydrated(true);
+      try {
+        const allTasks = await loadKanbanTasksForEmpleadoView();
+        if (!cancelled) {
+          setTasks(allTasks);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsHydrated(true);
+        }
       }
     };
 
@@ -56,8 +69,8 @@ export default function EmpleadoClientesEnProcesoPage() {
   }, []);
 
   const inProgress = useMemo(
-    () => getTasksInProgressForEmpleado(tasks, currentEmployeeName),
-    [currentEmployeeName, tasks],
+    () => getTasksInProgressForEmpleado(tasks, empleadoMatch),
+    [empleadoMatch, tasks],
   );
 
   const columnCount = useClientCardColumns(3);

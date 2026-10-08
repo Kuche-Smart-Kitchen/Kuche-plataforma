@@ -19,39 +19,26 @@ import {
   type TaskPriority,
   type TaskStage,
 } from "@/lib/kanban";
-import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { generatePublicProjectCode } from "@/lib/project-code";
 import { EMPLEADO_DASHBOARD_USER as CURRENT_USER } from "@/lib/empleado-dashboard-user";
 import { fetchAssignableUsers } from "@/lib/axios/usuariosApi";
-
-function isAssignedToCurrentUser(t: KanbanTask, currentUserName: string): boolean {
-  return (t.assignedTo ?? []).some((n) => n === currentUserName);
-}
-
-/** Alineado con “clientes en proceso”: fuera del tablero activo si ya está confirmado o descartado en contrato. */
-function taskIsEnProcesoPipeline(t: KanbanTask): boolean {
-  if (
-    t.stage === "contrato" &&
-    (t.followUpStatus === "confirmado" || t.followUpStatus === "descartado")
-  ) {
-    return false;
-  }
-  return true;
-}
-
-function taskIsConfirmado(t: KanbanTask): boolean {
-  return t.stage === "contrato" && t.followUpStatus === "confirmado";
-}
-
-/** Inactivos: descarte de seguimiento en Kanban (`followUpStatus === "descartado"`). */
-function taskIsInactivo(t: KanbanTask): boolean {
-  return t.followUpStatus === "descartado";
-}
+import {
+  isTaskAssignedToEmpleado,
+  loadKanbanTasksForEmpleadoView,
+  taskIsConfirmado,
+  taskIsEnProcesoPipeline,
+  taskIsInactivo,
+} from "@/lib/empleado-kanban-filters";
 
 export default function EmpleadoDashboard() {
   const router = useRouter();
   const { user } = useAuthContext();
   const currentUserName = user?.nombre?.trim() || CURRENT_USER;
+  const currentUserId = user?.id ?? user?._id ?? null;
+  const empleadoMatch = useMemo(
+    () => ({ nombre: currentUserName, userId: currentUserId }),
+    [currentUserName, currentUserId],
+  );
   const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>([]);
   const [viewMode, setViewMode] = useState<"all" | "mine">("mine");
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -82,12 +69,8 @@ export default function EmpleadoDashboard() {
     if (typeof window === "undefined") return;
 
     const load = async () => {
-      try {
-        const synced = await syncKanbanTasksFromBackend();
-        setKanbanTasks((synced ?? getTasksFromLocalStorage()) as KanbanTask[]);
-      } catch {
-        setKanbanTasks(getTasksFromLocalStorage());
-      }
+      const tasks = await loadKanbanTasksForEmpleadoView();
+      setKanbanTasks(tasks);
     };
 
     void load();
@@ -95,8 +78,10 @@ export default function EmpleadoDashboard() {
 
   /** Todas las tareas asignadas al empleado que tienen código (incluye confirmadas e inactivas). */
   const myTasksWithCode = useMemo(() => {
-    return kanbanTasks.filter((t) => Boolean(t.codigoProyecto?.trim()) && isAssignedToCurrentUser(t, currentUserName));
-  }, [currentUserName, kanbanTasks]);
+    return kanbanTasks.filter(
+      (t) => Boolean(t.codigoProyecto?.trim()) && isTaskAssignedToEmpleado(t, empleadoMatch),
+    );
+  }, [empleadoMatch, kanbanTasks]);
 
   const tasksProceso = useMemo(
     () => myTasksWithCode.filter(taskIsEnProcesoPipeline),
@@ -234,6 +219,7 @@ export default function EmpleadoDashboard() {
       >
         <KanbanTablero
           filterByEmployee={viewMode === "mine" ? currentUserName : null}
+          filterByEmployeeUserId={viewMode === "mine" ? currentUserId : null}
           pipelineFilter={taskIsEnProcesoPipeline}
           refreshTrigger={refreshTrigger}
           teamMembers={teamMembers}

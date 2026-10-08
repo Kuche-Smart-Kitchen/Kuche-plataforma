@@ -58,6 +58,7 @@ import { subirArchivoCliente, subirDisenoDropbox } from "@/lib/axios/archivosCli
 import { obtenerDisponibilidadDia } from "@/lib/axios/citasApi";
 import { agendarVisita, obtenerDisponibilidadVisita } from "@/lib/axios/visitasApi";
 import { eliminarTarea } from "@/lib/axios/tareasApi";
+import { isTaskAssignedToEmpleado } from "@/lib/empleado-kanban-filters";
 
 const currentUser = "Valeria";
 const hasFinalDesign = (task: KanbanTask) => Boolean(task.files?.some((file) => file.nivel === "final"));
@@ -438,6 +439,8 @@ const kanbanTasksEqualForRender = (previous: KanbanTask[], next: KanbanTask[]): 
 export type KanbanTableroProps = {
   /** Filtrar por nombre de empleado. null = ver todo, string = solo ese empleado. */
   filterByEmployee?: string | null;
+  /** Id de usuario para cruzar con `assignedToIds` / `assignedTo` en modo “mis tareas”. */
+  filterByEmployeeUserId?: string | null;
   /** Filtro adicional (ej. solo pipeline “en proceso” en dashboard empleado). */
   pipelineFilter?: (task: KanbanTask) => boolean;
   /** Incrementar para forzar re-lectura desde localStorage (ej. tras crear tarea). */
@@ -455,6 +458,7 @@ export type KanbanTableroProps = {
 export function KanbanTablero(props: KanbanTableroProps = {}) {
   const {
     filterByEmployee,
+    filterByEmployeeUserId,
     pipelineFilter,
     refreshTrigger = 0,
     teamMembers,
@@ -698,7 +702,10 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
         list = kanbanTasks;
       } else {
         list = kanbanTasks.filter((task) =>
-          Array.isArray(task.assignedTo) ? task.assignedTo.includes(filterByEmployee) : false,
+          isTaskAssignedToEmpleado(task, {
+            nombre: filterByEmployee,
+            userId: filterByEmployeeUserId,
+          }),
         );
       }
     } else if (viewMode === "mine") {
@@ -712,7 +719,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       list = list.filter(pipelineFilter);
     }
     return list;
-  }, [kanbanTasks, viewMode, filterByEmployee, pipelineFilter]);
+  }, [kanbanTasks, viewMode, filterByEmployee, filterByEmployeeUserId, pipelineFilter]);
 
   const updateTask = (taskId: string, updater: (task: KanbanTask) => KanbanTask) => {
     const nextTasks = kanbanTasksRef.current.map((task) =>

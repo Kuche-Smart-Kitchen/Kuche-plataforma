@@ -13,12 +13,15 @@ import {
   CalendarClock,
 } from "lucide-react";
 import {
-  getTasksFromLocalStorage,
   deriveProjectTypesLabel,
   getAggregatedDeliveryWeeksFromTask,
   type KanbanTask,
 } from "@/lib/kanban";
-import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
+import {
+  isTaskAssignedToEmpleado,
+  loadKanbanTasksForEmpleadoView,
+  taskIsConfirmado,
+} from "@/lib/empleado-kanban-filters";
 import { ClientDocuments } from "@/components/admin/ClientDocuments";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
@@ -50,21 +53,21 @@ function getCardDeliverySummary(task: KanbanTask): string | null {
   return `${fmt(from)} – ${fmt(to)}`;
 }
 
-function isAssignedToEmpleado(t: KanbanTask, empleado: string): boolean {
-  return (t.assignedTo ?? []).some((n) => n === empleado);
-}
-
-function isEmpleadoConfirmado(t: KanbanTask, empleado: string): boolean {
-  return (
-    t.stage === "contrato" &&
-    t.followUpStatus === "confirmado" &&
-    isAssignedToEmpleado(t, empleado)
-  );
+function isEmpleadoConfirmado(
+  t: KanbanTask,
+  empleado: { nombre: string; userId?: string | null },
+): boolean {
+  return taskIsConfirmado(t) && isTaskAssignedToEmpleado(t, empleado);
 }
 
 export default function EmpleadoConfirmadosPage() {
   const { user } = useAuthContext();
   const currentEmployeeName = user?.nombre?.trim() || EMPLEADO_DASHBOARD_USER;
+  const currentEmployeeId = user?.id ?? user?._id ?? null;
+  const empleadoMatch = useMemo(
+    () => ({ nombre: currentEmployeeName, userId: currentEmployeeId }),
+    [currentEmployeeName, currentEmployeeId],
+  );
   const [clients, setClients] = useState<KanbanTask[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
   const [selectedClient, setSelectedClient] = useState<KanbanTask | null>(null);
@@ -76,20 +79,13 @@ export default function EmpleadoConfirmadosPage() {
 
   useEffect(() => {
     const load = async () => {
-      try {
-        const synced = await syncKanbanTasksFromBackend();
-        const allTasks = (synced ?? getTasksFromLocalStorage()) as KanbanTask[];
-        setClients(allTasks.filter((task) => isEmpleadoConfirmado(task, currentEmployeeName)));
-      } catch {
-        const allTasks = getTasksFromLocalStorage();
-        setClients(allTasks.filter((task) => isEmpleadoConfirmado(task, currentEmployeeName)));
-      } finally {
-        setIsHydrated(true);
-      }
+      const allTasks = await loadKanbanTasksForEmpleadoView();
+      setClients(allTasks.filter((task) => isEmpleadoConfirmado(task, empleadoMatch)));
+      setIsHydrated(true);
     };
 
     void load();
-  }, [currentEmployeeName]);
+  }, [empleadoMatch]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
