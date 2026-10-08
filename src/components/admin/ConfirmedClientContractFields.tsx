@@ -135,14 +135,11 @@ export function ConfirmedClientContractFields({ task, onUpdate }: Props) {
 
       <button
         type="submit"
-        disabled={isSaving || !task.codigoProyecto || !task.proyectoId}
+        disabled={isSaving || !task.codigoProyecto}
         className="mt-4 w-full rounded-lg bg-emerald-700 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {isSaving ? "Guardando..." : saved ? "Guardado" : "Guardar"}
       </button>
-      {!task.proyectoId ? (
-        <p className="mt-2 text-[11px] text-amber-700">Este cliente aún no tiene proyecto vinculado.</p>
-      ) : null}
     </form>
   );
 }

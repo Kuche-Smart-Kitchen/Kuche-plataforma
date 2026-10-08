@@ -91,6 +91,7 @@ export default function ClientesConfirmadosPage() {
   const handleConfirmedTaskUpdate = (updated: KanbanTask) => {
     setClients((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
     setSelectedClient((sel) => (sel?.id === updated.id ? updated : sel));
+    void loadClients();
   };
 
   useEffect(() => {

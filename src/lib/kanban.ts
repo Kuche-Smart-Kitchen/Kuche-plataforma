@@ -124,8 +124,6 @@ export type KanbanTask = {
   presupuestoTotal?: number;
   /** Suma de `Proyecto.pagos.*.amount` (MXN). */
   totalPagado?: number;
-  /** `Proyecto._id` vinculado a la tarea; ausente si el cliente aún no tiene proyecto. */
-  proyectoId?: string;
 };
 
 /** Monto pendiente por pagar; `null` si el proyecto aún no tiene presupuesto. */

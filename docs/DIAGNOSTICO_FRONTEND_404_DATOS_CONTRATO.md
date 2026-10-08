@@ -24,6 +24,14 @@ el proyecto por el acceso de tracking o por la tarea. Ahora el endpoint hace lo 
 
 Requiere reiniciar/desplegar el backend con este cambio.
 
+## Actualización: el proyecto se crea y vincula automáticamente
+
+Si el cliente (tarjeta) aún no tiene `Proyecto`, `PATCH /api/proyectos/:codigo/datos-contrato` ahora
+**lo crea** (estado `aprobado`, `tipo` del body o `Cocina`, presupuesto y pagos copiados de la
+tarea) y lo vincula por id a la tarjeta (`Tarea.proyectoId`). No hace falta llamar a otro endpoint
+ni deshabilitar "Guardar". Tras guardar, recargar los kanban para que el item traiga `proyectoId`.
+El único 404 restante es "No existe un cliente con el código indicado" (código incorrecto).
+
 ## Si el 404 persiste: causa en frontend / datos
 
 El 404 es legítimo cuando el cliente **no tiene un `Proyecto` vinculado** (la tarea no tiene
