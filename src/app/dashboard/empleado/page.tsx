@@ -224,6 +224,7 @@ export default function EmpleadoDashboard() {
           refreshTrigger={refreshTrigger}
           teamMembers={teamMembers}
           allowDeleteTask={false}
+          allowFollowUpDecisions={false}
         />
       </motion.section>
 

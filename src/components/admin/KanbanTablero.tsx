@@ -21,6 +21,7 @@ import Captcha, { type CaptchaRef } from "@/components/ui/Captcha";
 import { DueDateInput } from "@/components/ui/DueDateInput";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { useAuthContext } from "@/contexts/AuthContext";
 import { useTareasContext } from "@/contexts/TareasContext";
 import {
   fetchBackendKanbanTasks,
@@ -451,6 +452,11 @@ export type KanbanTableroProps = {
   allowDeleteTask?: boolean;
   /** Habilita la aprobación administrativa de diseños en el tablero de Operaciones. */
   allowDesignApproval?: boolean;
+  /**
+   * Confirmar/descartar cliente (PATCH seguimiento). Por defecto solo rol admin.
+   * Pasar false en vistas operativas si no se usa AuthContext.
+   */
+  allowFollowUpDecisions?: boolean;
   /** Llamado después de descartar un cliente en Seguimiento (ej. admin redirige a clientes-descartados). */
   onAfterDiscard?: () => void;
 };
@@ -464,8 +470,11 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     teamMembers,
     allowDeleteTask = true,
     allowDesignApproval = false,
+    allowFollowUpDecisions,
     onAfterDiscard,
   } = props;
+  const { user } = useAuthContext();
+  const canManageFollowUp = allowFollowUpDecisions ?? user?.rol === "admin";
   const { actualizar: actualizarTareaEnBackend, asignarTrabajadores } = useTareasContext();
   const router = useRouter();
   const [viewMode, setViewMode] = useState<"all" | "mine">("all");
@@ -844,6 +853,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   };
 
   const confirmFollowUp = async (taskId: string) => {
+    if (!canManageFollowUp) return;
     const task = kanbanTasksRef.current.find((t) => t.id === taskId);
     // Compromiso del cliente: en Seguimiento la tarjeta sale del tablero; en Citas/Diseños/Cotización el flujo sigue.
     updateTask(taskId, (t) => ({
@@ -867,6 +877,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   };
 
   const discardFollowUp = async (taskId: string) => {
+    if (!canManageFollowUp) return;
     const task = kanbanTasksRef.current.find((t) => t.id === taskId);
     updateTask(taskId, (t) => ({
       ...t,
@@ -2468,7 +2479,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                       <XCircle className="h-5 w-5" />
                       <span className="font-semibold">Cliente descartado</span>
                     </div>
-                  ) : (
+                  ) : canManageFollowUp ? (
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -2486,6 +2497,11 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                         <XCircle className="h-4 w-4" />
                         Descartar
                       </button>
+                    </div>
+                  ) : (
+                    <div className="mt-3 flex items-center gap-2 rounded-2xl bg-sky-50 px-4 py-3 text-sm text-sky-700">
+                      <Clock className="h-5 w-5 shrink-0" />
+                      <span className="font-semibold">Seguimiento pendiente</span>
                     </div>
                   )}
                 </div>
