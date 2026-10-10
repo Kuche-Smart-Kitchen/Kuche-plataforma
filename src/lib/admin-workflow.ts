@@ -256,6 +256,7 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     designApprovedByClient: toBooleanValue(raw.designApprovedByClient),
     designFeedback: toFeedbackString(raw.designFeedback),
     codigoProyecto:
+      toStringValue(raw.codigoProyecto) ??
       toStringValue(raw.codigo) ??
       toStringValue(raw.codigoCliente) ??
       toStringValue(raw.clienteId) ??
