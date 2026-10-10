@@ -366,6 +366,11 @@ export function taskMatchesKanbanUpdate(task: KanbanTask, criteria: KanbanTaskMa
 /** Notifica cambios del tablero y los deja disponibles para la UI en memoria. */
 export function notifyKanbanTasksUpdated(tasks: KanbanTask[]): boolean {
   writePersistedKanbanTasks(tasks);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent(kanbanTasksUpdatedEventName, { detail: { tasks } }),
+    );
+  }
   return true;
 }
 

@@ -4,12 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, XCircle, User, Calendar, RotateCcw, X, MessageSquare } from "lucide-react";
-import {
-  getTasksFromLocalStorage,
-  getTaskCardSubtitle,
-  saveKanbanTasksToLocalStorage,
-  type KanbanTask,
-} from "@/lib/kanban";
+import { getTaskCardSubtitle, notifyKanbanTasksUpdated, type KanbanTask } from "@/lib/kanban";
 import { syncTaskFollowUpWithBackend } from "@/lib/admin-workflow";
 import {
   isTaskAssignedToEmpleado,
@@ -43,6 +38,7 @@ export default function EmpleadoInactivosPage() {
     () => ({ nombre: currentEmployeeName, userId: currentEmployeeId }),
     [currentEmployeeName, currentEmployeeId],
   );
+  const canReactivateClient = user?.rol === "admin";
   const [clients, setClients] = useState<KanbanTask[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
   const [selectedClient, setSelectedClient] = useState<KanbanTask | null>(null);
@@ -77,20 +73,9 @@ export default function EmpleadoInactivosPage() {
         return;
       }
 
-      const tasks = getTasksFromLocalStorage();
-      const updatedTasks = tasks.map((task) => {
-        if (task.id !== clientId) return task;
-        if (!isTaskAssignedToEmpleado(task, empleadoMatch)) return task;
-        return {
-          ...task,
-          followUpStatus: "pendiente" as const,
-          status: "pendiente" as const,
-          stage: "contrato" as const,
-          followUpEnteredAt: Date.now(),
-        };
-      });
-      saveKanbanTasksToLocalStorage(updatedTasks);
-      setClients(updatedTasks.filter((task) => isEmpleadoInactivo(task, empleadoMatch)));
+      const allTasks = await loadKanbanTasksForEmpleadoView();
+      notifyKanbanTasksUpdated(allTasks);
+      setClients(allTasks.filter((task) => isEmpleadoInactivo(task, empleadoMatch)));
       setSelectedClient(null);
     } catch {
       setReactivateError("No se pudo reactivar al cliente. Intenta de nuevo.");
@@ -247,7 +232,9 @@ export default function EmpleadoInactivosPage() {
             <strong>Total (mis proyectos inactivos):</strong> {clients.length}
           </p>
           <p className="mt-1 text-xs text-secondary">
-            Puedes reactivar un cliente si vuelve a estar en seguimiento; solo aplica a tus proyectos asignados.
+            {canReactivateClient
+              ? "Como administrador puedes reactivar un cliente para volver a ponerlo en seguimiento."
+              : "La reactivación de clientes inactivos la realiza un administrador desde operaciones."}
           </p>
         </motion.div>
       </div>
@@ -324,22 +311,24 @@ export default function EmpleadoInactivosPage() {
                   <ClientDocuments task={selectedClient} />
                 </div>
 
-                <div className="border-t border-gray-100 pt-6">
-                  {reactivateError ? (
-                    <p className="mb-3 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
-                      {reactivateError}
-                    </p>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => void handleReactivate(selectedClient.id)}
-                    disabled={reactivatingId === selectedClient.id}
-                    className="flex w-full items-center justify-center gap-2 rounded-2xl border border-primary/15 bg-primary py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
-                  >
-                    <RotateCcw className={`h-4 w-4 ${reactivatingId === selectedClient.id ? "animate-spin" : ""}`} />
-                    {reactivatingId === selectedClient.id ? "Reactivando..." : "Reactivar cliente"}
-                  </button>
-                </div>
+                {canReactivateClient ? (
+                  <div className="border-t border-gray-100 pt-6">
+                    {reactivateError ? (
+                      <p className="mb-3 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                        {reactivateError}
+                      </p>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => void handleReactivate(selectedClient.id)}
+                      disabled={reactivatingId === selectedClient.id}
+                      className="flex w-full items-center justify-center gap-2 rounded-2xl border border-primary/15 bg-primary py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
+                    >
+                      <RotateCcw className={`h-4 w-4 ${reactivatingId === selectedClient.id ? "animate-spin" : ""}`} />
+                      {reactivatingId === selectedClient.id ? "Reactivando..." : "Reactivar cliente"}
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </motion.aside>
           </motion.div>

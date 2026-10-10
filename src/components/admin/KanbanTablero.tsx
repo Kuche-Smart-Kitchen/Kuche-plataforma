@@ -459,6 +459,10 @@ export type KanbanTableroProps = {
   allowFollowUpDecisions?: boolean;
   /** Llamado después de descartar un cliente en Seguimiento (ej. admin redirige a clientes-descartados). */
   onAfterDiscard?: () => void;
+  /** Desactiva auto-avance y auto-descarte en memoria (timer 60s) — vista empleado. */
+  disableKanbanMemoryTimer?: boolean;
+  /** Sincroniza listas externas (ej. dropdown de proyectos en dashboard empleado). */
+  onKanbanTasksChange?: (tasks: KanbanTask[]) => void;
 };
 
 export function KanbanTablero(props: KanbanTableroProps = {}) {
@@ -472,6 +476,8 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     allowDesignApproval = false,
     allowFollowUpDecisions,
     onAfterDiscard,
+    disableKanbanMemoryTimer = false,
+    onKanbanTasksChange,
   } = props;
   const { user } = useAuthContext();
   const canManageFollowUp = allowFollowUpDecisions ?? user?.rol === "admin";
@@ -531,12 +537,16 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const lastSyncTimeRef = useRef(0);
   const isSyncingRef = useRef(false);
 
-  const commitKanbanTasks = useCallback((nextTasks: KanbanTask[]) => {
-    kanbanTasksRef.current = nextTasks;
-    setKanbanTasks(nextTasks);
-    const ok = notifyKanbanTasksUpdated(nextTasks);
-    setKanbanPersistError(ok ? null : KANBAN_PERSIST_ERROR);
-  }, []);
+  const commitKanbanTasks = useCallback(
+    (nextTasks: KanbanTask[]) => {
+      kanbanTasksRef.current = nextTasks;
+      setKanbanTasks(nextTasks);
+      onKanbanTasksChange?.(nextTasks);
+      const ok = notifyKanbanTasksUpdated(nextTasks);
+      setKanbanPersistError(ok ? null : KANBAN_PERSIST_ERROR);
+    },
+    [onKanbanTasksChange],
+  );
 
   const hydrateAndApplyTasks = useCallback(
     (
@@ -558,13 +568,14 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       }
       kanbanTasksRef.current = tasks;
       setKanbanTasks(tasks);
+      onKanbanTasksChange?.(tasks);
       if (persistIfChanged && changed && tasks.length > 0) {
         const ok = notifyKanbanTasksUpdated(tasks);
         setKanbanPersistError(ok ? null : KANBAN_PERSIST_ERROR);
       }
       return tasks;
     },
-    [],
+    [onKanbanTasksChange],
   );
 
   const syncFromBackend = useCallback(async () => {
@@ -666,6 +677,8 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   }, [refreshTrigger, syncFromBackend]);
 
   useEffect(() => {
+    if (disableKanbanMemoryTimer) return;
+
     const autoDiscardExpiredFollowUps = () => {
       const updated = kanbanTasksRef.current.map((task) => {
         if (
@@ -702,7 +715,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       runAutoAdvance();
     }, 60000);
     return () => clearInterval(interval);
-  }, [commitKanbanTasks]);
+  }, [commitKanbanTasks, disableKanbanMemoryTimer]);
 
   const filteredTasks = useMemo(() => {
     let list: KanbanTask[];
@@ -1036,9 +1049,40 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     }
   };
 
-  const startCotizacionFormal = (taskId: string) => {
+  const startCotizacionFormal = async (taskId: string) => {
+    const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
     updateTask(taskId, (t) => ({ ...t, citaStarted: true }));
-    router.push(`/dashboard/cotizador?taskId=${encodeURIComponent(taskId)}`);
+    let canContinue = true;
+    if (taskSnapshot) {
+      const patchOk = await syncTaskPatchWithBackend(taskSnapshot, { citaStarted: true });
+      if (!patchOk) {
+        canContinue = false;
+        updateTask(taskId, (task) => ({ ...task, citaStarted: taskSnapshot.citaStarted ?? false }));
+        setBackendSyncMessage("No se pudo sincronizar el inicio de cotización en backend.");
+        window.setTimeout(() => setBackendSyncMessage(null), 4500);
+      }
+    }
+    if (canContinue) {
+      router.push(`/dashboard/cotizador?taskId=${encodeURIComponent(taskId)}`);
+    }
+  };
+
+  const finishCotizacionFormal = async (taskId: string) => {
+    const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
+    const patch: Partial<KanbanTask> = { citaStarted: true, citaFinished: true };
+    updateTask(taskId, (t) => ({ ...t, ...patch }));
+    if (taskSnapshot) {
+      const patchOk = await syncTaskPatchWithBackend(taskSnapshot, patch);
+      if (!patchOk) {
+        updateTask(taskId, (task) => ({
+          ...task,
+          citaStarted: taskSnapshot.citaStarted ?? false,
+          citaFinished: taskSnapshot.citaFinished ?? false,
+        }));
+        setBackendSyncMessage("No se pudo sincronizar el fin de cotización en backend.");
+        window.setTimeout(() => setBackendSyncMessage(null), 4500);
+      }
+    }
   };
 
   const approveDesignAsAdmin = async (taskId: string) => {
@@ -1123,6 +1167,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       showUploadToast("success", "Diseño final cargado. Ya está disponible para aprobación del cliente.");
       setUploadAcceptedDesignsTaskId(null);
       setDropboxStagingFile(null);
+      await syncFromBackend();
     } finally {
       setDropboxUploading(false);
     }
@@ -1437,6 +1482,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       "success",
       nextFiles.length === 1 ? "Archivo subido correctamente." : `${nextFiles.length} archivos subidos correctamente.`,
     );
+    await syncFromBackend();
     return true;
   };
 
@@ -1740,7 +1786,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                                   type="button"
                                   onClick={(event) => {
                                     event.stopPropagation();
-                                    startCotizacionFormal(task.id);
+                                    void startCotizacionFormal(task.id);
                                   }}
                                   className="inline-flex w-auto items-center rounded-full bg-primary px-3 py-1 text-[11px] font-semibold text-white"
                                 >
@@ -1752,7 +1798,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                                   type="button"
                                   onClick={(event) => {
                                     event.stopPropagation();
-                                    updateTask(task.id, (t) => ({ ...t, citaFinished: true }));
+                                    void finishCotizacionFormal(task.id);
                                   }}
                                   className="inline-flex w-auto items-center rounded-full bg-emerald-600 px-3 py-1 text-[11px] font-semibold text-white"
                                 >
@@ -2288,7 +2334,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                       {!activeTask.citaStarted ? (
                         <button
                           type="button"
-                          onClick={() => startCotizacionFormal(activeTask.id)}
+                          onClick={() => void startCotizacionFormal(activeTask.id)}
                           className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white"
                         >
                           Iniciar cotizacion
@@ -2296,7 +2342,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                       ) : activeTask.citaStarted && !activeTask.citaFinished ? (
                         <button
                           type="button"
-                          onClick={() => updateTask(activeTask.id, (t) => ({ ...t, citaFinished: true }))}
+                          onClick={() => void finishCotizacionFormal(activeTask.id)}
                           className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white"
                         >
                           Terminar cotizacion

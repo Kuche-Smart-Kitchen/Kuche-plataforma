@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { CheckCircle2, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
@@ -11,7 +11,14 @@ import { DueDateInput } from "@/components/ui/DueDateInput";
 import { KanbanTablero } from "@/components/admin/KanbanTablero";
 import { PublicStatusEditorModal } from "@/components/admin/PublicStatusEditorModal";
 import { useAuthContext } from "@/contexts/AuthContext";
-import { kanbanColumns, type KanbanTask, type TaskPriority, type TaskStage } from "@/lib/kanban";
+import {
+  getTasksFromLocalStorage,
+  kanbanColumns,
+  kanbanTasksUpdatedEventName,
+  type KanbanTask,
+  type TaskPriority,
+  type TaskStage,
+} from "@/lib/kanban";
 import { generatePublicProjectCode } from "@/lib/project-code";
 import { EMPLEADO_DASHBOARD_USER as CURRENT_USER } from "@/lib/empleado-dashboard-user";
 import { fetchAssignableUsers } from "@/lib/axios/usuariosApi";
@@ -70,6 +77,17 @@ export default function EmpleadoDashboard() {
 
     void load();
   }, [refreshTrigger]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const syncDropdownFromKanban = () => {
+      setKanbanTasks(getTasksFromLocalStorage());
+    };
+
+    window.addEventListener(kanbanTasksUpdatedEventName, syncDropdownFromKanban);
+    return () => window.removeEventListener(kanbanTasksUpdatedEventName, syncDropdownFromKanban);
+  }, []);
 
   /** Todas las tareas asignadas al empleado que tienen código (incluye confirmadas e inactivas). */
   const myTasksWithCode = useMemo(() => {
@@ -225,6 +243,8 @@ export default function EmpleadoDashboard() {
           teamMembers={teamMembers}
           allowDeleteTask={false}
           allowFollowUpDecisions={false}
+          disableKanbanMemoryTimer
+          onKanbanTasksChange={setKanbanTasks}
         />
       </motion.section>
 
@@ -234,17 +254,6 @@ export default function EmpleadoDashboard() {
         transition={{ duration: 0.4, delay: 0.05 }}
         className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3"
       >
-        <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-md">
-          <p className="text-xs uppercase tracking-[0.3em] text-secondary">Salud del día</p>
-          <h3 className="mt-2 text-xl font-semibold">Ritmo impecable</h3>
-          <p className="mt-3 text-sm text-secondary">
-            4 tareas completadas, 2 citas próximas y 1 diseño para validar.
-          </p>
-          <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-emerald-600">
-            <CheckCircle2 className="h-4 w-4" />
-            Todo en orden
-          </div>
-        </div>
         <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-md">
           <p className="text-xs uppercase tracking-[0.3em] text-secondary">Cotización</p>
           <h3 className="mt-2 text-xl font-semibold">Cotizador Pro</h3>
