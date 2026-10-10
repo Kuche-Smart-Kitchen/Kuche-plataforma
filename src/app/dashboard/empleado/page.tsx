@@ -11,17 +11,11 @@ import { DueDateInput } from "@/components/ui/DueDateInput";
 import { KanbanTablero } from "@/components/admin/KanbanTablero";
 import { PublicStatusEditorModal } from "@/components/admin/PublicStatusEditorModal";
 import { useAuthContext } from "@/contexts/AuthContext";
-import {
-  kanbanColumns,
-  getTasksFromLocalStorage,
-  saveKanbanTasksToLocalStorage,
-  type KanbanTask,
-  type TaskPriority,
-  type TaskStage,
-} from "@/lib/kanban";
+import { kanbanColumns, type KanbanTask, type TaskPriority, type TaskStage } from "@/lib/kanban";
 import { generatePublicProjectCode } from "@/lib/project-code";
 import { EMPLEADO_DASHBOARD_USER as CURRENT_USER } from "@/lib/empleado-dashboard-user";
 import { fetchAssignableUsers } from "@/lib/axios/usuariosApi";
+import { crearTarea } from "@/lib/axios/tareasApi";
 import {
   isTaskAssignedToEmpleado,
   loadKanbanTasksForEmpleadoView,
@@ -59,6 +53,7 @@ export default function EmpleadoDashboard() {
   const [newTaskLocation, setNewTaskLocation] = useState("");
   const [newTaskMapsUrl, setNewTaskMapsUrl] = useState("");
   const [taskError, setTaskError] = useState("");
+  const [taskSaving, setTaskSaving] = useState(false);
 
   const newTaskModalRef = useRef<HTMLDivElement | null>(null);
 
@@ -110,37 +105,40 @@ export default function EmpleadoDashboard() {
     [myTasksWithCode, selectedPublicTaskIdSafe],
   );
 
-  const handleCreateTask = () => {
+  const handleCreateTask = async () => {
     const project = newTaskProject.trim();
     if (!project) {
       setTaskError("Escribe el proyecto o cliente.");
       return;
     }
-    const now = Date.now();
-    const newTask: KanbanTask = {
-      id: `task-${now}`,
-      title: project,
-      stage: newTaskStage,
-      status: "pendiente",
-      assignedTo: [currentUserName],
-      project,
-      notes: "",
-      files: [],
-      priority: newTaskPriority,
-      dueDate: newTaskDueDate.trim() || undefined,
-      location: newTaskLocation.trim() || undefined,
-      mapsUrl: newTaskMapsUrl.trim() || undefined,
-      createdAt: now,
-      codigoProyecto: generatePublicProjectCode(),
-    };
+
+    const userId = currentUserId?.trim();
+    const asignadoA = Array.from(
+      new Set([...(userId ? [userId] : []), currentUserName].filter(Boolean)),
+    );
+
+    setTaskSaving(true);
+    setTaskError("");
+
     try {
-      const current = getTasksFromLocalStorage();
-      const next = [...current, newTask];
-      if (!saveKanbanTasksToLocalStorage(next)) {
-        setTaskError("No se pudo guardar la tarea.");
-        return;
+      const response = await crearTarea({
+        nombreProyecto: project,
+        etapa: newTaskStage,
+        estado: "pendiente",
+        asignadoA,
+        prioridad: newTaskPriority,
+        ubicacion: newTaskLocation.trim() || undefined,
+        mapsUrl: newTaskMapsUrl.trim() || undefined,
+        notas: "",
+        codigoProyecto: generatePublicProjectCode(),
+        fechaLimite: newTaskDueDate.trim() || undefined,
+      });
+
+      if (!response.success) {
+        throw new Error(response.message || "No se pudo crear la tarea");
       }
-      setRefreshTrigger((t) => t + 1);
+
+      setRefreshTrigger((prev) => prev + 1);
       setIsNewTaskModalOpen(false);
       setNewTaskProject("");
       setNewTaskStage("citas");
@@ -150,7 +148,9 @@ export default function EmpleadoDashboard() {
       setNewTaskMapsUrl("");
       setTaskError("");
     } catch {
-      setTaskError("No se pudo guardar la tarea.");
+      setTaskError("No se pudo guardar la tarea en backend.");
+    } finally {
+      setTaskSaving(false);
     }
   };
 
@@ -504,10 +504,11 @@ export default function EmpleadoDashboard() {
                 </button>
                 <button
                   type="button"
-                  onClick={handleCreateTask}
-                  className="rounded-2xl bg-primary px-5 py-2 text-xs font-semibold text-white"
+                  onClick={() => void handleCreateTask()}
+                  disabled={taskSaving}
+                  className="rounded-2xl bg-primary px-5 py-2 text-xs font-semibold text-white disabled:cursor-wait disabled:opacity-60"
                 >
-                  Crear tarea
+                  {taskSaving ? "Guardando…" : "Crear tarea"}
                 </button>
               </div>
             </div>

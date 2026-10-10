@@ -55,7 +55,7 @@ export function taskIsEnProcesoPipeline(task: KanbanTask): boolean {
 }
 
 export function taskIsConfirmado(task: KanbanTask): boolean {
-  return task.stage === "contrato" && task.followUpStatus === "confirmado";
+  return task.followUpStatus === "confirmado";
 }
 
 export function taskIsInactivo(task: KanbanTask): boolean {
