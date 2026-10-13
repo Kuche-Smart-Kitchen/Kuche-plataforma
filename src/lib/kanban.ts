@@ -124,7 +124,68 @@ export type KanbanTask = {
   presupuestoTotal?: number;
   /** Suma de `Proyecto.pagos.*.amount` (MXN). */
   totalPagado?: number;
+  /** Inversión estimada / total para seguimiento (MXN), cuando el backend la expone en la tarea. */
+  inversion?: number;
+  /** ID de documento Tarea en Mongo cuando la tarjeta kanban representa una cita u otra entidad. */
+  linkedTareaId?: string;
 };
+
+const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
+
+function normalizeProjectCodeForMatch(code: string): string {
+  return code.trim().toUpperCase().replace(/^K-?/, "");
+}
+
+export function isMongoObjectId(value: string | undefined): boolean {
+  return Boolean(value?.trim() && OBJECT_ID_RE.test(value.trim()));
+}
+
+/**
+ * ID de tarea Mongo para PATCH y registro de archivos (`tareasId`).
+ * Evita usar el id de cita cuando existe una tarea vinculada o una tarjeta de etapa posterior.
+ */
+export function resolveKanbanTaskPersistenceId(
+  task: Pick<KanbanTask, "id" | "sourceType" | "sourceId" | "codigoProyecto" | "linkedTareaId" | "project">,
+  allTasks?: KanbanTask[],
+): string {
+  const linked = task.linkedTareaId?.trim();
+  if (isMongoObjectId(linked)) return linked!;
+
+  const id = task.id?.trim() ?? "";
+  const sourceType = (task.sourceType ?? "").toLowerCase();
+
+  if (sourceType !== "cita" && isMongoObjectId(id)) return id;
+
+  const pool = allTasks ?? (typeof window !== "undefined" ? runtimeKanbanTasks : []);
+  const code = task.codigoProyecto?.trim();
+  if (code) {
+    const normalized = normalizeProjectCodeForMatch(code);
+    const byCode = pool.find(
+      (t) =>
+        t.id !== task.id &&
+        (t.sourceType ?? "").toLowerCase() !== "cita" &&
+        isMongoObjectId(t.id) &&
+        t.codigoProyecto?.trim() &&
+        normalizeProjectCodeForMatch(t.codigoProyecto) === normalized,
+    );
+    if (byCode) return byCode.id;
+  }
+
+  if (task.project?.trim()) {
+    const projectKey = task.project.trim().toLowerCase();
+    const byProject = pool.find(
+      (t) =>
+        t.id !== task.id &&
+        (t.sourceType ?? "").toLowerCase() !== "cita" &&
+        isMongoObjectId(t.id) &&
+        t.project.trim().toLowerCase() === projectKey &&
+        (t.stage === "disenos" || t.stage === "cotizacion" || t.stage === "contrato"),
+    );
+    if (byProject) return byProject.id;
+  }
+
+  return id;
+}
 
 /** Monto pendiente por pagar; `null` si el proyecto aún no tiene presupuesto. */
 export function getMontoRestante(task: Pick<KanbanTask, "presupuestoTotal" | "totalPagado">): number | null {
@@ -251,10 +312,6 @@ export function saveKanbanTasksToLocalStorage(tasks: KanbanTask[]): boolean {
 
 export const kanbanTasksUpdatedEventName = "kuche:kanban-tasks-updated";
 
-function normalizeProjectCodeForMatch(code: string): string {
-  return code.trim().toUpperCase().replace(/^K-?/, "");
-}
-
 export function kanbanTaskMergeKey(task: KanbanTask): string {
   const code = task.codigoProyecto?.trim();
   if (code) return `code:${normalizeProjectCodeForMatch(code)}`;
@@ -304,6 +361,8 @@ export function mergeKanbanTaskLists(local: KanbanTask[], incoming: KanbanTask[]
       cotizacionesFormales: existing.cotizacionesFormales?.length
         ? existing.cotizacionesFormales
         : task.cotizacionesFormales,
+      inversion: existing.inversion ?? task.inversion,
+      linkedTareaId: existing.linkedTareaId ?? task.linkedTareaId,
       citaStarted: Boolean(existing.citaStarted || task.citaStarted),
       citaFinished: Boolean(existing.citaFinished || task.citaFinished),
       codigoProyecto: existing.codigoProyecto ?? task.codigoProyecto,

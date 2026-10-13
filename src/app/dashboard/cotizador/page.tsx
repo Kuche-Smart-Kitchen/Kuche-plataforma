@@ -14,11 +14,13 @@ import {
   type KanbanTask,
   type CotizacionFormalData,
   getTasksFromLocalStorage,
+  resolveKanbanTaskPersistenceId,
   saveKanbanTasksToLocalStorage,
   notifyKanbanTasksUpdated,
 } from "@/lib/kanban";
-import { authApi } from "@/lib/axios";
+import { authApi, seguimientoApi } from "@/lib/axios";
 import { subirArchivoCliente } from "@/lib/axios/archivosClienteApi";
+import { ESTADO_PROYECTO } from "@/lib/seguimiento-project";
 import { syncTaskPatchWithBackend, syncTaskStageWithBackend } from "@/lib/admin-workflow";
 import {
   getSectionAInitialValues,
@@ -48,6 +50,23 @@ const MATERIAL_BASE_PRICE_PER_METER: Record<string, number> = {
   est_cintilla_bf: 6500,
 };
 const DEFAULT_PRICE_PER_METER = 6500;
+
+const PUBLIC_PROJECT_CODE_RE = /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{6}$/;
+
+function normalizePublicProjectCode(raw: string): string {
+  return raw.trim().toUpperCase().replace(/^K-/, "");
+}
+
+function isValidPublicProjectCode6(code: string | undefined | null): boolean {
+  if (!code?.trim()) return false;
+  return PUBLIC_PROJECT_CODE_RE.test(normalizePublicProjectCode(code));
+}
+
+async function pdfDataUrlToFile(dataUrl: string, filename: string): Promise<File> {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  return new File([blob], filename, { type: "application/pdf" });
+}
 /** Factor por espesor (id de ítem ESPESOR -> factor). */
 const THICKNESS_FACTORS: Record<string, number> = {
   "15": 0.97,
@@ -1071,17 +1090,111 @@ export default function CotizadorPage() {
     );
   };
 
+  const syncFormalToSeguimientoPublico = async (params: {
+    codigo: string;
+    formalData: CotizacionFormalData;
+    cotizacionesFormales: CotizacionFormalData[];
+    inversion: number;
+    remotePdfUrl?: string;
+  }): Promise<string | null> => {
+    try {
+      let existingArchivos: unknown[] = [];
+      const auth = await seguimientoApi.autenticarSeguimientoCliente(params.codigo);
+      if (auth.success && auth.data?.token) {
+        const projectResponse = await seguimientoApi.obtenerProyectoSeguimiento(auth.data.token);
+        if (
+          projectResponse.success &&
+          projectResponse.data &&
+          Array.isArray(projectResponse.data.archivos)
+        ) {
+          existingArchivos = projectResponse.data.archivos as unknown[];
+        }
+      }
+
+      const archivos = params.remotePdfUrl
+        ? [
+            ...existingArchivos,
+            {
+              id: `seg-formal-${Date.now()}`,
+              name: "Cotización Formal.pdf",
+              type: "pdf",
+              src: params.remotePdfUrl,
+            },
+          ]
+        : existingArchivos;
+
+      const segResponse = await seguimientoApi.actualizarEstatusPublico(params.codigo, {
+        inversion: params.inversion,
+        cotizacionesFormales: params.cotizacionesFormales,
+        cotizacionFormalData: params.formalData,
+        archivos,
+        estadoProyecto: ESTADO_PROYECTO.EN_PROCESO,
+      });
+      if (!segResponse.success) {
+        return segResponse.message || "No se actualizó el portal de seguimiento.";
+      }
+      return null;
+    } catch {
+      return "No se pudo sincronizar el portal de seguimiento.";
+    }
+  };
+
   const persistFormalSpaceToLinkedTask = async (options: {
     advanceToContrato: boolean;
-  }): Promise<KanbanTask | null> => {
+  }): Promise<{ task: KanbanTask | null; warnings: string[] }> => {
+    const warnings: string[] = [];
     const targetTask = resolveLinkedTargetTask();
     if (!targetTask) {
       setFinishCotizacionError("No se encontró la tarjeta de trabajo vinculada.");
-      return null;
+      return { task: null, warnings };
     }
 
     const formalData = buildCotizacionFormalDataFromForm();
     const cotizacionesFormales = [...(targetTask.cotizacionesFormales ?? []), formalData];
+    const inversion = Math.round(Number(formalData.total) || totales.totalNeto || 0);
+    const codigo = targetTask.codigoProyecto?.trim();
+    const currentTasks = getTasksFromLocalStorage();
+    const mongoTaskId = resolveKanbanTaskPersistenceId(targetTask, currentTasks);
+    let remotePdfUrl: string | undefined;
+
+    try {
+      const dataUrl = (await handleGenerateClientPdf(true)) as string | undefined;
+      if (!dataUrl) {
+        warnings.push("No se pudo generar el PDF formal para subir a la nube.");
+      } else if (!codigo) {
+        warnings.push("Falta código de proyecto; el PDF no se subió a Cloudinary.");
+      } else {
+        try {
+          const pdfFile = await pdfDataUrlToFile(dataUrl, "Cotización Formal.pdf");
+          const upload = await subirArchivoCliente(pdfFile, codigo, "cotizacion_formal", {
+            tareasId: mongoTaskId,
+          });
+          if (upload.success && upload.data?.url) {
+            remotePdfUrl = upload.data.url;
+          } else {
+            console.error("[cotizador] subirArchivoCliente falló", {
+              tareasId: mongoTaskId,
+              codigo,
+              message: upload.message,
+            });
+            warnings.push(
+              upload.message || "No se pudo subir el PDF a la nube; la tarea se guardó en el tablero.",
+            );
+          }
+        } catch (uploadError) {
+          console.error("[cotizador] subirArchivoCliente error", {
+            tareasId: mongoTaskId,
+            codigo,
+            error: uploadError,
+          });
+          warnings.push(
+            "Error de red al subir el PDF; la cotización se guardó en la tarea como respaldo.",
+          );
+        }
+      }
+    } catch {
+      warnings.push("No se pudo generar el PDF formal; la cotización se guardó sin archivo remoto.");
+    }
 
     const patch: Partial<KanbanTask> = {
       citaStarted: true,
@@ -1099,23 +1212,43 @@ export default function CotizadorPage() {
       patch.followUpEnteredAt = Date.now();
     }
 
-    const updatedTask: KanbanTask = { ...targetTask, ...patch };
-    const currentTasks = getTasksFromLocalStorage();
+    const updatedTask: KanbanTask = { ...targetTask, ...patch, inversion };
     const nextTasks = currentTasks.map((t) => (t.id === targetTask.id ? updatedTask : t));
     saveKanbanTasksToLocalStorage(nextTasks);
     notifyKanbanTasksUpdated(nextTasks);
     setActiveTask(updatedTask);
 
+    const taskForBackend = { ...targetTask, id: mongoTaskId };
+
     if (options.advanceToContrato) {
-      await Promise.allSettled([
-        syncTaskStageWithBackend(targetTask, "contrato"),
-        syncTaskPatchWithBackend(targetTask, patch),
+      const results = await Promise.allSettled([
+        syncTaskStageWithBackend(taskForBackend, "contrato"),
+        syncTaskPatchWithBackend(taskForBackend, { ...patch, inversion }),
       ]);
+      if (results.some((r) => r.status === "rejected" || (r.status === "fulfilled" && r.value === false))) {
+        warnings.push("No se sincronizó por completo la tarea con el servidor.");
+      }
     } else {
-      await Promise.allSettled([syncTaskPatchWithBackend(targetTask, patch)]);
+      const patchOk = await syncTaskPatchWithBackend(taskForBackend, { ...patch, inversion });
+      if (!patchOk) {
+        warnings.push("No se sincronizó la cotización con el servidor.");
+      }
     }
 
-    return updatedTask;
+    if (codigo && isValidPublicProjectCode6(codigo)) {
+      const segWarning = await syncFormalToSeguimientoPublico({
+        codigo,
+        formalData,
+        cotizacionesFormales,
+        inversion,
+        remotePdfUrl,
+      });
+      if (segWarning) warnings.push(segWarning);
+    } else if (codigo) {
+      warnings.push("El código de proyecto no tiene formato válido para el portal de seguimiento.");
+    }
+
+    return { task: updatedTask, warnings };
   };
 
   const resetCotizadorForNextSpace = () => {
@@ -1135,8 +1268,11 @@ export default function CotizadorPage() {
     setFinishCotizacionMessage(null);
 
     try {
-      const saved = await persistFormalSpaceToLinkedTask({ advanceToContrato: true });
+      const { task: saved, warnings } = await persistFormalSpaceToLinkedTask({ advanceToContrato: true });
       if (!saved) return;
+      if (warnings.length > 0) {
+        setFinishCotizacionMessage(warnings.join(" "));
+      }
 
       const currentUser = authApi.getUserFromStorage();
       const redirectTarget = currentUser?.rol === "admin" ? "/admin/operaciones" : "/dashboard/empleado";
@@ -1157,13 +1293,13 @@ export default function CotizadorPage() {
     setFinishCotizacionMessage(null);
 
     try {
-      const saved = await persistFormalSpaceToLinkedTask({ advanceToContrato: false });
+      const { task: saved, warnings } = await persistFormalSpaceToLinkedTask({ advanceToContrato: false });
       if (!saved) return;
 
       resetCotizadorForNextSpace();
-      setFinishCotizacionMessage(
-        "Espacio guardado en la tarjeta. Puedes cotizar el siguiente espacio del mismo cliente.",
-      );
+      const baseMessage =
+        "Espacio guardado en la tarjeta. Puedes cotizar el siguiente espacio del mismo cliente.";
+      setFinishCotizacionMessage(warnings.length > 0 ? `${baseMessage} ${warnings.join(" ")}` : baseMessage);
     } catch (error) {
       setFinishCotizacionError(
         error instanceof Error ? error.message : "No se pudo guardar la cotización",
@@ -2834,7 +2970,14 @@ export default function CotizadorPage() {
                 onClick={() => void handleFinishCotizacionAndContinue()}
                 className="flex items-center justify-center gap-2 rounded-2xl border-2 border-emerald-600 bg-white px-5 py-2.5 text-sm font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-50 disabled:cursor-wait disabled:opacity-60"
               >
-                Terminar y continuar
+                {isFinishingCotizacion ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Guardando...
+                  </>
+                ) : (
+                  "Terminar y continuar"
+                )}
               </button>
             </div>
           </div>

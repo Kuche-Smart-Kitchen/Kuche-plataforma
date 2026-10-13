@@ -17,8 +17,10 @@ import {
   getTasksFromLocalStorage,
   mergeKanbanTaskLists,
   saveKanbanTasksToLocalStorage,
+  type CotizacionFormalData,
   type FollowUpStatus,
   type KanbanTask,
+  type PreliminarData,
   type TaskFile,
   type TaskPriority,
   type TaskStage,
@@ -102,6 +104,54 @@ const normalizeFollowUpStatus = (value: unknown): FollowUpStatus => {
   return "pendiente";
 };
 
+const isPreliminarData = (value: unknown): value is PreliminarData => {
+  const record = toRecord(value);
+  return Boolean(record && toStringValue(record.client));
+};
+
+const isCotizacionFormalData = (value: unknown): value is CotizacionFormalData => {
+  const record = toRecord(value);
+  return Boolean(record && toStringValue(record.client));
+};
+
+const parsePreliminarData = (value: unknown): PreliminarData | undefined =>
+  isPreliminarData(value) ? value : undefined;
+
+const parsePreliminarCotizaciones = (...sources: unknown[]): PreliminarData[] | undefined => {
+  for (const source of sources) {
+    if (Array.isArray(source)) {
+      const list = source.map(parsePreliminarData).filter((item): item is PreliminarData => Boolean(item));
+      if (list.length > 0) return list;
+    }
+  }
+  return undefined;
+};
+
+const parseCotizacionFormalData = (value: unknown): CotizacionFormalData | undefined =>
+  isCotizacionFormalData(value) ? value : undefined;
+
+const parseCotizacionesFormales = (...sources: unknown[]): CotizacionFormalData[] | undefined => {
+  for (const source of sources) {
+    if (Array.isArray(source)) {
+      const list = source.map(parseCotizacionFormalData).filter((item): item is CotizacionFormalData => Boolean(item));
+      if (list.length > 0) return list;
+    }
+  }
+  return undefined;
+};
+
+const resolveLinkedTareaId = (raw: Record<string, unknown>, cita: Record<string, unknown> | null): string | undefined => {
+  const tarea = toRecord(raw.tarea);
+  return (
+    toStringValue(raw.tareaId) ??
+    toStringValue(raw.linkedTareaId) ??
+    toStringValue(tarea?._id) ??
+    toStringValue(tarea?.id) ??
+    toStringValue(cita?.tareaId) ??
+    toStringValue(toRecord(cita?.tarea)?._id)
+  );
+};
+
 const inferFileType = (tipo: unknown, name?: unknown, url?: unknown): TaskFile["type"] => {
   const normalized = toStringValue(tipo)?.toLowerCase() ?? "";
   if (normalized.includes("pdf")) return "pdf";
@@ -168,6 +218,7 @@ const getAssignedIds = (raw: Record<string, unknown>): string[] => {
 
 const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
   const raw = (toRecord(item) ?? {}) as Record<string, unknown>;
+  const itemRecord = item as Record<string, unknown>;
   const cita = toRecord(raw.cita);
   const cliente = toRecord(raw.cliente) ?? toRecord(cita?.cliente);
   const rawEstado = toStringValue(raw.estado ?? item.estado)?.toLowerCase();
@@ -218,6 +269,19 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     toStringValue(cita?.fechaAgendada);
   const filesRaw = Array.isArray(raw.archivos) ? raw.archivos : [];
 
+  const preliminarCotizaciones =
+    parsePreliminarCotizaciones(itemRecord.preliminarCotizaciones, raw.preliminarCotizaciones) ?? [];
+  const preliminarData =
+    parsePreliminarData(itemRecord.preliminarData ?? raw.preliminarData) ??
+    preliminarCotizaciones[preliminarCotizaciones.length - 1];
+  const cotizacionesFormales =
+    parseCotizacionesFormales(itemRecord.cotizacionesFormales, raw.cotizacionesFormales) ?? [];
+  const cotizacionFormalData =
+    parseCotizacionFormalData(itemRecord.cotizacionFormalData ?? raw.cotizacionFormalData) ??
+    cotizacionesFormales[cotizacionesFormales.length - 1];
+  const inversion = toNumberValue(itemRecord.inversion ?? raw.inversion);
+  const linkedTareaId = resolveLinkedTareaId(raw, cita);
+
   return {
     id: toStringValue(raw._id) ?? toStringValue(raw.id) ?? `${stage}-${clientName}`,
     sourceId: toStringValue(raw.sourceId) ?? toStringValue(raw._id) ?? toStringValue(raw.id),
@@ -256,11 +320,19 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     designApprovedByClient: toBooleanValue(raw.designApprovedByClient),
     designFeedback: toFeedbackString(raw.designFeedback),
     codigoProyecto:
+      toStringValue(itemRecord.codigoProyecto) ??
       toStringValue(raw.codigoProyecto) ??
       toStringValue(raw.codigo) ??
       toStringValue(raw.codigoCliente) ??
+      toStringValue(itemRecord.clienteId) ??
       toStringValue(raw.clienteId) ??
       toStringValue(raw.clientId),
+    preliminarData,
+    preliminarCotizaciones: preliminarCotizaciones.length > 0 ? preliminarCotizaciones : undefined,
+    cotizacionFormalData,
+    cotizacionesFormales: cotizacionesFormales.length > 0 ? cotizacionesFormales : undefined,
+    inversion,
+    linkedTareaId,
     contractDate: toDateOnlyString(raw.fechaContrato),
     estimatedDeliveryDate: toDateOnlyString(raw.fechaEntrega),
     projectTypeSummary: toStringValue(raw.tipo),
@@ -328,8 +400,10 @@ export async function syncKanbanTasksFromBackend(): Promise<KanbanTask[] | null>
 
   try {
     const backendTasks = await fetchBackendKanbanTasks();
-    saveKanbanTasksToLocalStorage(backendTasks);
-    return backendTasks;
+    const localTasks = getTasksFromLocalStorage();
+    const merged = mergeKanbanTaskLists(localTasks, backendTasks);
+    saveKanbanTasksToLocalStorage(merged);
+    return merged;
   } catch (error) {
     console.warn("No se pudo sincronizar el kanban desde backend.", error);
     return null;
@@ -388,6 +462,9 @@ const buildTaskPatchPayload = (task: KanbanTask, patch: Partial<KanbanTask>): Re
   }
   if (patch.cotizacionesFormales !== undefined || task.cotizacionesFormales !== undefined) {
     payload.cotizacionesFormales = snapshot.cotizacionesFormales;
+  }
+  if (patch.inversion !== undefined || task.inversion !== undefined) {
+    payload.inversion = snapshot.inversion;
   }
 
   return payload;
