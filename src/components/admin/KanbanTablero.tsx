@@ -58,7 +58,12 @@ import {
 import { dueDateToSortTimestamp, formatDueDateTimeDisplay } from "@/lib/kanban-due-datetime";
 import { subirArchivoCliente } from "@/lib/axios/archivosClienteApi";
 import { obtenerDisponibilidadDia } from "@/lib/axios/citasApi";
-import { agendarVisita, obtenerDisponibilidadVisita } from "@/lib/axios/visitasApi";
+import {
+  agendarVisita,
+  obtenerDisponibilidadVisita,
+  obtenerVisitas,
+  type EstadoOperativoVisita,
+} from "@/lib/axios/visitasApi";
 import { eliminarTarea } from "@/lib/axios/tareasApi";
 import { isTaskAssignedToEmpleado } from "@/lib/empleado-kanban-filters";
 
@@ -522,6 +527,12 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const [visitCaptchaToken, setVisitCaptchaToken] = useState("");
   const [visitSaving, setVisitSaving] = useState(false);
   const [visitError, setVisitError] = useState<string | null>(null);
+  // Última visita activa (no cancelada) por tarea Mongo real: evita reagendar en duplicado y
+  // habilita "Aprobar diseño (cliente)" en cuanto esa visita se marca como completada en Agenda.
+  const [tareaVisitsById, setTareaVisitsById] = useState<
+    Record<string, { id: string; fechaProgramada?: string; operationalStatus?: EstadoOperativoVisita }>
+  >({});
+  const [approvingClientDesignTaskId, setApprovingClientDesignTaskId] = useState<string | null>(null);
   const [approvingDesignTaskId, setApprovingDesignTaskId] = useState<string | null>(null);
   const [advancingDesignTaskId, setAdvancingDesignTaskId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -580,6 +591,39 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     [onKanbanTasksChange],
   );
 
+  const refreshTareaVisits = useCallback(async () => {
+    try {
+      const response = await obtenerVisitas();
+      if (!response.success || !Array.isArray(response.data)) return;
+
+      const byTarea: Record<string, { id: string; fechaProgramada?: string; operationalStatus?: EstadoOperativoVisita }> = {};
+      for (const raw of response.data) {
+        const rawTareaId = raw.tareaId;
+        const tareaId = typeof rawTareaId === "string"
+          ? rawTareaId
+          : rawTareaId && typeof rawTareaId === "object"
+            ? String((rawTareaId as Record<string, unknown>)._id ?? (rawTareaId as Record<string, unknown>).id ?? "")
+            : "";
+        if (!tareaId) continue;
+        if (["cancelada", "cancelado"].includes(String(raw.estado ?? "").toLowerCase())) continue;
+
+        const fechaProgramada = typeof raw.fechaProgramada === "string" ? raw.fechaProgramada : undefined;
+        const existing = byTarea[tareaId];
+        // Si hay varias visitas activas para la misma tarea, se conserva la más reciente.
+        if (!existing || (fechaProgramada && (!existing.fechaProgramada || fechaProgramada > existing.fechaProgramada))) {
+          byTarea[tareaId] = {
+            id: String(raw._id ?? raw.id ?? tareaId),
+            fechaProgramada,
+            operationalStatus: raw.operationalStatus as EstadoOperativoVisita | undefined,
+          };
+        }
+      }
+      setTareaVisitsById(byTarea);
+    } catch (error) {
+      console.warn("No se pudieron cargar las visitas vinculadas a tareas.", error);
+    }
+  }, []);
+
   const syncFromBackend = useCallback(async () => {
     if (isSyncingRef.current) return;
     isSyncingRef.current = true;
@@ -587,12 +631,13 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       const { tasks: backendTasks, failedColumns } = await fetchBackendKanbanTasksWithStatus();
       hydrateAndApplyTasks(backendTasks, backendTasks.length > 0, { failedColumns });
       lastSyncTimeRef.current = Date.now();
+      void refreshTareaVisits();
     } catch (error) {
       console.warn("No se pudieron cargar las tareas del kanban desde backend.", error);
     } finally {
       isSyncingRef.current = false;
     }
-  }, [hydrateAndApplyTasks]);
+  }, [hydrateAndApplyTasks, refreshTareaVisits]);
 
   useEffect(() => {
     setMounted(true);
@@ -916,6 +961,12 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   };
 
   const openScheduleVisit = (task: KanbanTask) => {
+    const existingVisit = tareaVisitsById[resolveKanbanTaskPersistenceId(task, kanbanTasksRef.current)];
+    if (existingVisit && existingVisit.operationalStatus !== "completed") {
+      setBackendSyncMessage("Ya existe una visita agendada para esta tarea. Gestiónala desde Agenda (iniciar/terminar) antes de crear otra.");
+      window.setTimeout(() => setBackendSyncMessage(null), 5000);
+      return;
+    }
     const scheduledDate = new Date();
     scheduledDate.setDate(scheduledDate.getDate() + 1);
     const date = `${scheduledDate.getFullYear()}-${String(scheduledDate.getMonth() + 1).padStart(2, "0")}-${String(scheduledDate.getDate()).padStart(2, "0")}`;
@@ -1129,6 +1180,84 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     } finally {
       setApprovingDesignTaskId(null);
     }
+  };
+
+  /** Aprueba el diseño "por el cliente" directamente desde el tablero, una vez la visita vinculada
+   *  ya se marcó como completada en Agenda (misma validación que hace el backend en ese módulo). */
+  const approveDesignByClientOnKanban = async (taskId: string) => {
+    const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
+    if (!taskSnapshot || taskSnapshot.stage !== "disenos" || !taskSnapshot.designApprovedByAdmin) return;
+
+    setApprovingClientDesignTaskId(taskId);
+    try {
+      const realId = resolveKanbanTaskPersistenceId(taskSnapshot, kanbanTasksRef.current);
+      const result = await approveClientDesignWithBackend({ ...taskSnapshot, id: realId });
+      if (!result.success) {
+        setBackendSyncMessage(result.message || "No se pudo aprobar el diseño del cliente.");
+        window.setTimeout(() => setBackendSyncMessage(null), 5000);
+        return;
+      }
+      updateTask(taskId, (task) => ({ ...task, designApprovedByClient: true }));
+      void refreshTareaVisits();
+      showUploadToast("success", "Diseño aprobado por el cliente. Ya puedes subir el diseño final.");
+    } finally {
+      setApprovingClientDesignTaskId(null);
+    }
+  };
+
+  /** "Agendar visita" (sin visita activa) → estado de solo-lectura mientras la visita está pendiente/en
+   *  curso → "Aprobar diseño (cliente)" en cuanto Agenda marca la visita como completada. Evita crear
+   *  visitas duplicadas y reemplaza el flujo oculto que antes vivía solo en el módulo de Agenda. */
+  const renderDesignVisitAction = (task: KanbanTask, size: "sm" | "md") => {
+    const visit = tareaVisitsById[resolveKanbanTaskPersistenceId(task, kanbanTasksRef.current)];
+    const sizeClass = size === "sm"
+      ? "min-h-[32px] px-2.5 py-1 text-[11px] gap-1"
+      : "min-h-[36px] px-3 py-1.5 text-xs gap-1.5";
+    const iconClass = size === "sm" ? "h-3 w-3 shrink-0" : "h-3.5 w-3.5 shrink-0";
+
+    if (!visit) {
+      return (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            openScheduleVisit(task);
+          }}
+          className={`inline-flex w-auto items-center ${sizeClass} rounded-full border border-sky-200 bg-white font-semibold leading-tight text-sky-800`}
+        >
+          <CalendarPlus className={iconClass} />
+          Agendar visita
+        </button>
+      );
+    }
+
+    if (visit.operationalStatus === "completed") {
+      return (
+        <button
+          type="button"
+          disabled={approvingClientDesignTaskId === task.id}
+          onClick={(event) => {
+            event.stopPropagation();
+            void approveDesignByClientOnKanban(task.id);
+          }}
+          className={`inline-flex w-auto items-center ${sizeClass} rounded-full bg-emerald-700 font-semibold leading-tight text-white disabled:cursor-wait disabled:opacity-60`}
+        >
+          <CheckCircle2 className={iconClass} />
+          {approvingClientDesignTaskId === task.id ? "Aprobando..." : "Aprobar diseño (cliente)"}
+        </button>
+      );
+    }
+
+    const visitDateLabel = visit.fechaProgramada
+      ? new Date(visit.fechaProgramada).toLocaleDateString("es-MX", { day: "numeric", month: "short" })
+      : null;
+    return (
+      <span className={`inline-flex w-auto items-center ${sizeClass} rounded-full bg-amber-100 font-semibold leading-tight text-amber-700`}>
+        <Clock className={iconClass} />
+        Visita {visit.operationalStatus === "in_progress" ? "en curso" : "agendada"}
+        {visitDateLabel ? ` · ${visitDateLabel}` : ""}
+      </span>
+    );
   };
 
   const showUploadToast = (type: "success" | "error", message: string) => {
@@ -1867,19 +1996,9 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                                   {approvingDesignTaskId === task.id ? "Aprobando..." : "Aprobar diseño"}
                                 </button>
                               ) : null}
-                              {task.stage === "disenos" && task.designApprovedByAdmin && !task.designApprovedByClient ? (
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    openScheduleVisit(task);
-                                  }}
-                                  className="inline-flex min-h-[32px] w-auto items-center gap-1 rounded-full border border-sky-200 bg-white px-2.5 py-1 text-[11px] font-semibold leading-tight text-sky-800"
-                                >
-                                  <CalendarPlus className="h-3 w-3 shrink-0" />
-                                  Agendar visita
-                                </button>
-                              ) : null}
+                              {task.stage === "disenos" && task.designApprovedByAdmin && !task.designApprovedByClient
+                                ? renderDesignVisitAction(task, "sm")
+                                : null}
                               {task.stage === "disenos" && task.designApprovedByClient && !hasFinalDesign(task) ? (
                                 <button
                                   type="button"
@@ -2439,14 +2558,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                           <span className="text-sm text-amber-600 font-medium">Esperando aprobación del admin</span>
                         )
                       ) : activeTask.designApprovedByAdmin && !activeTask.designApprovedByClient ? (
-                        <button
-                          type="button"
-                          onClick={() => openScheduleVisit(activeTask)}
-                          className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-sky-200 bg-white px-3 py-1.5 text-xs font-semibold leading-tight text-sky-800"
-                        >
-                          <CalendarPlus className="h-3.5 w-3.5 shrink-0" />
-                          Agendar visita
-                        </button>
+                        renderDesignVisitAction(activeTask, "md")
                       ) : !hasFinalDesign(activeTask) && activeTask.designApprovedByClient ? (
                         <>
                           <button
