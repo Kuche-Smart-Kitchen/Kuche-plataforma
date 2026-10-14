@@ -513,10 +513,6 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const [visitDraft, setVisitDraft] = useState({
     date: "",
     time: "09:00",
-    client: "",
-    email: "",
-    phone: "",
-    location: "",
   });
   const [visitCaptchaToken, setVisitCaptchaToken] = useState("");
   const [visitSaving, setVisitSaving] = useState(false);
@@ -918,14 +914,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     const scheduledDate = new Date();
     scheduledDate.setDate(scheduledDate.getDate() + 1);
     const date = `${scheduledDate.getFullYear()}-${String(scheduledDate.getMonth() + 1).padStart(2, "0")}-${String(scheduledDate.getDate()).padStart(2, "0")}`;
-    setVisitDraft({
-      date,
-      time: "09:00",
-      client: task.project,
-      email: task.clientEmail ?? "",
-      phone: task.clientPhone ?? "",
-      location: task.location ?? "",
-    });
+    setVisitDraft({ date, time: "09:00" });
     setVisitError(null);
     setVisitCaptchaToken("");
     setScheduleVisitTaskId(task.id);
@@ -934,8 +923,21 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const saveScheduledVisit = async () => {
     const task = kanbanTasksRef.current.find((item) => item.id === scheduleVisitTaskId);
     if (!task) return;
-    if (!visitDraft.client.trim() || !visitDraft.email.trim() || !visitDraft.phone.trim() || !visitDraft.date || !visitDraft.time) {
-      setVisitError("Completa cliente, correo, teléfono, fecha y hora.");
+    // El nombre, correo, teléfono y dirección ya NO se capturan en el formulario: se toman
+    // siempre del registro del cliente para evitar que un dato mal tecleado no coincida con lo
+    // que el backend tiene guardado en la Tarea (eso provocaba "La visita debe corresponder
+    // al cliente de la tarea").
+    const nombreCliente = task.project?.trim();
+    const correoCliente = task.clientEmail?.trim();
+    const telefonoCliente = task.clientPhone?.trim();
+    if (!nombreCliente || !correoCliente || !telefonoCliente) {
+      setVisitError(
+        "Este cliente no tiene correo y/o teléfono registrados en el sistema; no se puede agendar la visita. Completa esos datos en el expediente del cliente e intenta de nuevo.",
+      );
+      return;
+    }
+    if (!visitDraft.date || !visitDraft.time) {
+      setVisitError("Completa fecha y hora.");
       return;
     }
     if (!visitCaptchaToken) {
@@ -973,10 +975,10 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       const response = await agendarVisita(
         {
           fechaProgramada: new Date(`${visitDraft.date}T${visitDraft.time}:00`).toISOString(),
-          nombreCliente: visitDraft.client.trim(),
-          correoCliente: visitDraft.email.trim(),
-          telefonoCliente: visitDraft.phone.trim(),
-          ubicacion: visitDraft.location.trim() || undefined,
+          nombreCliente,
+          correoCliente,
+          telefonoCliente,
+          ubicacion: task.location?.trim() || undefined,
           informacionAdicional: "Presentación de diseño",
           // La tarjeta pudo avanzar a "Diseños" localmente antes de que el backend reemplace el id
           // de Cita por el id real de Tarea; resolvemos el id correcto para que el backend valide
@@ -3046,23 +3048,14 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                         Cerrar
                       </button>
                     </div>
-                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                      <label className="text-xs font-semibold text-gray-600">
-                        Cliente
-                        <input value={visitDraft.client} onChange={(event) => setVisitDraft((draft) => ({ ...draft, client: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm font-normal text-gray-900 outline-none focus:border-sky-500" />
-                      </label>
-                      <label className="text-xs font-semibold text-gray-600">
-                        Correo
-                        <input type="email" value={visitDraft.email} onChange={(event) => setVisitDraft((draft) => ({ ...draft, email: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm font-normal text-gray-900 outline-none focus:border-sky-500" />
-                      </label>
-                      <label className="text-xs font-semibold text-gray-600">
-                        Teléfono
-                        <input value={visitDraft.phone} onChange={(event) => setVisitDraft((draft) => ({ ...draft, phone: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm font-normal text-gray-900 outline-none focus:border-sky-500" />
-                      </label>
-                      <label className="text-xs font-semibold text-gray-600">
-                        Dirección
-                        <input value={visitDraft.location} onChange={(event) => setVisitDraft((draft) => ({ ...draft, location: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm font-normal text-gray-900 outline-none focus:border-sky-500" />
-                      </label>
+                    <div className="mt-4 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 text-xs text-gray-600">
+                      <p><span className="font-semibold text-gray-800">Cliente:</span> {scheduleVisitTask.project || "—"}</p>
+                      <p><span className="font-semibold text-gray-800">Correo:</span> {scheduleVisitTask.clientEmail || "Sin registrar"}</p>
+                      <p><span className="font-semibold text-gray-800">Teléfono:</span> {scheduleVisitTask.clientPhone || "Sin registrar"}</p>
+                      <p><span className="font-semibold text-gray-800">Dirección:</span> {scheduleVisitTask.location || "Sin registrar"}</p>
+                      <p className="mt-1 text-[11px] text-gray-500">Estos datos se toman del expediente del cliente; si falta algo, corrígelo ahí antes de agendar.</p>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
                       <label className="text-xs font-semibold text-gray-600">
                         Fecha
                         <input type="date" min={new Date().toLocaleDateString("en-CA")} value={visitDraft.date} onChange={(event) => setVisitDraft((draft) => ({ ...draft, date: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm font-normal text-gray-900 outline-none focus:border-sky-500" />
