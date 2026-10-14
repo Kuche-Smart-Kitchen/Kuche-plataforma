@@ -16,6 +16,7 @@ import { obtenerVisitas } from "@/lib/axios/visitasApi";
 import {
   getTasksFromLocalStorage,
   mergeKanbanTaskLists,
+  resolveKanbanTaskPersistenceId,
   saveKanbanTasksToLocalStorage,
   type CotizacionFormalData,
   type FollowUpStatus,
@@ -472,30 +473,32 @@ const buildTaskPatchPayload = (task: KanbanTask, patch: Partial<KanbanTask>): Re
 };
 
 export async function syncTaskAssigneesWithBackend(task: KanbanTask, assignedTo: string[]): Promise<boolean> {
-  const taskId = task.id?.trim();
-  if (!taskId) return false;
-
-  const assignedIds = (task.assignedToIds ?? []).filter((id) => isObjectId(id));
   const validForCita = (task.sourceType ?? "").toLowerCase() === "cita";
   const citaSourceId = task.sourceId?.trim();
 
   try {
     if (validForCita && citaSourceId) {
+      const assignedIds = (task.assignedToIds ?? []).filter((id) => isObjectId(id));
       await asignarIngenierosCita(citaSourceId, { ingenierosIds: assignedIds });
       return true;
     }
 
+    // Resuelve el ID real de Tarea: evita usar el id de Cita cuando la tarjeta avanzó de etapa
+    // localmente antes de que el backend confirme el id de Tarea (ver resolveKanbanTaskPersistenceId).
+    const taskId = resolveKanbanTaskPersistenceId(task);
+    if (!taskId) return false;
+    const assignedIds = (task.assignedToIds ?? []).filter((id) => isObjectId(id));
     const assignmentPayload = assignedIds.length > 0 ? assignedIds : assignedTo;
     await asignarTrabajadoresTarea(taskId, assignmentPayload);
     return true;
   } catch (error) {
-    console.warn("No se pudo sincronizar responsables en backend", { taskId, error });
+    console.warn("No se pudo sincronizar responsables en backend", { taskId: task.id, error });
     return false;
   }
 }
 
 export async function syncTaskPatchWithBackend(task: KanbanTask, patch: Partial<KanbanTask>): Promise<boolean> {
-  const taskId = task.id?.trim();
+  const taskId = resolveKanbanTaskPersistenceId(task);
   if (!taskId) return false;
 
   try {
@@ -518,7 +521,7 @@ export async function approveClientDesignWithBackend(
     !task.designApprovedByAdmin
   ) return { success: false, message: "La tarea requiere etapa Diseños y aprobación administrativa." };
 
-  const taskId = task.id.trim();
+  const taskId = resolveKanbanTaskPersistenceId(task);
   if (!taskId) return { success: false, message: "No se encontró el ID de la tarea." };
 
   try {
@@ -594,7 +597,7 @@ export async function approveClientDesignWithBackend(
 }
 
 export async function syncTaskStageWithBackend(task: KanbanTask, targetStage: TaskStage): Promise<boolean> {
-  const taskId = task.id?.trim();
+  const taskId = resolveKanbanTaskPersistenceId(task);
   if (!taskId) return false;
 
   try {
@@ -610,7 +613,7 @@ export async function syncTaskFollowUpWithBackend(
   task: KanbanTask,
   followUpStatus: FollowUpStatus,
 ): Promise<boolean> {
-  const taskId = task.id?.trim();
+  const taskId = resolveKanbanTaskPersistenceId(task);
   if (!taskId) return false;
 
   try {

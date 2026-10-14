@@ -1047,6 +1047,8 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       setScheduleVisitTaskId(null);
       setVisitCaptchaToken("");
       setUploadToast({ type: "success", message: "Visita agendada; la tarjeta permanece en Diseños." });
+      // Refleja la visita recién creada de inmediato (sin esperar el próximo ciclo de sync/focus).
+      void refreshTareaVisits();
     } catch (error) {
       setVisitCaptchaToken("");
       visitCaptchaRef.current?.reset();
@@ -1190,8 +1192,8 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
     setApprovingClientDesignTaskId(taskId);
     try {
-      const realId = resolveKanbanTaskPersistenceId(taskSnapshot, kanbanTasksRef.current);
-      const result = await approveClientDesignWithBackend({ ...taskSnapshot, id: realId });
+      // approveClientDesignWithBackend resuelve el ID real de Tarea internamente (resolveKanbanTaskPersistenceId).
+      const result = await approveClientDesignWithBackend(taskSnapshot);
       if (!result.success) {
         setBackendSyncMessage(result.message || "No se pudo aprobar el diseño del cliente.");
         window.setTimeout(() => setBackendSyncMessage(null), 5000);
@@ -1283,7 +1285,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
         return;
       }
       const result = await subirArchivoCliente(file, clienteId, "diseno", {
-        tareasId: taskSnapshot.id,
+        tareasId: resolveKanbanTaskPersistenceId(taskSnapshot, kanbanTasksRef.current),
         nivel: "final",
       });
 
@@ -1558,6 +1560,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     const files = Array.from(fileList);
     const nextFiles: TaskFile[] = [];
     const failedNames: string[] = [];
+    const resolvedTareaId = taskSnapshot ? resolveKanbanTaskPersistenceId(taskSnapshot, kanbanTasksRef.current) : "";
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -1567,8 +1570,8 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
         continue;
       }
       const result = tipo === "diseno"
-        ? await subirArchivoCliente(file, clienteId, tipo, { tareasId: taskSnapshot.id, nivel: "preliminar" })
-        : await subirArchivoCliente(file, clienteId, tipo, { tareasId: taskSnapshot.id });
+        ? await subirArchivoCliente(file, clienteId, tipo, { tareasId: resolvedTareaId, nivel: "preliminar" })
+        : await subirArchivoCliente(file, clienteId, tipo, { tareasId: resolvedTareaId });
 
       if (!result.success || !result.data) {
         failedNames.push(file.name);
