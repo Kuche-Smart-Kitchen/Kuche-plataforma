@@ -2,7 +2,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
 import type { CotizacionFormalData, PreliminarData } from "@/lib/kanban";
-import type { LevantamientoDetalle, MedidasCampos, WallMeasureFieldDef } from "@/lib/levantamiento-catalog";
+import type { ItemCatalogo, LevantamientoDetalle, MedidasCampos, WallMeasureFieldDef } from "@/lib/levantamiento-catalog";
 import {
   APPLIANCE_ITEMS,
   applianceAppearsInPdf,
@@ -393,7 +393,13 @@ function addEditorialProjectBlock(doc: jsPDF, data: PreliminarData, lev: Levanta
   return yEnd;
 }
 
-function addFichaTecnica(doc: jsPDF, data: PreliminarData, lev: LevantamientoDetalle | undefined, startY: number): number {
+function addFichaTecnica(
+  doc: jsPDF,
+  data: PreliminarData,
+  lev: LevantamientoDetalle | undefined,
+  startY: number,
+  applianceCatalog: ItemCatalogo[] = APPLIANCE_ITEMS,
+): number {
   const marginX = MARGIN_PDF;
   const pageW = doc.internal.pageSize.getWidth();
 
@@ -556,7 +562,7 @@ function addFichaTecnica(doc: jsPDF, data: PreliminarData, lev: LevantamientoDet
   );
   y = brandSectionHeader(doc, "Electrodomésticos e iluminación", marginX, y);
 
-  const appliances = APPLIANCE_ITEMS.filter((a) => applianceAppearsInPdf(lev, a.id));
+  const appliances = applianceCatalog.filter((a) => applianceAppearsInPdf(lev, a.id));
   const lights = LIGHTING_ITEMS.filter((l) => lightingAppearsInPdf(lev, l.id));
 
   const rows: Array<[string, string, string, string]> = [];
@@ -706,11 +712,12 @@ function buildPreliminarJsPdf(
   data: PreliminarData,
   logoDataUrl: string | null,
   logoDisplay?: { w: number; h: number },
+  applianceCatalog?: ItemCatalogo[],
 ): jsPDF {
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   const lev = data.levantamiento ? normalizeLevantamientoDetalle(data.levantamiento) : undefined;
   let y = addEditorialProjectBlock(doc, data, lev);
-  y = addFichaTecnica(doc, data, lev, y);
+  y = addFichaTecnica(doc, data, lev, y, applianceCatalog);
   y = addObservaciones(doc, lev, y);
   addCondicionesEstimacion(doc, y);
   applyHeaderFooterAllPages(doc, logoDataUrl, logoDisplay);
@@ -718,17 +725,17 @@ function buildPreliminarJsPdf(
 }
 
 /** Genera el PDF preliminar (como Uint8Array) a partir de los datos guardados. Sin logo (sincronía). */
-export function buildPreliminarPdf(data: PreliminarData): Uint8Array {
-  const doc = buildPreliminarJsPdf(data, null);
+export function buildPreliminarPdf(data: PreliminarData, applianceCatalog?: ItemCatalogo[]): Uint8Array {
+  const doc = buildPreliminarJsPdf(data, null, undefined, applianceCatalog);
   const ab = doc.output("arraybuffer");
   return new Uint8Array(ab);
 }
 
 /** Genera el PDF preliminar con logo como Blob, reutilizable para descarga y subida a Cloudinary. */
-export async function buildPreliminarPdfBlob(data: PreliminarData): Promise<Blob> {
+export async function buildPreliminarPdfBlob(data: PreliminarData, applianceCatalog?: ItemCatalogo[]): Promise<Blob> {
   const logo = await fetchKucheLogoDataUrl();
   const logoFit = await getLogoFitSizeForPdf(logo);
-  const doc = buildPreliminarJsPdf(data, logo, logoFit);
+  const doc = buildPreliminarJsPdf(data, logo, logoFit, applianceCatalog);
   const bytes = new Uint8Array(doc.output("arraybuffer"));
   return new Blob([bytes], { type: "application/pdf" });
 }
@@ -779,11 +786,11 @@ function openStoredPdfInNewTab(stored: string): void {
 }
 
 /** Abre el PDF en una nueva pestaña. */
-export function openPreliminarPdfInNewTab(data: PreliminarData): void {
+export function openPreliminarPdfInNewTab(data: PreliminarData, applianceCatalog?: ItemCatalogo[]): void {
   void (async () => {
     const logo = await fetchKucheLogoDataUrl();
     const logoFit = await getLogoFitSizeForPdf(logo);
-    const doc = buildPreliminarJsPdf(data, logo, logoFit);
+    const doc = buildPreliminarJsPdf(data, logo, logoFit, applianceCatalog);
     const bytes = new Uint8Array(doc.output("arraybuffer"));
     const blob = new Blob([bytes], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
@@ -797,11 +804,11 @@ export function openPreliminarPdfInNewTab(data: PreliminarData): void {
 }
 
 /** Descarga el PDF con nombre sugerido. */
-export function downloadPreliminarPdf(data: PreliminarData, filename?: string): void {
+export function downloadPreliminarPdf(data: PreliminarData, filename?: string, applianceCatalog?: ItemCatalogo[]): void {
   void (async () => {
     const logo = await fetchKucheLogoDataUrl();
     const logoFit = await getLogoFitSizeForPdf(logo);
-    const doc = buildPreliminarJsPdf(data, logo, logoFit);
+    const doc = buildPreliminarJsPdf(data, logo, logoFit, applianceCatalog);
     const bytes = new Uint8Array(doc.output("arraybuffer"));
     const blob = new Blob([bytes], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
@@ -814,10 +821,10 @@ export function downloadPreliminarPdf(data: PreliminarData, filename?: string): 
 }
 
 /** Data URL del PDF preliminar (para guardar en IndexedDB y enlazar al seguimiento). */
-export async function buildPreliminarPdfDataUrl(data: PreliminarData): Promise<string> {
+export async function buildPreliminarPdfDataUrl(data: PreliminarData, applianceCatalog?: ItemCatalogo[]): Promise<string> {
   const logo = await fetchKucheLogoDataUrl();
   const logoFit = await getLogoFitSizeForPdf(logo);
-  const doc = buildPreliminarJsPdf(data, logo, logoFit);
+  const doc = buildPreliminarJsPdf(data, logo, logoFit, applianceCatalog);
   return doc.output("datauristring");
 }
 

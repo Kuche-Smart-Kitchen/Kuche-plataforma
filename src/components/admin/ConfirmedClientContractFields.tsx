@@ -8,7 +8,6 @@ import { formatApproximateDeliveryWindowEs } from "@/lib/delivery-weeks";
 import {
   actualizarDatosContratoProyecto,
   TIPOS_PROYECTO,
-  type TipoProyecto,
 } from "@/lib/axios/proyectosApi";
 
 type Props = {
@@ -45,7 +44,7 @@ export function ConfirmedClientContractFields({ task, onUpdate }: Props) {
     setSaved(false);
     try {
       const response = await actualizarDatosContratoProyecto(codigo, {
-        ...(tipo ? { tipo: tipo as TipoProyecto } : {}),
+        ...(tipo.trim() ? { tipo: tipo.trim() } : {}),
         fechaContrato: contractDate,
         fechaEntrega: deliveryDate,
       });
@@ -53,9 +52,14 @@ export function ConfirmedClientContractFields({ task, onUpdate }: Props) {
         setError(response.message || "No se pudieron guardar los datos del proyecto.");
         return;
       }
+      // El backend crea/vincula el Proyecto en este mismo PATCH si todavía no existía; su `_id`
+      // confirma la relación con la tarjeta (ver docs/AREA_CONTRATOS_Y_PROYECTOS_RUTAS.md).
+      const proyectoId =
+        typeof response.data?._id === "string" ? response.data._id : task.proyectoId;
       onUpdate({
         ...task,
-        projectTypeSummary: tipo || undefined,
+        proyectoId,
+        projectTypeSummary: tipo.trim() || undefined,
         contractDate: contractDate || undefined,
         estimatedDeliveryDate: deliveryDate || undefined,
       });
@@ -70,29 +74,41 @@ export function ConfirmedClientContractFields({ task, onUpdate }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="rounded-2xl border border-emerald-200/90 bg-emerald-50/60 p-4">
-      <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-emerald-900">
-        <CalendarRange className="h-3.5 w-3.5" />
-        Contrato y proyecto
-      </p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-emerald-900">
+          <CalendarRange className="h-3.5 w-3.5" />
+          Contrato y proyecto
+        </p>
+        <span
+          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+            task.proyectoId
+              ? "bg-emerald-100 text-emerald-800"
+              : "bg-amber-100 text-amber-800"
+          }`}
+        >
+          {task.proyectoId ? "Proyecto vinculado" : "Sin vincular aún"}
+        </span>
+      </div>
 
       <div className="mt-4 space-y-4">
         <label className={labelClass}>
           Tipo de proyecto
-          <select
+          <input
+            type="text"
+            list="tipos-proyecto-sugeridos"
             value={tipo}
             onChange={(e) => {
               setTipo(e.target.value);
               setSaved(false);
             }}
+            placeholder="Ej. Cocina"
             className={inputClass}
-          >
-            <option value="">Sin definir</option>
+          />
+          <datalist id="tipos-proyecto-sugeridos">
             {TIPOS_PROYECTO.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
+              <option key={option} value={option} />
             ))}
-          </select>
+          </datalist>
         </label>
 
         <label className={labelClass}>

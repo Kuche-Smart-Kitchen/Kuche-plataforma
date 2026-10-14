@@ -114,6 +114,9 @@ export type KanbanTask = {
   cotizacionesFormales?: CotizacionFormalData[];
   /** Código para que el cliente acceda a /seguimiento (ej. K-8821). Se genera al crear la tarea. */
   codigoProyecto?: string;
+  /** `Tarea.proyectoId`: ObjectId del `Proyecto` ya vinculado a esta tarea (backend). Si falta,
+   * el cliente aún no tiene proyecto creado/ligado (ver docs/AREA_CONTRATOS_Y_PROYECTOS_RUTAS.md). */
+  proyectoId?: string;
   /** Admin «Clientes confirmados»: fecha de contrato (ISO `YYYY-MM-DD`). */
   contractDate?: string;
   /** Admin «Clientes confirmados»: fecha estimada de entrega manual (ISO `YYYY-MM-DD`). */

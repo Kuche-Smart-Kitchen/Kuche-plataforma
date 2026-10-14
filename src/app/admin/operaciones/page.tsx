@@ -19,7 +19,9 @@ import {
 } from "@/lib/kanban";
 import { generatePublicProjectCode } from "@/lib/project-code";
 import { fetchBackendKanbanTasks } from "@/lib/admin-workflow";
+import { asignarIngenierosCita, crearCita } from "@/lib/axios/citasApi";
 import { crearTarea } from "@/lib/axios/tareasApi";
+import { dueDateToSortTimestamp } from "@/lib/kanban-due-datetime";
 import {
   INTEGRANTE_ROL_OPTIONS,
   type IntegranteRolSelectable,
@@ -38,6 +40,8 @@ export default function OperacionesPage() {
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
   const [newTaskProject, setNewTaskProject] = useState("");
+  const [newTaskEmail, setNewTaskEmail] = useState("");
+  const [newTaskPhone, setNewTaskPhone] = useState("");
   const [newTaskStage, setNewTaskStage] = useState<TaskStage>("citas");
   const [newTaskAssignedTo, setNewTaskAssignedTo] = useState("");
   const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>("media");
@@ -45,6 +49,7 @@ export default function OperacionesPage() {
   const [newTaskLocation, setNewTaskLocation] = useState("");
   const [newTaskMapsUrl, setNewTaskMapsUrl] = useState("");
   const [assignError, setAssignError] = useState("");
+  const [isCreatingPending, setIsCreatingPending] = useState(false);
   const [newMemberName, setNewMemberName] = useState("");
   const [newMemberEmail, setNewMemberEmail] = useState("");
   const [newMemberRole, setNewMemberRole] = useState<IntegranteRolSelectable>("empleado");
@@ -122,34 +127,79 @@ export default function OperacionesPage() {
       setAssignError("Completa proyecto/cliente.");
       return;
     }
+    if (
+      newTaskStage === "citas" &&
+      (!newTaskPhone.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newTaskEmail.trim()))
+    ) {
+      setAssignError("Completa un correo válido y el teléfono para agendar la cita.");
+      return;
+    }
 
-    const assignees =
-      newTaskAssignedTo && newTaskAssignedTo !== "Sin asignar"
-        ? [newTaskAssignedTo]
-        : [];
-    const codigoProyecto = generatePublicProjectCode();
-
+    setIsCreatingPending(true);
+    setAssignError("");
+    let citaCreada = false;
     try {
-      const response = await crearTarea({
-        nombreProyecto: project,
-        etapa: newTaskStage,
-        estado: "pendiente",
-        asignadoA: assignees,
-        prioridad: newTaskPriority,
-        ubicacion: newTaskLocation.trim() || undefined,
-        mapsUrl: newTaskMapsUrl.trim() || undefined,
-        notas: "",
-        codigoProyecto,
-        fechaLimite: newTaskDueDate.trim() || undefined,
-      });
+      if (newTaskStage === "citas") {
+        const response = await crearCita({
+          nombreCliente: project,
+          correoCliente: newTaskEmail.trim(),
+          telefonoCliente: newTaskPhone.trim(),
+          ubicacion: newTaskLocation.trim() || undefined,
+          fechaAgendada: new Date(
+            dueDateToSortTimestamp(newTaskDueDate, Date.now()),
+          ).toISOString(),
+          informacionAdicional: newTaskMapsUrl.trim()
+            ? `Google Maps: ${newTaskMapsUrl.trim()}`
+            : "Cita creada desde Operaciones",
+          estado: "programada",
+        });
+        if (!response.success) {
+          throw new Error(response.message || "No se pudo crear la cita");
+        }
+        citaCreada = true;
 
-      if (!response.success) {
-        throw new Error(response.message || "No se pudo crear la tarea");
+        const result = response.data;
+        const nestedCita = result.cita && typeof result.cita === "object"
+          ? (result.cita as Record<string, unknown>)
+          : result;
+        const citaId = String(nestedCita._id ?? nestedCita.id ?? "").trim();
+        const assignedMember = teamMembers.find((member) => member.name === newTaskAssignedTo);
+        if (assignedMember && !citaId) {
+          throw new Error("La cita se creó, pero el backend no devolvió su identificador para asignarla.");
+        }
+        if (citaId && assignedMember?.id) {
+          const assignment = await asignarIngenierosCita(citaId, { ingenierosIds: [assignedMember.id] });
+          if (!assignment.success) {
+            throw new Error(assignment.message || "La cita se creó, pero no se pudo asignar al integrante.");
+          }
+        }
+      } else {
+        const assignees =
+          newTaskAssignedTo && newTaskAssignedTo !== "Sin asignar"
+            ? [newTaskAssignedTo]
+            : [];
+        const response = await crearTarea({
+          nombreProyecto: project,
+          etapa: newTaskStage,
+          estado: "pendiente",
+          asignadoA: assignees,
+          prioridad: newTaskPriority,
+          ubicacion: newTaskLocation.trim() || undefined,
+          mapsUrl: newTaskMapsUrl.trim() || undefined,
+          notas: "",
+          codigoProyecto: generatePublicProjectCode(),
+          fechaLimite: newTaskDueDate.trim() || undefined,
+        });
+        if (!response.success) {
+          throw new Error(response.message || "No se pudo crear la tarea");
+        }
       }
 
       setRefreshTrigger((t) => t + 1);
       setIsAssignModalOpen(false);
       setNewTaskProject("");
+      setNewTaskEmail("");
+      setNewTaskPhone("");
       setNewTaskStage("citas");
       setNewTaskAssignedTo(teamMembers[0]?.name ?? "Sin asignar");
       setNewTaskPriority("media");
@@ -157,8 +207,17 @@ export default function OperacionesPage() {
       setNewTaskLocation("");
       setNewTaskMapsUrl("");
       setAssignError("");
-    } catch {
-      setAssignError("No se pudo guardar la tarea en backend.");
+    } catch (error) {
+      setRefreshTrigger((t) => t + 1);
+      setAssignError(
+        error instanceof Error
+          ? error.message
+          : citaCreada
+            ? "La cita se creó, pero falló la asignación."
+            : "No se pudo guardar el pendiente en backend.",
+      );
+    } finally {
+      setIsCreatingPending(false);
     }
   };
 
@@ -199,6 +258,8 @@ export default function OperacionesPage() {
 
   const openAssignModal = () => {
     setNewTaskProject("");
+    setNewTaskEmail("");
+    setNewTaskPhone("");
     setNewTaskStage("citas");
     setNewTaskAssignedTo(teamMembers[0]?.name ?? "Sin asignar");
     setNewTaskPriority("media");
@@ -457,6 +518,32 @@ export default function OperacionesPage() {
                   className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
                 />
               </label>
+              {newTaskStage === "citas" ? (
+                <>
+                  <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
+                    Correo
+                    <input
+                      type="email"
+                      required
+                      value={newTaskEmail}
+                      onChange={(e) => setNewTaskEmail(e.target.value)}
+                      placeholder="cliente@correo.com"
+                      className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
+                    />
+                  </label>
+                  <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
+                    Teléfono
+                    <input
+                      type="tel"
+                      required
+                      value={newTaskPhone}
+                      onChange={(e) => setNewTaskPhone(e.target.value)}
+                      placeholder="Número de contacto"
+                      className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
+                    />
+                  </label>
+                </>
+              ) : null}
               <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
                 Dirección / Localidad
                 <input
@@ -548,9 +635,10 @@ export default function OperacionesPage() {
               <button
                 type="button"
                 onClick={handleAssignPending}
+                disabled={isCreatingPending}
                 className="rounded-2xl bg-primary px-5 py-2 text-xs font-semibold text-white"
               >
-                Guardar pendiente
+                {isCreatingPending ? "Guardando..." : "Guardar pendiente"}
               </button>
             </div>
             </div>

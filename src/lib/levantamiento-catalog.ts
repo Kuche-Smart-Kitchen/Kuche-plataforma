@@ -1475,18 +1475,25 @@ export const APPLIANCE_STEPS_TOTAL = APPLIANCE_ITEMS.length + 1;
 /** Índice del paso «Otro» (después del último ítem del catálogo). */
 export const APPLIANCE_OTRO_STEP_INDEX = APPLIANCE_ITEMS.length;
 
-/** Posición dentro de la categoría del ítem en `APPLIANCE_ITEMS[index]` (1-based). */
-export function getApplianceCategoryProgress(globalIndex: number): {
+/**
+ * Posición dentro de la categoría del ítem en `items[globalIndex]` (1-based).
+ * `items` es opcional y por defecto usa el catálogo fijo (`APPLIANCE_ITEMS`); el llamador puede pasar
+ * el catálogo combinado con electrodomésticos dados de alta en `/admin/equipamiento` (ver `mergeApplianceItemsWithDynamic`).
+ */
+export function getApplianceCategoryProgress(
+  globalIndex: number,
+  items: ItemCatalogo[] = APPLIANCE_ITEMS,
+): {
   categoria: string;
   indexInCategory: number;
   totalInCategory: number;
 } {
-  const item = APPLIANCE_ITEMS[globalIndex];
-  const cat = item.categoria ?? "Electrodoméstico";
-  const totalInCategory = APPLIANCE_ITEMS.filter((x) => x.categoria === cat).length;
+  const item = items[globalIndex];
+  const cat = item?.categoria ?? "Electrodoméstico";
+  const totalInCategory = items.filter((x) => x.categoria === cat).length;
   let indexInCategory = 0;
   for (let i = 0; i <= globalIndex; i++) {
-    if (APPLIANCE_ITEMS[i].categoria === cat) indexInCategory++;
+    if (items[i]?.categoria === cat) indexInCategory++;
   }
   return { categoria: cat, indexInCategory, totalInCategory };
 }
@@ -1502,10 +1509,56 @@ export const APPLIANCE_CATEGORIAS: readonly string[] = [
   "Otros",
 ];
 
-/** Primer índice en `APPLIANCE_ITEMS` para una categoría (para saltar desde la UI). */
-export function applianceFirstIndexForCategory(categoria: string): number {
-  const i = APPLIANCE_ITEMS.findIndex((x) => x.categoria === categoria);
+/** Primer índice en `items` para una categoría (para saltar desde la UI). Acepta el catálogo combinado. */
+export function applianceFirstIndexForCategory(categoria: string, items: ItemCatalogo[] = APPLIANCE_ITEMS): number {
+  const i = items.findIndex((x) => x.categoria === categoria);
   return i === -1 ? 0 : i;
+}
+
+/** Forma mínima y estructural de un electrodoméstico/extra dado de alta en `/admin/equipamiento` (backend). */
+export type DynamicCatalogEquipment = {
+  _id: string;
+  nombre: string;
+  descripcion?: string;
+  categoria?: string;
+  precio?: number;
+  imagenUrl?: string;
+  disponible?: boolean;
+};
+
+/**
+ * Combina el catálogo fijo de electrodomésticos (`APPLIANCE_ITEMS`) con los que el equipo de ventas da de alta
+ * dinámicamente en `/admin/equipamiento`. Sin esto, lo agregado en el admin nunca aparece en el Levantamiento
+ * porque la Sección C solo leía `APPLIANCE_ITEMS`.
+ *
+ * El catálogo fijo se preserva intacto (mismo orden, mismas imágenes curadas); los ítems dinámicos se agregan
+ * al final, agrupados por su `categoria` (o "Otros" si no trae una).
+ */
+export function mergeApplianceItemsWithDynamic(dynamic: DynamicCatalogEquipment[] | undefined | null): ItemCatalogo[] {
+  if (!dynamic || dynamic.length === 0) return APPLIANCE_ITEMS;
+  const staticIds = new Set(APPLIANCE_ITEMS.map((item) => item.id));
+  const dynamicItems: ItemCatalogo[] = dynamic
+    .filter((d) => d.disponible !== false && Boolean(d.nombre?.trim()))
+    .map((d) => ({
+      // Evita choques si por coincidencia un _id de Mongo igualara un id fijo (muy improbable, pero seguro).
+      id: staticIds.has(d._id) ? `db-${d._id}` : d._id,
+      label: d.nombre.trim(),
+      categoria: d.categoria?.trim() || "Otros",
+      hint: d.descripcion?.trim() || undefined,
+      image: d.imagenUrl?.trim() || APPLIANCE_CATALOGO_IMAGE_FALLBACK,
+      precioBase: d.precio,
+    }));
+  return dynamicItems.length ? [...APPLIANCE_ITEMS, ...dynamicItems] : APPLIANCE_ITEMS;
+}
+
+/** Deriva el orden de categorías para un catálogo combinado: las fijas primero, luego las nuevas (en orden de aparición). */
+export function mergeApplianceCategoriasWithDynamic(items: ItemCatalogo[]): readonly string[] {
+  const nuevas: string[] = [];
+  for (const item of items) {
+    const cat = item.categoria;
+    if (cat && !APPLIANCE_CATEGORIAS.includes(cat) && !nuevas.includes(cat)) nuevas.push(cat);
+  }
+  return nuevas.length ? [...APPLIANCE_CATEGORIAS, ...nuevas] : APPLIANCE_CATEGORIAS;
 }
 
 /**

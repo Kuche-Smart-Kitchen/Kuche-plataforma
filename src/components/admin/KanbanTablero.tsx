@@ -24,7 +24,6 @@ import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useTareasContext } from "@/contexts/TareasContext";
 import {
   fetchBackendKanbanTasks,
-  approveClientDesignWithBackend,
   syncCitaFinishWithBackend,
   syncCitaStartWithBackend,
   syncTaskFollowUpWithBackend,
@@ -51,7 +50,7 @@ import {
   getCotizacionesFormalesList,
 } from "@/lib/kanban";
 import { dueDateToSortTimestamp, formatDueDateTimeDisplay } from "@/lib/kanban-due-datetime";
-import { subirArchivoCliente, subirDisenoDropbox } from "@/lib/axios/archivosClienteApi";
+import { subirArchivoCliente } from "@/lib/axios/archivosClienteApi";
 import { obtenerDisponibilidadDia } from "@/lib/axios/citasApi";
 import { agendarVisita, obtenerDisponibilidadVisita } from "@/lib/axios/visitasApi";
 import { eliminarTarea } from "@/lib/axios/tareasApi";
@@ -452,7 +451,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const [visitSaving, setVisitSaving] = useState(false);
   const [visitError, setVisitError] = useState<string | null>(null);
   const [approvingDesignTaskId, setApprovingDesignTaskId] = useState<string | null>(null);
-  const [approvingClientTaskId, setApprovingClientTaskId] = useState<string | null>(null);
+  const [advancingDesignTaskId, setAdvancingDesignTaskId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const activeTaskRef = useRef<HTMLElement | null>(null);
   const panelScrollRef = useRef<HTMLElement | null>(null);
@@ -475,7 +474,18 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
   const hydrateAndApplyTasks = useCallback(
     (rawTasks: KanbanTask[], persistIfChanged = false) => {
-      const { tasks, changed } = hydrateKanbanTasksFromLocalStorage(rawTasks);
+      // El backend puede tardar en reflejar un archivo recién subido (ej. diseño final). Si ya
+      // sabíamos localmente que esta tarea tiene un diseño final y la respuesta fresca del
+      // backend no lo trae, lo conservamos para no "regresar" el botón de Subir diseño final.
+      const previousById = new Map(kanbanTasksRef.current.map((task) => [task.id, task]));
+      const preserved = rawTasks.map((task) => {
+        const previous = previousById.get(task.id);
+        const localFinalFiles = previous?.files?.filter((file) => file.nivel === "final") ?? [];
+        if (localFinalFiles.length === 0) return task;
+        const hasBackendFinal = task.files?.some((file) => file.nivel === "final");
+        return hasBackendFinal ? task : { ...task, files: [...(task.files ?? []), ...localFinalFiles] };
+      });
+      const { tasks, changed } = hydrateKanbanTasksFromLocalStorage(preserved);
       kanbanTasksRef.current = tasks;
       setKanbanTasks(tasks);
       if (persistIfChanged && changed && tasks.length > 0) {
@@ -732,6 +742,10 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       }
       if (!task.designApprovedByClient) {
         showError("El cliente debe aprobar el diseño antes de mover esta tarea");
+        return false;
+      }
+      if (!hasFinalDesign(task)) {
+        showError("Debes cargar el diseño final antes de mover esta tarea a Cotización");
         return false;
       }
     }
@@ -998,9 +1012,6 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
     const clienteId =
       taskSnapshot?.codigoProyecto?.trim() ||
-      (taskSnapshot as any)?.codigoCliente?.trim() ||
-      (taskSnapshot as any)?.clientId?.trim() ||
-      (taskSnapshot as any)?.codigo?.trim() ||
       taskSnapshot?.id;
 
     if (!clienteId) {
@@ -1014,9 +1025,8 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
         showUploadToast("error", "No se encontró la tarea para relacionar el diseño.");
         return;
       }
-      const result = await subirDisenoDropbox(file, {
-        tareaId: taskSnapshot.id,
-        clienteId,
+      const result = await subirArchivoCliente(file, clienteId, "diseno", {
+        tareasId: taskSnapshot.id,
         nivel: "final",
       });
 
@@ -1029,7 +1039,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
         id: result.data?._id || `final-${Date.now()}`,
         name: result.data?.nombre || file.name,
         type: inferFileType(file.name),
-        provider: "dropbox",
+        provider: "cloudinary",
         nivel: "final",
         src: result.data?.url,
       };
@@ -1045,30 +1055,37 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     }
   };
 
-  const approveClientDesign = async (taskId: string) => {
+  const advanceDesignToCotizacion = async (taskId: string) => {
     const taskSnapshot = kanbanTasksRef.current.find((task) => task.id === taskId);
-    if (!taskSnapshot || !hasFinalDesign(taskSnapshot)) return;
-    setApprovingClientTaskId(taskId);
-    setBackendSyncMessage(null);
+    if (!taskSnapshot || !taskSnapshot.designApprovedByAdmin || !taskSnapshot.designApprovedByClient || !hasFinalDesign(taskSnapshot)) return;
+    setAdvancingDesignTaskId(taskId);
     try {
-      const result = await approveClientDesignWithBackend(taskSnapshot);
-      if (!result.success) {
-        setBackendSyncMessage(result.message || "Backend no confirmó la aprobación del cliente ni el avance a Cotización.");
+      const flagsOk = await syncTaskPatchWithBackend(
+        taskSnapshot,
+        { citaStarted: false, citaFinished: false },
+      );
+      if (!flagsOk) {
+        setBackendSyncMessage("No se pudo preparar el flujo de Cotización en backend.");
+        window.setTimeout(() => setBackendSyncMessage(null), 6000);
+        return;
+      }
+      const stageOk = await syncTaskStageWithBackend(taskSnapshot, "cotizacion");
+      if (!stageOk) {
+        setBackendSyncMessage("No se pudo avanzar el proyecto a Cotización en backend.");
         window.setTimeout(() => setBackendSyncMessage(null), 6000);
         return;
       }
       updateTask(taskId, (task) => ({
         ...task,
-        designApprovedByClient: true,
         stage: "cotizacion",
         status: "pendiente",
         citaStarted: false,
         citaFinished: false,
       }));
       setActiveTaskId(null);
-      showUploadToast("success", "Aprobación guardada. La tarjeta avanzó a Cotización.");
+      showUploadToast("success", "Diseño final guardado. El proyecto avanzó a Cotización Formal.");
     } finally {
-      setApprovingClientTaskId(null);
+      setAdvancingDesignTaskId(null);
     }
   };
 
@@ -1292,11 +1309,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
         continue;
       }
       const result = tipo === "diseno"
-        ? await subirDisenoDropbox(file, {
-            tareaId: taskSnapshot.id,
-            clienteId,
-            nivel: "preliminar",
-          })
+        ? await subirArchivoCliente(file, clienteId, tipo, { tareasId: taskSnapshot.id, nivel: "preliminar" })
         : await subirArchivoCliente(file, clienteId, tipo, { tareasId: taskSnapshot.id });
 
       if (!result.success || !result.data) {
@@ -1331,7 +1344,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       if (taskSnapshot) {
         try {
           await syncTaskPatchWithBackend(taskSnapshot, {
-            designFeedback: null as any,
+              designFeedback: "",
             designApprovedByAdmin: false,
           });
         } catch (e) {
@@ -1692,9 +1705,8 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                               ) : null}
                               {/* Pasar a Seguimiento: manual vía botón */}
 
-                              {/* DISEÑOS: Admin aprueba → Agendar visita → Cliente aprueba en Agenda */}
+                              {/* DISEÑOS: aprobación admin → visita/aprobación cliente → diseño final → Cotización */}
                               {task.stage === "disenos" &&
-                              !hasFinalDesign(task) &&
                               ((!task.files || task.files.length === 0) || Boolean(task.designFeedback)) ? (
                                 <button
                                   type="button"
@@ -1710,7 +1722,6 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                               {allowDesignApproval &&
                               task.stage === "disenos" &&
                               Boolean(task.files?.length) &&
-                              !hasFinalDesign(task) &&
                               !task.designApprovedByAdmin &&
                               !task.designFeedback ? (
                                 <button
@@ -1726,7 +1737,20 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                                   {approvingDesignTaskId === task.id ? "Aprobando..." : "Aprobar diseño"}
                                 </button>
                               ) : null}
-                              {task.stage === "disenos" && task.designApprovedByAdmin && !hasFinalDesign(task) && !task.designApprovedByClient ? (
+                              {task.stage === "disenos" && task.designApprovedByAdmin && !task.designApprovedByClient ? (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openScheduleVisit(task);
+                                  }}
+                                  className="inline-flex min-h-[32px] w-auto items-center gap-1 rounded-full border border-sky-200 bg-white px-2.5 py-1 text-[11px] font-semibold leading-tight text-sky-800"
+                                >
+                                  <CalendarPlus className="h-3 w-3 shrink-0" />
+                                  Agendar visita
+                                </button>
+                              ) : null}
+                              {task.stage === "disenos" && task.designApprovedByClient && !hasFinalDesign(task) ? (
                                 <button
                                   type="button"
                                   onClick={(event) => {
@@ -1740,31 +1764,18 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                                   Subir diseño final
                                 </button>
                               ) : null}
-                              {task.stage === "disenos" && task.designApprovedByAdmin && !hasFinalDesign(task) && !task.designApprovedByClient ? (
+                              {task.stage === "disenos" && task.designApprovedByClient && hasFinalDesign(task) ? (
                                 <button
                                   type="button"
+                                  disabled={advancingDesignTaskId === task.id}
                                   onClick={(event) => {
                                     event.stopPropagation();
-                                    openScheduleVisit(task);
-                                  }}
-                                  className="inline-flex min-h-[32px] w-auto items-center gap-1 rounded-full border border-sky-200 bg-white px-2.5 py-1 text-[11px] font-semibold leading-tight text-sky-800"
-                                >
-                                  <CalendarPlus className="h-3 w-3 shrink-0" />
-                                  Agendar visita
-                                </button>
-                              ) : null}
-                              {allowDesignApproval && task.stage === "disenos" && task.designApprovedByAdmin && hasFinalDesign(task) && !task.designApprovedByClient ? (
-                                <button
-                                  type="button"
-                                  disabled={approvingClientTaskId === task.id}
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    void approveClientDesign(task.id);
+                                    void advanceDesignToCotizacion(task.id);
                                   }}
                                   className="inline-flex min-h-[32px] w-auto items-center gap-1 rounded-full bg-emerald-700 px-2.5 py-1 text-[11px] font-semibold leading-tight text-white disabled:cursor-wait disabled:opacity-60"
                                 >
                                   <CheckCircle2 className="h-3 w-3 shrink-0" />
-                                  {approvingClientTaskId === task.id ? "Confirmando..." : "Aprobar por cliente"}
+                                  {advancingDesignTaskId === task.id ? "Avanzando..." : "Pasar a Cotización"}
                                 </button>
                               ) : null}
                             </div>
@@ -2259,23 +2270,15 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                       </div>
                       <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm ${activeTask.designApprovedByClient ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
                         {activeTask.designApprovedByClient ? <CheckCircle2 className="h-4 w-4" /> : <span className="h-4 w-4 rounded-full border-2 border-gray-300" />}
-                        <span>3. Aprobación del cliente</span>
+                        <span>3. Visita terminada y aprobación del cliente</span>
+                      </div>
+                      <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm ${hasFinalDesign(activeTask) ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
+                        {hasFinalDesign(activeTask) ? <CheckCircle2 className="h-4 w-4" /> : <span className="h-4 w-4 rounded-full border-2 border-gray-300" />}
+                        <span>4. Cargar diseño final</span>
                       </div>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2">
-                      {hasFinalDesign(activeTask) && activeTask.designApprovedByAdmin && !activeTask.designApprovedByClient ? (
-                        allowDesignApproval ? (
-                          <button
-                            type="button"
-                            disabled={approvingClientTaskId === activeTask.id}
-                            onClick={() => void approveClientDesign(activeTask.id)}
-                            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full bg-emerald-700 px-3 py-1.5 text-xs font-semibold leading-tight text-white disabled:cursor-wait disabled:opacity-60"
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                            {approvingClientTaskId === activeTask.id ? "Confirmando..." : "Aprobar por cliente"}
-                          </button>
-                        ) : null
-                      ) : !hasFinalDesign(activeTask) && (!activeTask.files || activeTask.files.length === 0) ? (
+                      {!hasFinalDesign(activeTask) && (!activeTask.files || activeTask.files.length === 0) ? (
                         <button
                           type="button"
                           onClick={() => setUploadTaskId(activeTask.id)}
@@ -2283,7 +2286,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                         >
                           Subir archivo
                         </button>
-                      ) : !hasFinalDesign(activeTask) && !activeTask.designApprovedByAdmin ? (
+                      ) : !activeTask.designApprovedByAdmin ? (
                         activeTask.designFeedback ? (
                           <button
                             type="button"
@@ -2305,7 +2308,16 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                         ) : (
                           <span className="text-sm text-amber-600 font-medium">Esperando aprobación del admin</span>
                         )
-                      ) : !hasFinalDesign(activeTask) && !activeTask.designApprovedByClient ? (
+                      ) : activeTask.designApprovedByAdmin && !activeTask.designApprovedByClient ? (
+                        <button
+                          type="button"
+                          onClick={() => openScheduleVisit(activeTask)}
+                          className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-sky-200 bg-white px-3 py-1.5 text-xs font-semibold leading-tight text-sky-800"
+                        >
+                          <CalendarPlus className="h-3.5 w-3.5 shrink-0" />
+                          Agendar visita
+                        </button>
+                      ) : !hasFinalDesign(activeTask) && activeTask.designApprovedByClient ? (
                         <>
                           <button
                             type="button"
@@ -2318,15 +2330,16 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                             <CloudUpload className="h-3.5 w-3.5 shrink-0" />
                             Subir diseño final
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => openScheduleVisit(activeTask)}
-                            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-sky-200 bg-white px-3 py-1.5 text-xs font-semibold leading-tight text-sky-800"
-                          >
-                            <CalendarPlus className="h-3.5 w-3.5 shrink-0" />
-                            Agendar visita
-                          </button>
                         </>
+                      ) : hasFinalDesign(activeTask) && activeTask.designApprovedByClient ? (
+                        <button
+                          type="button"
+                          disabled={advancingDesignTaskId === activeTask.id}
+                          onClick={() => void advanceDesignToCotizacion(activeTask.id)}
+                          className="rounded-full bg-emerald-700 px-4 py-2 text-xs font-semibold text-white disabled:cursor-wait disabled:opacity-60"
+                        >
+                          {advancingDesignTaskId === activeTask.id ? "Avanzando..." : "Pasar a Cotización"}
+                        </button>
                       ) : (
                         <span className="text-sm text-emerald-600 font-medium">Diseño aprobado</span>
                       )}
@@ -2718,8 +2731,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                       Subir diseño final
                     </h3>
                     <p className="mt-2 text-center text-sm text-secondary">
-                      El archivo se adjunta al proyecto. La tarjeta no avanza hasta que el cliente apruebe el diseño
-                      desde el detalle de su visita en Agenda.
+                      Sube el diseño final después de que el cliente apruebe el diseño tras completar la visita.
                     </p>
                     <label className="mt-5 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-primary/20 bg-sky-50/50 px-4 py-8 text-center text-sm text-secondary transition hover:border-sky-300 hover:bg-sky-50">
                       <CloudUpload className="h-5 w-5 text-sky-600" />

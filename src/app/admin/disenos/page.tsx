@@ -40,7 +40,7 @@ import {
 import { downloadTaskFile } from "@/lib/task-file-download";
 import { toDropboxDirectImageUrl } from "@/lib/dropbox-url";
 
-type ProjectStatus = "Pendiente" | "Aprobado" | "Revisión" | "Listo para aprobación";
+type ProjectStatus = "Pendiente" | "Aprobado" | "Revisión" | "Visita pendiente";
 
 type DesignProject = {
   id: string;
@@ -60,7 +60,7 @@ const statusStyles: Record<ProjectStatus, string> = {
   Pendiente: "bg-amber-100 text-amber-700",
   Aprobado: "bg-emerald-100 text-emerald-700",
   Revisión: "bg-rose-100 text-rose-700",
-  "Listo para aprobación": "bg-blue-100 text-blue-700",
+  "Visita pendiente": "bg-blue-100 text-blue-700",
 };
 
 const filters = ["Todos", "Pendientes", "Aprobados"] as const;
@@ -242,8 +242,8 @@ function designProjectsFromTasks(tasks: KanbanTask[]): DesignProject[] {
           ? "Revisión"
           : !task.designApprovedByAdmin
             ? "Pendiente"
-            : finalDesignUploaded
-              ? "Listo para aprobación"
+            : !task.designApprovedByClient
+              ? "Visita pendiente"
               : "Aprobado") as ProjectStatus,
         designApprovedByAdmin: Boolean(task.designApprovedByAdmin),
         designApprovedByClient: Boolean(task.designApprovedByClient),
@@ -493,8 +493,8 @@ export default function DisenosPage() {
 
     try {
       const taskSnapshot = getTasksFromLocalStorage().find((task) => task.id === taskId);
-      if (!taskSnapshot || !taskSnapshot.files?.some((file) => file.nivel === "final")) {
-        setApprovalError("No se puede aprobar: no se encontró un diseño final cargado y registrado.");
+      if (!taskSnapshot || !taskSnapshot.designApprovedByAdmin) {
+        setApprovalError("Primero debe aprobar el diseño el administrador.");
         return;
       }
       const result = await approveClientDesignWithBackend(taskSnapshot);
@@ -678,7 +678,7 @@ export default function DisenosPage() {
                           Solicitar cambios
                         </button>
                       </div>
-                    ) : project.finalDesignUploaded && !project.designApprovedByClient ? (
+                    ) : project.designApprovedByAdmin && !project.designApprovedByClient ? (
                       <button
                         type="button"
                         disabled={confirmingClientId === project.taskId}
@@ -688,7 +688,7 @@ export default function DisenosPage() {
                         <Check className="h-4 w-4" />
                         {confirmingClientId === project.taskId
                           ? "Confirmando…"
-                          : "Confirmar aprobación del cliente"}
+                          : "Confirmar aprobación del cliente tras la visita"}
                       </button>
                     ) : project.designApprovedByClient ? (
                       <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">

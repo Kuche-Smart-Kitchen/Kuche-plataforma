@@ -39,15 +39,14 @@ import {
 } from "@/lib/catalog-project-types";
 import { getSectionAInitialValues } from "./logica_Levantamiento_y_cotizacion/sectionA";
 import {
-  APPLIANCE_CATEGORIAS,
-  APPLIANCE_ITEMS,
-  APPLIANCE_OTRO_STEP_INDEX,
   defaultLevantamientoDetalle,
   emptyMedidas,
   emptyOtro,
   emptyWallMeasuresForId,
   medidasCamposTieneValor,
   getApplianceCategoryProgress,
+  mergeApplianceCategoriasWithDynamic,
+  mergeApplianceItemsWithDynamic,
   getWallMeasureFieldDefs,
   computeLightingSelectedIds,
   cotizacionIluminacionTotal,
@@ -76,6 +75,7 @@ import {
   downloadPreliminarPdf,
 } from "@/lib/pdf-preliminar";
 import { createPreliminarSeguimientoPdfKey, saveFormalPdf } from "@/lib/formal-pdf-storage";
+import { subirArchivoCliente } from "@/lib/axios/archivosClienteApi";
 import { formatDeliveryWeeksLabel } from "@/lib/delivery-weeks";
 import { emptyWhenZeroIntString, emptyWhenZeroNumericString } from "@/lib/numeric-input-empty-zero";
 import { fetchBackendKanbanTasks } from "@/lib/admin-workflow";
@@ -101,6 +101,7 @@ import {
   type MaterialCategoria,
 } from "@/lib/config-levantamiento";
 import { DashboardBackButton } from "@/components/dashboard/DashboardBackButton";
+import { useLevantamientoCatalogo } from "@/contexts/LevantamientoCatalogoContext";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("es-MX", {
@@ -587,6 +588,22 @@ type AutoScenarioId = "esencial" | "tendencia" | "premium";
 
 export default function CotizadorPreliminarPage() {
   const router = useRouter();
+  const { electrodomesticos: electrodomesticosCatalogo } = useLevantamientoCatalogo();
+  /**
+   * Catálogo de electrodomésticos combinado: el fijo (`APPLIANCE_ITEMS`, con fotos/curaduría propias) + lo que
+   * el equipo da de alta en `/admin/equipamiento`. Sin esto, agregar un electrodoméstico o una categoría nueva
+   * ahí nunca se reflejaba en la Sección C del Levantamiento.
+   */
+  const applianceItems = useMemo(
+    () => mergeApplianceItemsWithDynamic(electrodomesticosCatalogo),
+    [electrodomesticosCatalogo],
+  );
+  const applianceCategorias = useMemo(
+    () => mergeApplianceCategoriasWithDynamic(applianceItems),
+    [applianceItems],
+  );
+  /** Paso "Otro" siempre es uno después del último ítem del catálogo combinado. */
+  const applianceOtroStepIndex = applianceItems.length;
   const [activeCitaTaskId, setActiveCitaTaskId] = useState<string | null>(null);
   const [activeCitaTask, setActiveCitaTask] = useState<KanbanTask | null>(null);
   const [isLoadingActiveCitaTask, setIsLoadingActiveCitaTask] = useState(false);
@@ -900,7 +917,7 @@ export default function CotizadorPreliminarPage() {
   }, []);
 
   const openApplianceDetailByIndex = useCallback((idx: number) => {
-    const item = APPLIANCE_ITEMS[idx];
+    const item = applianceItems[idx];
     if (!item) return;
     if (typeof window !== "undefined") {
       catalogScrollPositions.current.appliance = window.scrollY;
@@ -919,13 +936,13 @@ export default function CotizadorPreliminarPage() {
         window.scrollTo({ top: absoluteY - 80, behavior: "instant" as ScrollBehavior });
       }
     }, 10);
-  }, []);
+  }, [applianceItems]);
 
   const openApplianceOtroDetail = useCallback(() => {
     if (typeof window !== "undefined") {
       catalogScrollPositions.current.appliance = window.scrollY;
     }
-    setApplianceStep(APPLIANCE_OTRO_STEP_INDEX);
+    setApplianceStep(applianceOtroStepIndex);
     setApplianceBrowseMode(false);
     setLevantamiento((prev) => ({ ...prev, applianceOtroInDocument: true }));
     setTimeout(() => {
@@ -934,7 +951,7 @@ export default function CotizadorPreliminarPage() {
         window.scrollTo({ top: absoluteY - 80, behavior: "instant" as ScrollBehavior });
       }
     }, 10);
-  }, []);
+  }, [applianceOtroStepIndex]);
 
   const setLightingInDocument = useCallback((id: string, included: boolean) => {
     setLevantamiento((prev) => {
@@ -1184,6 +1201,34 @@ export default function CotizadorPreliminarPage() {
     };
   };
 
+  /**
+   * Sube el PDF del levantamiento a Cloudinary y lo relaciona con el cliente/proyecto
+   * (expediente). Reutiliza el data URL ya generado para IndexedDB, evitando renderizar el PDF
+   * dos veces. Es "best effort": si falla (red, Cloudinary caído, etc.) no bloquea el cierre de
+   * la cita, ya que el PDF sigue disponible localmente (IndexedDB + tarjeta del kanban).
+   */
+  const uploadPreliminarPdfToCloudinary = async (
+    dataUrl: string,
+    codigoProyecto: string | undefined,
+    taskId: string,
+    projectType: string,
+  ) => {
+    if (!codigoProyecto) return;
+    try {
+      const pdfBlob = await (await fetch(dataUrl)).blob();
+      const fileSlug = (projectType || "proyecto").replace(/\s+/g, "-").toLowerCase();
+      const pdfFile = new File([pdfBlob], `levantamiento-detallado-${fileSlug}.pdf`, {
+        type: "application/pdf",
+      });
+      await subirArchivoCliente(pdfFile, codigoProyecto, "levantamiento_detallado", {
+        tareasId: taskId,
+      });
+    } catch {
+      // Silencioso: el levantamiento ya quedó guardado localmente; la subida remota se puede
+      // reintentar luego (ej. reabriendo la cita) sin perder la información capturada.
+    }
+  };
+
   const savePreliminarAndGetNextTasks = (options?: {
     seguimientoPdf?: { key: string; fileLabel: string };
   }): { codigoProyecto: string | undefined; updatedTasks: KanbanTask[] } | null => {
@@ -1301,7 +1346,7 @@ export default function CotizadorPreliminarPage() {
     const preliminarPdfKey = createPreliminarSeguimientoPdfKey(activeCitaTaskId, existingCount);
     let dataUrl: string;
     try {
-      dataUrl = await buildPreliminarPdfDataUrl(newPreliminar);
+      dataUrl = await buildPreliminarPdfDataUrl(newPreliminar, applianceItems);
     } catch {
       setFinishError("No se pudo generar el PDF para seguimiento. Intenta de nuevo.");
       return;
@@ -1317,6 +1362,12 @@ export default function CotizadorPreliminarPage() {
       seguimientoPdf: { key: preliminarPdfKey, fileLabel },
     });
     if (!result) return;
+    void uploadPreliminarPdfToCloudinary(
+      dataUrl,
+      result.codigoProyecto,
+      activeCitaTaskId,
+      newPreliminar.projectType,
+    );
     const updatedTasksWithStage = result.updatedTasks.map((task) =>
       task.id === activeCitaTaskId
         ? { ...task, stage: "disenos" as const, status: "pendiente" as const }
@@ -1342,7 +1393,7 @@ export default function CotizadorPreliminarPage() {
     const preliminarPdfKey = createPreliminarSeguimientoPdfKey(activeCitaTaskId, existingCount);
     let dataUrl: string;
     try {
-      dataUrl = await buildPreliminarPdfDataUrl(newPreliminar);
+      dataUrl = await buildPreliminarPdfDataUrl(newPreliminar, applianceItems);
     } catch {
       setFinishError("No se pudo generar el PDF para seguimiento. Intenta de nuevo.");
       return;
@@ -1358,6 +1409,12 @@ export default function CotizadorPreliminarPage() {
       seguimientoPdf: { key: preliminarPdfKey, fileLabel },
     });
     if (!result) return;
+    void uploadPreliminarPdfToCloudinary(
+      dataUrl,
+      result.codigoProyecto,
+      activeCitaTaskId,
+      newPreliminar.projectType,
+    );
     setProjectType(CATALOG_PROJECT_TYPES[0]);
     setLocation("");
     setDeliveryWeeksMin("");
@@ -1521,26 +1578,26 @@ export default function CotizadorPreliminarPage() {
 
   const handleGeneratePdf = () => {
     const data = buildPreliminarDataFromForm();
-    downloadPreliminarPdf(data, "levantamiento-detallado.pdf");
+    downloadPreliminarPdf(data, "levantamiento-detallado.pdf", applianceItems);
   };
 
   const applianceStepMeta = useMemo(() => {
-    const isOtro = applianceStep >= APPLIANCE_OTRO_STEP_INDEX;
+    const isOtro = applianceStep >= applianceOtroStepIndex;
     if (isOtro) return { isOtro: true as const, progress: null };
-    return { isOtro: false as const, progress: getApplianceCategoryProgress(applianceStep) };
-  }, [applianceStep]);
+    return { isOtro: false as const, progress: getApplianceCategoryProgress(applianceStep, applianceItems) };
+  }, [applianceStep, applianceOtroStepIndex, applianceItems]);
 
   const currentApplianceItem =
-    applianceStep < APPLIANCE_OTRO_STEP_INDEX ? APPLIANCE_ITEMS[applianceStep] : null;
+    applianceStep < applianceOtroStepIndex ? applianceItems[applianceStep] : null;
 
   const applianceSearchNorm = applianceSearch.trim().toLowerCase();
   const filteredApplianceMatches = useMemo(() => {
     if (!applianceSearchNorm) return null;
-    return APPLIANCE_ITEMS.map((item, idx) => ({ item, idx })).filter(({ item }) => {
+    return applianceItems.map((item, idx) => ({ item, idx })).filter(({ item }) => {
       const hay = `${item.label} ${item.hint ?? ""} ${item.categoria ?? ""}`.toLowerCase();
       return hay.includes(applianceSearchNorm);
     });
-  }, [applianceSearchNorm]);
+  }, [applianceSearchNorm, applianceItems]);
 
   const lightingSearchNorm = lightingSearch.trim().toLowerCase();
   const filteredLightingItems = useMemo(() => {
@@ -1559,25 +1616,25 @@ export default function CotizadorPreliminarPage() {
       return hay.includes(norm);
     };
     if (norm) {
-      const entries = APPLIANCE_ITEMS.map((item, idx) => ({ item, idx })).filter(({ item }) =>
+      const entries = applianceItems.map((item, idx) => ({ item, idx })).filter(({ item }) =>
         matchesSearch(item),
       );
       return entries.length ? [{ key: "busqueda", title: "Resultados de búsqueda", entries }] : [];
     }
-    return APPLIANCE_CATEGORIAS.map((cat) => {
-      const entries = APPLIANCE_ITEMS.map((item, idx) => ({ item, idx })).filter(
+    return applianceCategorias.map((cat) => {
+      const entries = applianceItems.map((item, idx) => ({ item, idx })).filter(
         ({ item }) => item.categoria === cat,
       );
       return { key: cat, title: cat, entries };
     }).filter((row) => row.entries.length > 0);
-  }, [applianceSearchNorm]);
+  }, [applianceSearchNorm, applianceItems, applianceCategorias]);
 
   const applianceIndicesInCurrentCategory = useMemo(() => {
-    if (applianceStep >= APPLIANCE_OTRO_STEP_INDEX) return [] as number[];
-    const cat = APPLIANCE_ITEMS[applianceStep]?.categoria;
+    if (applianceStep >= applianceOtroStepIndex) return [] as number[];
+    const cat = applianceItems[applianceStep]?.categoria;
     if (!cat) return [];
-    return APPLIANCE_ITEMS.map((item, i) => (item.categoria === cat ? i : -1)).filter((i) => i >= 0);
-  }, [applianceStep]);
+    return applianceItems.map((item, i) => (item.categoria === cat ? i : -1)).filter((i) => i >= 0);
+  }, [applianceStep, applianceOtroStepIndex, applianceItems]);
 
   useEffect(() => {
     setLightingFocusedId(null);
