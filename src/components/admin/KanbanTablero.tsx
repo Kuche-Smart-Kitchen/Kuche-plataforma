@@ -64,6 +64,11 @@ import { isTaskAssignedToEmpleado } from "@/lib/empleado-kanban-filters";
 
 const currentUser = "Valeria";
 const hasFinalDesign = (task: KanbanTask) => Boolean(task.files?.some((file) => file.nivel === "final"));
+// Archivos subidos por el flujo de "diseño" (preliminar o final) traen `nivel`; otros documentos
+// (ej. el PDF de levantamiento, auto-subido a Cloudinary) no lo traen y no deben contarse como
+// "ya se subió el diseño" (evita saltar directo a "Aprobar diseño" sin que haya un diseño real).
+const hasDesignUploadFiles = (task: KanbanTask) =>
+  Boolean(task.files?.some((file) => file.nivel === "preliminar" || file.nivel === "final"));
 const VISIT_TIME_SLOTS = Array.from({ length: 9 }, (_, index) => `${String(index + 9).padStart(2, "0")}:00`);
 
 const getTimeInMinutes = (value: string) => {
@@ -1100,7 +1105,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     if (
       !taskSnapshot ||
       taskSnapshot.stage !== "disenos" ||
-      !taskSnapshot.files?.length ||
+      !hasDesignUploadFiles(taskSnapshot) ||
       taskSnapshot.designFeedback
     ) return;
 
@@ -1675,7 +1680,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                                 </span>
                               );
                             })()
-                          ) : task.stage === "disenos" && task.files && task.files.length > 0 && !task.designApprovedByAdmin ? (
+                          ) : task.stage === "disenos" && hasDesignUploadFiles(task) && !task.designApprovedByAdmin ? (
                             Boolean(task.designFeedback) ? (
                               <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-1 text-[10px] font-semibold text-rose-700 animate-pulse">
                                 <AlertTriangle className="h-3 w-3" />
@@ -1832,7 +1837,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
 
                               {/* DISEÑOS: aprobación admin → visita/aprobación cliente → diseño final → Cotización */}
                               {task.stage === "disenos" &&
-                              ((!task.files || task.files.length === 0) || Boolean(task.designFeedback)) ? (
+                              (!hasDesignUploadFiles(task) || Boolean(task.designFeedback)) ? (
                                 <button
                                   type="button"
                                   onClick={(event) => {
@@ -1846,7 +1851,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                               ) : null}
                               {allowDesignApproval &&
                               task.stage === "disenos" &&
-                              Boolean(task.files?.length) &&
+                              hasDesignUploadFiles(task) &&
                               !task.designApprovedByAdmin &&
                               !task.designFeedback ? (
                                 <button
@@ -2385,8 +2390,8 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                       Flujo de diseño
                     </p>
                     <div className="mt-3 space-y-2">
-                      <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm ${activeTask.files && activeTask.files.length > 0 ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
-                        {activeTask.files && activeTask.files.length > 0 ? <CheckCircle2 className="h-4 w-4" /> : <span className="h-4 w-4 rounded-full border-2 border-gray-300" />}
+                      <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm ${hasDesignUploadFiles(activeTask) ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
+                        {hasDesignUploadFiles(activeTask) ? <CheckCircle2 className="h-4 w-4" /> : <span className="h-4 w-4 rounded-full border-2 border-gray-300" />}
                         <span>1. Subir archivo</span>
                       </div>
                       <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm ${activeTask.designApprovedByAdmin ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
@@ -2403,7 +2408,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                       </div>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2">
-                      {!hasFinalDesign(activeTask) && (!activeTask.files || activeTask.files.length === 0) ? (
+                      {!hasFinalDesign(activeTask) && !hasDesignUploadFiles(activeTask) ? (
                         <button
                           type="button"
                           onClick={() => setUploadTaskId(activeTask.id)}
