@@ -982,16 +982,12 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     // El nombre, correo, teléfono y dirección ya NO se capturan en el formulario: se toman
     // siempre del registro del cliente para evitar que un dato mal tecleado no coincida con lo
     // que el backend tiene guardado en la Tarea (eso provocaba "La visita debe corresponder
-    // al cliente de la tarea").
-    const nombreCliente = task.project?.trim();
-    const correoCliente = task.clientEmail?.trim();
-    const telefonoCliente = task.clientPhone?.trim();
-    if (!nombreCliente || !correoCliente || !telefonoCliente) {
-      setVisitError(
-        "Este cliente no tiene correo y/o teléfono registrados en el sistema; no se puede agendar la visita. Completa esos datos en el expediente del cliente e intenta de nuevo.",
-      );
-      return;
-    }
+    // al cliente de la tarea"). El cliente puede no tener correo/teléfono registrados: en ese
+    // caso se usa un valor de relleno (el backend los exige como requeridos) en vez de bloquear
+    // el agendado completo.
+    const nombreCliente = task.project?.trim() || "Cliente sin nombre";
+    const correoCliente = task.clientEmail?.trim() || "sin-correo@kuchehogar.com";
+    const telefonoCliente = task.clientPhone?.trim() || "0000000000";
     if (!visitDraft.date || !visitDraft.time) {
       setVisitError("Completa fecha y hora.");
       return;

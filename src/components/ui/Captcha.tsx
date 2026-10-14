@@ -37,9 +37,7 @@ const Captcha = forwardRef<CaptchaRef, CaptchaProps>(({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | null>(null);
   
-  // Usamos la sitekey provista o la de producción. 
-  // Opcional: Si quieres probar si el ciclo se rompe, puedes cambiar temporalmente 
-  // la de producción por la genérica de pruebas de Cloudflare: "1x00000000000000000000AA"
+
   const resolvedSiteKey = siteKey || process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
 
   useImperativeHandle(ref, () => ({

@@ -19,8 +19,9 @@ import {
 } from "@/lib/kanban";
 import { generatePublicProjectCode } from "@/lib/project-code";
 import { fetchBackendKanbanTasks } from "@/lib/admin-workflow";
-import { asignarIngenierosCita, crearCita } from "@/lib/axios/citasApi";
+import { agendarCita, asignarIngenierosCita } from "@/lib/axios/citasApi";
 import { crearTarea } from "@/lib/axios/tareasApi";
+import Captcha, { type CaptchaRef } from "@/components/ui/Captcha";
 import { dueDateToSortTimestamp } from "@/lib/kanban-due-datetime";
 import {
   INTEGRANTE_ROL_OPTIONS,
@@ -50,6 +51,8 @@ export default function OperacionesPage() {
   const [newTaskMapsUrl, setNewTaskMapsUrl] = useState("");
   const [assignError, setAssignError] = useState("");
   const [isCreatingPending, setIsCreatingPending] = useState(false);
+  const [assignCaptchaToken, setAssignCaptchaToken] = useState("");
+  const assignCaptchaRef = useRef<CaptchaRef | null>(null);
   const [newMemberName, setNewMemberName] = useState("");
   const [newMemberEmail, setNewMemberEmail] = useState("");
   const [newMemberRole, setNewMemberRole] = useState<IntegranteRolSelectable>("empleado");
@@ -134,13 +137,20 @@ export default function OperacionesPage() {
       setAssignError("Completa un correo válido y el teléfono para agendar la cita.");
       return;
     }
+    // La cita se crea contra el mismo endpoint público que usa "Agendar cita" (Agenda / landing),
+    // así que exige el mismo captcha. Antes este formulario no lo pedía ni lo mostraba y el
+    // backend respondía 400 por captcha ausente.
+    if (newTaskStage === "citas" && !assignCaptchaToken) {
+      setAssignError("Confirma el captcha para agendar la cita.");
+      return;
+    }
 
     setIsCreatingPending(true);
     setAssignError("");
     let citaCreada = false;
     try {
       if (newTaskStage === "citas") {
-        const response = await crearCita({
+        const response = await agendarCita({
           nombreCliente: project,
           correoCliente: newTaskEmail.trim(),
           telefonoCliente: newTaskPhone.trim(),
@@ -152,7 +162,7 @@ export default function OperacionesPage() {
             ? `Google Maps: ${newTaskMapsUrl.trim()}`
             : "Cita creada desde Operaciones",
           estado: "programada",
-        });
+        }, assignCaptchaToken);
         if (!response.success) {
           throw new Error(response.message || "No se pudo crear la cita");
         }
@@ -207,6 +217,7 @@ export default function OperacionesPage() {
       setNewTaskLocation("");
       setNewTaskMapsUrl("");
       setAssignError("");
+      setAssignCaptchaToken("");
     } catch (error) {
       setRefreshTrigger((t) => t + 1);
       setAssignError(
@@ -216,6 +227,9 @@ export default function OperacionesPage() {
             ? "La cita se creó, pero falló la asignación."
             : "No se pudo guardar el pendiente en backend.",
       );
+      // El token de Turnstile es de un solo uso: hay que forzar uno nuevo antes de reintentar.
+      setAssignCaptchaToken("");
+      assignCaptchaRef.current?.reset();
     } finally {
       setIsCreatingPending(false);
     }
@@ -267,6 +281,7 @@ export default function OperacionesPage() {
     setNewTaskLocation("");
     setNewTaskMapsUrl("");
     setAssignError("");
+    setAssignCaptchaToken("");
     setIsAssignModalOpen(true);
   };
 
@@ -542,6 +557,14 @@ export default function OperacionesPage() {
                       className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
                     />
                   </label>
+                  <div>
+                    <Captcha
+                      ref={assignCaptchaRef}
+                      onVerify={setAssignCaptchaToken}
+                      onExpire={() => setAssignCaptchaToken("")}
+                      onError={() => setAssignCaptchaToken("")}
+                    />
+                  </div>
                 </>
               ) : null}
               <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
