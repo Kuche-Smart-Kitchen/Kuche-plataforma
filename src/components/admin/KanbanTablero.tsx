@@ -919,37 +919,34 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const confirmFollowUp = async (taskId: string) => {
     if (!canManageFollowUp) return;
     const task = kanbanTasksRef.current.find((t) => t.id === taskId);
-    // Compromiso del cliente: en Seguimiento la tarjeta sale del tablero; en Citas/Diseños/Cotización el flujo sigue.
+    // Confirmar/descartar solo aplica en Seguimiento: hacerlo en otra etapa manda `estado:
+    // "completada"` al backend y provoca que la tarea salte de etapa sola (bug reportado).
+    if (!task || task.stage !== "contrato") return;
     updateTask(taskId, (t) => ({
       ...t,
       ...followUpDecisionUpdates(t, "confirmado"),
     }));
-    if (task) {
-      syncSeguimientoEstadoFromKanbanConfirm({
-        ...task,
-        followUpStatus: "confirmado",
-      });
-      if (task.stage === "contrato") {
-        setActiveTaskId(null);
-      }
-      const ok = await syncTaskFollowUpWithBackend(task, "confirmado");
-      if (!ok) {
-        setBackendSyncMessage("Se confirmó localmente, pero backend no respondió para seguimiento.");
-        window.setTimeout(() => setBackendSyncMessage(null), 4500);
-      }
+    syncSeguimientoEstadoFromKanbanConfirm({
+      ...task,
+      followUpStatus: "confirmado",
+    });
+    setActiveTaskId(null);
+    const ok = await syncTaskFollowUpWithBackend(task, "confirmado");
+    if (!ok) {
+      setBackendSyncMessage("Se confirmó localmente, pero backend no respondió para seguimiento.");
+      window.setTimeout(() => setBackendSyncMessage(null), 4500);
     }
   };
 
   const discardFollowUp = async (taskId: string) => {
     if (!canManageFollowUp) return;
     const task = kanbanTasksRef.current.find((t) => t.id === taskId);
+    if (!task || task.stage !== "contrato") return;
     updateTask(taskId, (t) => ({
       ...t,
       ...followUpDecisionUpdates(t, "descartado"),
     }));
-    if (task?.stage === "contrato") {
-      setActiveTaskId(null);
-    }
+    setActiveTaskId(null);
     if (task) {
       const ok = await syncTaskFollowUpWithBackend(task, "descartado");
       if (!ok) {
@@ -1701,8 +1698,10 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
           {kanbanColumns.map((column) => {
             const columnTasksRaw = filteredTasks.filter((task) => {
               if (task.stage !== column.id) return false;
-              // En la columna de Seguimiento solo mostramos seguimientos pendientes.
-              if (column.id === "contrato" && task.followUpStatus && task.followUpStatus !== "pendiente") {
+              // Un cliente confirmado/descartado ya cerró su ciclo: se oculta del tablero sin
+              // importar en qué etapa haya quedado (incluye tarjetas con datos heredados de antes
+              // de este fix, cuando se podía confirmar/descartar fuera de Seguimiento).
+              if (task.followUpStatus === "confirmado" || task.followUpStatus === "descartado") {
                 return false;
               }
               return true;
@@ -2636,6 +2635,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                   </div>
                 ) : null}
 
+                {activeTask.stage === "contrato" ? (
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
                     Estado del cliente
@@ -2676,6 +2676,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                     </div>
                   )}
                 </div>
+                ) : null}
 
                 {activeTask.stage === "disenos" || activeTask.stage === "contrato" ? (
                   <div>

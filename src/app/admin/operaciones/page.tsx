@@ -137,6 +137,13 @@ export default function OperacionesPage() {
       setAssignError("Completa un correo válido y el teléfono para agendar la cita.");
       return;
     }
+    // El backend exige fecha futura, día hábil y hora 9:00-18:00; si se deja vacía, caía en
+    // "ahora mismo" (Date.now()), lo que siempre viola esa validación y devolvía 400.
+    const citaTimestamp = dueDateToSortTimestamp(newTaskDueDate, 0);
+    if (newTaskStage === "citas" && (!newTaskDueDate.trim() || citaTimestamp <= Date.now() + 60 * 60 * 1000)) {
+      setAssignError("Selecciona fecha y hora de la cita (día hábil, 9:00-18:00, con al menos 1 hora de anticipación).");
+      return;
+    }
     // La cita se crea contra el mismo endpoint público que usa "Agendar cita" (Agenda / landing),
     // así que exige el mismo captcha. Antes este formulario no lo pedía ni lo mostraba y el
     // backend respondía 400 por captcha ausente.
@@ -155,9 +162,7 @@ export default function OperacionesPage() {
           correoCliente: newTaskEmail.trim(),
           telefonoCliente: newTaskPhone.trim(),
           ubicacion: newTaskLocation.trim() || undefined,
-          fechaAgendada: new Date(
-            dueDateToSortTimestamp(newTaskDueDate, Date.now()),
-          ).toISOString(),
+          fechaAgendada: new Date(citaTimestamp).toISOString(),
           informacionAdicional: newTaskMapsUrl.trim()
             ? `Google Maps: ${newTaskMapsUrl.trim()}`
             : "Cita creada desde Operaciones",
@@ -632,7 +637,7 @@ export default function OperacionesPage() {
               <div className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
                 <span className="block">
                   {newTaskStage === "citas"
-                    ? "Fecha de la cita (opcional)"
+                    ? "Fecha y hora de la cita (día hábil, 9:00-18:00)"
                     : "Fecha límite (opcional)"}
                 </span>
                 <DueDateInput
