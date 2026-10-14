@@ -17,8 +17,10 @@ import {
   getTasksFromLocalStorage,
   mergeKanbanTaskLists,
   saveKanbanTasksToLocalStorage,
+  type CotizacionFormalData,
   type FollowUpStatus,
   type KanbanTask,
+  type PreliminarData,
   type TaskFile,
   type TaskPriority,
   type TaskStage,
@@ -102,6 +104,54 @@ const normalizeFollowUpStatus = (value: unknown): FollowUpStatus => {
   return "pendiente";
 };
 
+const isPreliminarData = (value: unknown): value is PreliminarData => {
+  const record = toRecord(value);
+  return Boolean(record && toStringValue(record.client));
+};
+
+const isCotizacionFormalData = (value: unknown): value is CotizacionFormalData => {
+  const record = toRecord(value);
+  return Boolean(record && toStringValue(record.client));
+};
+
+const parsePreliminarData = (value: unknown): PreliminarData | undefined =>
+  isPreliminarData(value) ? value : undefined;
+
+const parsePreliminarCotizaciones = (...sources: unknown[]): PreliminarData[] | undefined => {
+  for (const source of sources) {
+    if (Array.isArray(source)) {
+      const list = source.map(parsePreliminarData).filter((item): item is PreliminarData => Boolean(item));
+      if (list.length > 0) return list;
+    }
+  }
+  return undefined;
+};
+
+const parseCotizacionFormalData = (value: unknown): CotizacionFormalData | undefined =>
+  isCotizacionFormalData(value) ? value : undefined;
+
+const parseCotizacionesFormales = (...sources: unknown[]): CotizacionFormalData[] | undefined => {
+  for (const source of sources) {
+    if (Array.isArray(source)) {
+      const list = source.map(parseCotizacionFormalData).filter((item): item is CotizacionFormalData => Boolean(item));
+      if (list.length > 0) return list;
+    }
+  }
+  return undefined;
+};
+
+const resolveLinkedTareaId = (raw: Record<string, unknown>, cita: Record<string, unknown> | null): string | undefined => {
+  const tarea = toRecord(raw.tarea);
+  return (
+    toStringValue(raw.tareaId) ??
+    toStringValue(raw.linkedTareaId) ??
+    toStringValue(tarea?._id) ??
+    toStringValue(tarea?.id) ??
+    toStringValue(cita?.tareaId) ??
+    toStringValue(toRecord(cita?.tarea)?._id)
+  );
+};
+
 const inferFileType = (tipo: unknown, name?: unknown, url?: unknown): TaskFile["type"] => {
   const normalized = toStringValue(tipo)?.toLowerCase() ?? "";
   if (normalized.includes("pdf")) return "pdf";
@@ -168,6 +218,7 @@ const getAssignedIds = (raw: Record<string, unknown>): string[] => {
 
 const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
   const raw = (toRecord(item) ?? {}) as Record<string, unknown>;
+  const itemRecord = item as Record<string, unknown>;
   const cita = toRecord(raw.cita);
   const cliente = toRecord(raw.cliente) ?? toRecord(cita?.cliente);
   const rawEstado = toStringValue(raw.estado ?? item.estado)?.toLowerCase();
@@ -218,6 +269,19 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     toStringValue(cita?.fechaAgendada);
   const filesRaw = Array.isArray(raw.archivos) ? raw.archivos : [];
 
+  const preliminarCotizaciones =
+    parsePreliminarCotizaciones(itemRecord.preliminarCotizaciones, raw.preliminarCotizaciones) ?? [];
+  const preliminarData =
+    parsePreliminarData(itemRecord.preliminarData ?? raw.preliminarData) ??
+    preliminarCotizaciones[preliminarCotizaciones.length - 1];
+  const cotizacionesFormales =
+    parseCotizacionesFormales(itemRecord.cotizacionesFormales, raw.cotizacionesFormales) ?? [];
+  const cotizacionFormalData =
+    parseCotizacionFormalData(itemRecord.cotizacionFormalData ?? raw.cotizacionFormalData) ??
+    cotizacionesFormales[cotizacionesFormales.length - 1];
+  const inversion = toNumberValue(itemRecord.inversion ?? raw.inversion);
+  const linkedTareaId = resolveLinkedTareaId(raw, cita);
+
   return {
     id: toStringValue(raw._id) ?? toStringValue(raw.id) ?? `${stage}-${clientName}`,
     sourceId: toStringValue(raw.sourceId) ?? toStringValue(raw._id) ?? toStringValue(raw.id),
@@ -256,11 +320,20 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     designApprovedByClient: toBooleanValue(raw.designApprovedByClient),
     designFeedback: toFeedbackString(raw.designFeedback),
     codigoProyecto:
+      toStringValue(itemRecord.codigoProyecto) ??
+      toStringValue(raw.codigoProyecto) ??
       toStringValue(raw.codigo) ??
       toStringValue(raw.codigoCliente) ??
+      toStringValue(itemRecord.clienteId) ??
       toStringValue(raw.clienteId) ??
       toStringValue(raw.clientId),
     proyectoId: toStringValue(raw.proyectoId),
+    preliminarData,
+    preliminarCotizaciones: preliminarCotizaciones.length > 0 ? preliminarCotizaciones : undefined,
+    cotizacionFormalData,
+    cotizacionesFormales: cotizacionesFormales.length > 0 ? cotizacionesFormales : undefined,
+    inversion,
+    linkedTareaId,
     contractDate: toDateOnlyString(raw.fechaContrato),
     estimatedDeliveryDate: toDateOnlyString(raw.fechaEntrega),
     projectTypeSummary: toStringValue(raw.tipo),
@@ -269,25 +342,57 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
   };
 };
 
-export async function fetchBackendKanbanTasks(): Promise<KanbanTask[]> {
-  const responses = await Promise.all([
-    obtenerKanbanCitas().then((response) => ({ response, sourceType: "cita" })),
-    obtenerKanbanDisenos().then((response) => ({ response, sourceType: "tarea" })),
-    obtenerKanbanCotizacion().then((response) => ({ response, sourceType: "tarea" })),
-    obtenerKanbanContrato().then((response) => ({ response, sourceType: "tarea" })),
-  ]);
+export type KanbanBackendColumn = "citas" | "disenos" | "cotizacion" | "contrato";
 
-  const mapped = responses.flatMap(({ response, sourceType }) => {
-    if (!response.success || !response.data) return [];
-    return response.data.map((item) => ({ ...mapKanbanItemToTask(item), sourceType }));
-  });
+export type FetchBackendKanbanTasksResult = {
+  tasks: KanbanTask[];
+  failedColumns: KanbanBackendColumn[];
+};
+
+const KANBAN_BACKEND_COLUMNS: {
+  column: KanbanBackendColumn;
+  sourceType: "cita" | "tarea";
+  fetch: () => ReturnType<typeof obtenerKanbanCitas>;
+}[] = [
+  { column: "citas", sourceType: "cita", fetch: obtenerKanbanCitas },
+  { column: "disenos", sourceType: "tarea", fetch: obtenerKanbanDisenos },
+  { column: "cotizacion", sourceType: "tarea", fetch: obtenerKanbanCotizacion },
+  { column: "contrato", sourceType: "tarea", fetch: obtenerKanbanContrato },
+];
+
+export async function fetchBackendKanbanTasksWithStatus(): Promise<FetchBackendKanbanTasksResult> {
+  const responses = await Promise.all(
+    KANBAN_BACKEND_COLUMNS.map(async (spec) => ({
+      column: spec.column,
+      sourceType: spec.sourceType,
+      response: await spec.fetch(),
+    })),
+  );
+
+  const failedColumns: KanbanBackendColumn[] = [];
+  const mapped: KanbanTask[] = [];
+
+  for (const { column, sourceType, response } of responses) {
+    if (!response.success || !response.data) {
+      failedColumns.push(column);
+      continue;
+    }
+    for (const item of response.data) {
+      mapped.push({ ...mapKanbanItemToTask(item), sourceType });
+    }
+  }
 
   const unique = new Map<string, KanbanTask>();
   for (const task of mapped) {
     unique.set(task.id, task);
   }
 
-  return Array.from(unique.values());
+  return { tasks: Array.from(unique.values()), failedColumns };
+}
+
+export async function fetchBackendKanbanTasks(): Promise<KanbanTask[]> {
+  const { tasks } = await fetchBackendKanbanTasksWithStatus();
+  return tasks;
 }
 
 export async function syncKanbanTasksFromBackend(): Promise<KanbanTask[] | null> {
@@ -296,8 +401,10 @@ export async function syncKanbanTasksFromBackend(): Promise<KanbanTask[] | null>
 
   try {
     const backendTasks = await fetchBackendKanbanTasks();
-    saveKanbanTasksToLocalStorage(backendTasks);
-    return backendTasks;
+    const localTasks = getTasksFromLocalStorage();
+    const merged = mergeKanbanTaskLists(localTasks, backendTasks);
+    saveKanbanTasksToLocalStorage(merged);
+    return merged;
   } catch (error) {
     console.warn("No se pudo sincronizar el kanban desde backend.", error);
     return null;
@@ -356,6 +463,9 @@ const buildTaskPatchPayload = (task: KanbanTask, patch: Partial<KanbanTask>): Re
   }
   if (patch.cotizacionesFormales !== undefined || task.cotizacionesFormales !== undefined) {
     payload.cotizacionesFormales = snapshot.cotizacionesFormales;
+  }
+  if (patch.inversion !== undefined || task.inversion !== undefined) {
+    payload.inversion = snapshot.inversion;
   }
 
   return payload;

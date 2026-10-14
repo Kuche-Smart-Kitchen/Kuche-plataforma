@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -11,19 +11,28 @@ import {
   LayoutTemplate,
   FileSignature,
   CalendarClock,
+  Wallet,
 } from "lucide-react";
 import {
-  getTasksFromLocalStorage,
   deriveProjectTypesLabel,
   getAggregatedDeliveryWeeksFromTask,
+  getMontoRestante,
+  getTaskCardSubtitle,
   type KanbanTask,
 } from "@/lib/kanban";
-import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
+import {
+  isTaskAssignedToEmpleado,
+  loadKanbanTasksForEmpleadoView,
+  taskIsConfirmado,
+} from "@/lib/empleado-kanban-filters";
 import { ClientDocuments } from "@/components/admin/ClientDocuments";
+import { ConfirmedClientContractFields } from "@/components/admin/ConfirmedClientContractFields";
+import { PublicStatusEditorModal } from "@/components/admin/PublicStatusEditorModal";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
 import { useAuthContext } from "@/contexts/AuthContext";
 import { EMPLEADO_DASHBOARD_USER } from "@/lib/empleado-dashboard-user";
+import { formatCurrencyMXN } from "@/lib/formatters";
 
 function formatIsoDateLong(iso: string): string {
   const d = new Date(`${iso.trim()}T12:00:00`);
@@ -50,46 +59,53 @@ function getCardDeliverySummary(task: KanbanTask): string | null {
   return `${fmt(from)} – ${fmt(to)}`;
 }
 
-function isAssignedToEmpleado(t: KanbanTask, empleado: string): boolean {
-  return (t.assignedTo ?? []).some((n) => n === empleado);
-}
-
-function isEmpleadoConfirmado(t: KanbanTask, empleado: string): boolean {
-  return (
-    t.stage === "contrato" &&
-    t.followUpStatus === "confirmado" &&
-    isAssignedToEmpleado(t, empleado)
-  );
+function isEmpleadoConfirmado(
+  t: KanbanTask,
+  empleado: { nombre: string; userId?: string | null },
+): boolean {
+  return taskIsConfirmado(t) && isTaskAssignedToEmpleado(t, empleado);
 }
 
 export default function EmpleadoConfirmadosPage() {
   const { user } = useAuthContext();
   const currentEmployeeName = user?.nombre?.trim() || EMPLEADO_DASHBOARD_USER;
+  const currentEmployeeId = user?.id ?? user?._id ?? null;
+  const empleadoMatch = useMemo(
+    () => ({ nombre: currentEmployeeName, userId: currentEmployeeId }),
+    [currentEmployeeName, currentEmployeeId],
+  );
   const [clients, setClients] = useState<KanbanTask[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
   const [selectedClient, setSelectedClient] = useState<KanbanTask | null>(null);
+  const [isContratoEditorOpen, setIsContratoEditorOpen] = useState(false);
   const columnCount = useClientCardColumns(3);
   const clientColumns = useMemo(() => {
     if (clients.length === 0) return [];
     return splitIntoColumns(clients, columnCount);
   }, [clients, columnCount]);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const synced = await syncKanbanTasksFromBackend();
-        const allTasks = (synced ?? getTasksFromLocalStorage()) as KanbanTask[];
-        setClients(allTasks.filter((task) => isEmpleadoConfirmado(task, currentEmployeeName)));
-      } catch {
-        const allTasks = getTasksFromLocalStorage();
-        setClients(allTasks.filter((task) => isEmpleadoConfirmado(task, currentEmployeeName)));
-      } finally {
-        setIsHydrated(true);
-      }
-    };
+  const loadClients = useCallback(async () => {
+    try {
+      const allTasks = await loadKanbanTasksForEmpleadoView();
+      const confirmed = allTasks.filter((task) => isEmpleadoConfirmado(task, empleadoMatch));
+      setClients(confirmed);
+      setSelectedClient((sel) => confirmed.find((t) => t.id === sel?.id) ?? sel);
+    } catch {
+      setClients([]);
+    } finally {
+      setIsHydrated(true);
+    }
+  }, [empleadoMatch]);
 
-    void load();
-  }, [currentEmployeeName]);
+  useEffect(() => {
+    void loadClients();
+  }, [loadClients]);
+
+  const handleConfirmedTaskUpdate = (updated: KanbanTask) => {
+    setClients((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+    setSelectedClient((sel) => (sel?.id === updated.id ? updated : sel));
+    void loadClients();
+  };
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -163,23 +179,34 @@ export default function EmpleadoConfirmadosPage() {
               {clientColumns.map((col, colIdx) => (
                 <div key={colIdx} className="flex min-w-0 flex-1 flex-col gap-4">
                   {col.map((client) => {
-                    const projectTypesLabel = deriveProjectTypesLabel(client).trim();
+                    const projectTypesLabel =
+                      client.projectTypeSummary?.trim() || deriveProjectTypesLabel(client).trim();
                     const deliverySummary = getCardDeliverySummary(client);
+                    const montoRestante = getMontoRestante(client);
+                    const cardSubtitle = getTaskCardSubtitle(client);
                     return (
                       <div
                         key={client.id}
                         className="min-w-0 rounded-2xl border border-gray-200/80 bg-white p-5 shadow-sm transition hover:border-emerald-200/80 hover:shadow-md"
                       >
                         <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            <h3 className="break-words text-lg font-semibold text-gray-900">{client.project}</h3>
-                            {client.codigoProyecto ? (
-                              <p className="mt-1 break-all text-sm text-secondary">
-                                <span className="font-semibold text-primary">{client.codigoProyecto}</span>
-                              </p>
-                            ) : (
-                              <p className="mt-1 text-sm italic text-secondary/80">Sin código</p>
-                            )}
+                          <div className="flex min-w-0 flex-1 items-start gap-3">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+                              <User className="h-5 w-5 text-emerald-600" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-secondary">Proyecto</p>
+                              <h3 className="break-words text-base font-semibold text-gray-900">{client.project}</h3>
+                              {cardSubtitle ? (
+                                <p className="mt-0.5 text-sm text-secondary">{cardSubtitle}</p>
+                              ) : null}
+                              {client.codigoProyecto ? (
+                                <p className="mt-2 break-all text-[11px] text-secondary">
+                                  Código:{" "}
+                                  <span className="font-semibold text-primary">{client.codigoProyecto}</span>
+                                </p>
+                              ) : null}
+                            </div>
                           </div>
                           <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
                             Confirmado
@@ -225,6 +252,19 @@ export default function EmpleadoConfirmadosPage() {
                                 <span className="text-secondary">{deliverySummary}</span>
                               ) : (
                                 <span className="text-secondary/90">Por definir</span>
+                              )}
+                            </span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <Wallet className="mt-0.5 h-4 w-4 shrink-0 opacity-70" />
+                            <span className="min-w-0 leading-snug">
+                              <span className="block text-[10px] font-semibold uppercase tracking-wide text-secondary/90">
+                                Restante por pagar
+                              </span>
+                              {montoRestante !== null ? (
+                                <span className="font-medium text-gray-800">{formatCurrencyMXN(montoRestante)}</span>
+                              ) : (
+                                <span className="text-secondary/90">Sin presupuesto</span>
                               )}
                             </span>
                           </div>
@@ -291,6 +331,10 @@ export default function EmpleadoConfirmadosPage() {
                     Expediente
                   </p>
                   <p className="mt-1 break-words text-sm font-medium text-primary">{selectedClient.project}</p>
+                  {(() => {
+                    const subtitle = getTaskCardSubtitle(selectedClient);
+                    return subtitle ? <p className="text-xs text-secondary">{subtitle}</p> : null;
+                  })()}
                   {selectedClient.codigoProyecto ? (
                     <p className="mt-2 break-all text-[11px] text-secondary">
                       Código: <span className="font-semibold text-primary">{selectedClient.codigoProyecto}</span>
@@ -308,7 +352,20 @@ export default function EmpleadoConfirmadosPage() {
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-                <div className="space-y-6 pb-8">
+                <div className="space-y-8 pb-8">
+                  <button
+                    type="button"
+                    disabled={!selectedClient.codigoProyecto}
+                    onClick={() => setIsContratoEditorOpen(true)}
+                    className="w-full rounded-2xl border border-primary/15 bg-white py-3 text-sm font-semibold text-primary shadow-sm transition hover:bg-primary/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Pagos y estatus público
+                  </button>
+                  <ConfirmedClientContractFields
+                    key={selectedClient.id}
+                    task={selectedClient}
+                    onUpdate={handleConfirmedTaskUpdate}
+                  />
                   <ClientDocuments task={selectedClient} />
                 </div>
               </div>
@@ -316,6 +373,17 @@ export default function EmpleadoConfirmadosPage() {
           </motion.div>
         ) : null}
       </AnimatePresence>
+
+      {isContratoEditorOpen && selectedClient?.codigoProyecto ? (
+        <PublicStatusEditorModal
+          open
+          onClose={() => setIsContratoEditorOpen(false)}
+          role="employee"
+          codigoProyecto={selectedClient.codigoProyecto}
+          subtitle={`${selectedClient.project ?? selectedClient.title}`}
+          onSaved={() => void loadClients()}
+        />
+      ) : null}
     </div>
   );
 }

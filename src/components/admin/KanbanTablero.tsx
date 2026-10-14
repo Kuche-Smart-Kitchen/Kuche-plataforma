@@ -21,9 +21,13 @@ import Captcha, { type CaptchaRef } from "@/components/ui/Captcha";
 import { DueDateInput } from "@/components/ui/DueDateInput";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { useAuthContext } from "@/contexts/AuthContext";
 import { useTareasContext } from "@/contexts/TareasContext";
 import {
   fetchBackendKanbanTasks,
+  fetchBackendKanbanTasksWithStatus,
+  type KanbanBackendColumn,
+  approveClientDesignWithBackend,
   syncCitaFinishWithBackend,
   syncCitaStartWithBackend,
   syncTaskFollowUpWithBackend,
@@ -48,12 +52,14 @@ import {
   type CotizacionFormalData,
   stageStyles,
   getCotizacionesFormalesList,
+  mergeKanbanTaskLists,
 } from "@/lib/kanban";
 import { dueDateToSortTimestamp, formatDueDateTimeDisplay } from "@/lib/kanban-due-datetime";
 import { subirArchivoCliente } from "@/lib/axios/archivosClienteApi";
 import { obtenerDisponibilidadDia } from "@/lib/axios/citasApi";
 import { agendarVisita, obtenerDisponibilidadVisita } from "@/lib/axios/visitasApi";
 import { eliminarTarea } from "@/lib/axios/tareasApi";
+import { isTaskAssignedToEmpleado } from "@/lib/empleado-kanban-filters";
 
 const currentUser = "Valeria";
 const hasFinalDesign = (task: KanbanTask) => Boolean(task.files?.some((file) => file.nivel === "final"));
@@ -384,9 +390,58 @@ const hydrateKanbanTasksFromLocalStorage = (
 const KANBAN_PERSIST_ERROR =
   "No se pudo guardar el tablero: almacenamiento lleno. Libera espacio del navegador o reduce tareas/archivos.";
 
+const SYNC_FOCUS_THROTTLE_MS = 5000;
+const KANBAN_BACKEND_COLUMN_COUNT = 4;
+
+const KANBAN_COLUMN_TO_STAGE: Record<KanbanBackendColumn, TaskStage> = {
+  citas: "citas",
+  disenos: "disenos",
+  cotizacion: "cotizacion",
+  contrato: "contrato",
+};
+
+/** Conserva tarjetas de columnas cuyo fetch falló (503, red, etc.). */
+const mergeBackendWithPreservedFailedColumns = (
+  current: KanbanTask[],
+  backendTasks: KanbanTask[],
+  failedColumns: KanbanBackendColumn[],
+): KanbanTask[] => {
+  if (failedColumns.length === 0) return backendTasks;
+  if (failedColumns.length >= KANBAN_BACKEND_COLUMN_COUNT) {
+    return current.length > 0 ? current : backendTasks;
+  }
+
+  const failedStages = new Set(failedColumns.map((column) => KANBAN_COLUMN_TO_STAGE[column]));
+  const backendIds = new Set(backendTasks.map((task) => task.id));
+  const preserved = current.filter((task) => failedStages.has(task.stage) && !backendIds.has(task.id));
+  const combined = [...backendTasks, ...preserved];
+  const unique = new Map<string, KanbanTask>();
+  for (const task of combined) {
+    unique.set(task.id, task);
+  }
+  return Array.from(unique.values());
+};
+
+const kanbanTasksEqualForRender = (previous: KanbanTask[], next: KanbanTask[]): boolean => {
+  if (previous.length !== next.length) return false;
+  const byId = (tasks: KanbanTask[]) => [...tasks].sort((a, b) => a.id.localeCompare(b.id));
+  const sortedPrevious = byId(previous);
+  const sortedNext = byId(next);
+  for (let index = 0; index < sortedPrevious.length; index += 1) {
+    const a = sortedPrevious[index];
+    const b = sortedNext[index];
+    if (a.id !== b.id || a.stage !== b.stage || a.status !== b.status) {
+      return false;
+    }
+  }
+  return true;
+};
+
 export type KanbanTableroProps = {
   /** Filtrar por nombre de empleado. null = ver todo, string = solo ese empleado. */
   filterByEmployee?: string | null;
+  /** Id de usuario para cruzar con `assignedToIds` / `assignedTo` en modo “mis tareas”. */
+  filterByEmployeeUserId?: string | null;
   /** Filtro adicional (ej. solo pipeline “en proceso” en dashboard empleado). */
   pipelineFilter?: (task: KanbanTask) => boolean;
   /** Incrementar para forzar re-lectura desde localStorage (ej. tras crear tarea). */
@@ -397,20 +452,35 @@ export type KanbanTableroProps = {
   allowDeleteTask?: boolean;
   /** Habilita la aprobación administrativa de diseños en el tablero de Operaciones. */
   allowDesignApproval?: boolean;
+  /**
+   * Confirmar/descartar cliente (PATCH seguimiento). Por defecto solo rol admin.
+   * Pasar false en vistas operativas si no se usa AuthContext.
+   */
+  allowFollowUpDecisions?: boolean;
   /** Llamado después de descartar un cliente en Seguimiento (ej. admin redirige a clientes-descartados). */
   onAfterDiscard?: () => void;
+  /** Desactiva auto-avance y auto-descarte en memoria (timer 60s) — vista empleado. */
+  disableKanbanMemoryTimer?: boolean;
+  /** Sincroniza listas externas (ej. dropdown de proyectos en dashboard empleado). */
+  onKanbanTasksChange?: (tasks: KanbanTask[]) => void;
 };
 
 export function KanbanTablero(props: KanbanTableroProps = {}) {
   const {
     filterByEmployee,
+    filterByEmployeeUserId,
     pipelineFilter,
     refreshTrigger = 0,
     teamMembers,
     allowDeleteTask = true,
     allowDesignApproval = false,
+    allowFollowUpDecisions,
     onAfterDiscard,
+    disableKanbanMemoryTimer = false,
+    onKanbanTasksChange,
   } = props;
+  const { user } = useAuthContext();
+  const canManageFollowUp = allowFollowUpDecisions ?? user?.rol === "admin";
   const { actualizar: actualizarTareaEnBackend, asignarTrabajadores } = useTareasContext();
   const router = useRouter();
   const [viewMode, setViewMode] = useState<"all" | "mine">("all");
@@ -464,38 +534,63 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const cotizacionEntregadaRef = useRef<HTMLDivElement | null>(null);
   const scheduleVisitRef = useRef<HTMLDivElement | null>(null);
   const visitCaptchaRef = useRef<CaptchaRef | null>(null);
+  const lastSyncTimeRef = useRef(0);
+  const isSyncingRef = useRef(false);
 
-  const commitKanbanTasks = useCallback((nextTasks: KanbanTask[]) => {
-    kanbanTasksRef.current = nextTasks;
-    setKanbanTasks(nextTasks);
-    const ok = notifyKanbanTasksUpdated(nextTasks);
-    setKanbanPersistError(ok ? null : KANBAN_PERSIST_ERROR);
-  }, []);
+  const commitKanbanTasks = useCallback(
+    (nextTasks: KanbanTask[]) => {
+      kanbanTasksRef.current = nextTasks;
+      setKanbanTasks(nextTasks);
+      onKanbanTasksChange?.(nextTasks);
+      const ok = notifyKanbanTasksUpdated(nextTasks);
+      setKanbanPersistError(ok ? null : KANBAN_PERSIST_ERROR);
+    },
+    [onKanbanTasksChange],
+  );
 
   const hydrateAndApplyTasks = useCallback(
-    (rawTasks: KanbanTask[], persistIfChanged = false) => {
-      // El backend puede tardar en reflejar un archivo recién subido (ej. diseño final). Si ya
-      // sabíamos localmente que esta tarea tiene un diseño final y la respuesta fresca del
-      // backend no lo trae, lo conservamos para no "regresar" el botón de Subir diseño final.
-      const previousById = new Map(kanbanTasksRef.current.map((task) => [task.id, task]));
-      const preserved = rawTasks.map((task) => {
-        const previous = previousById.get(task.id);
-        const localFinalFiles = previous?.files?.filter((file) => file.nivel === "final") ?? [];
-        if (localFinalFiles.length === 0) return task;
-        const hasBackendFinal = task.files?.some((file) => file.nivel === "final");
-        return hasBackendFinal ? task : { ...task, files: [...(task.files ?? []), ...localFinalFiles] };
-      });
-      const { tasks, changed } = hydrateKanbanTasksFromLocalStorage(preserved);
+    (
+      rawTasks: KanbanTask[],
+      persistIfChanged = false,
+      options?: { failedColumns?: KanbanBackendColumn[] },
+    ) => {
+      const failedColumns = options?.failedColumns ?? [];
+      let mergedInput = mergeBackendWithPreservedFailedColumns(
+        kanbanTasksRef.current,
+        rawTasks,
+        failedColumns,
+      );
+      mergedInput = mergeKanbanTaskLists(kanbanTasksRef.current, mergedInput);
+
+      const { tasks, changed } = hydrateKanbanTasksFromLocalStorage(mergedInput);
+      if (kanbanTasksEqualForRender(kanbanTasksRef.current, tasks)) {
+        return kanbanTasksRef.current;
+      }
       kanbanTasksRef.current = tasks;
       setKanbanTasks(tasks);
+      onKanbanTasksChange?.(tasks);
       if (persistIfChanged && changed && tasks.length > 0) {
         const ok = notifyKanbanTasksUpdated(tasks);
         setKanbanPersistError(ok ? null : KANBAN_PERSIST_ERROR);
       }
       return tasks;
     },
-    [],
+    [onKanbanTasksChange],
   );
+
+  const syncFromBackend = useCallback(async () => {
+    if (isSyncingRef.current) return;
+    isSyncingRef.current = true;
+    try {
+      const { tasks: backendTasks, failedColumns } = await fetchBackendKanbanTasksWithStatus();
+      hydrateAndApplyTasks(backendTasks, backendTasks.length > 0, { failedColumns });
+      lastSyncTimeRef.current = Date.now();
+    } catch (error) {
+      console.warn("No se pudieron cargar las tareas del kanban desde backend.", error);
+    } finally {
+      isSyncingRef.current = false;
+    }
+  }, [hydrateAndApplyTasks]);
 
   useEffect(() => {
     setMounted(true);
@@ -551,24 +646,19 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const syncFromBackend = async () => {
-      try {
-        const backendTasks = await fetchBackendKanbanTasks();
-        hydrateAndApplyTasks(backendTasks, backendTasks.length > 0);
-      } catch (error) {
-        console.warn("No se pudieron cargar las tareas del kanban desde backend.", error);
-        hydrateAndApplyTasks([], false);
-      }
-    };
-
     void syncFromBackend();
+
+    const shouldThrottleWindowSync = () =>
+      Date.now() - lastSyncTimeRef.current < SYNC_FOCUS_THROTTLE_MS;
+
     const handleFocus = () => {
+      if (shouldThrottleWindowSync()) return;
       void syncFromBackend();
     };
     const handleVisibility = () => {
-      if (document.visibilityState === "visible") {
-        void syncFromBackend();
-      }
+      if (document.visibilityState !== "visible") return;
+      if (shouldThrottleWindowSync()) return;
+      void syncFromBackend();
     };
     const handleKanbanTasksUpdated = () => void syncFromBackend();
     window.addEventListener("focus", handleFocus);
@@ -579,25 +669,16 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       window.removeEventListener(kanbanTasksUpdatedEventName, handleKanbanTasksUpdated);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [hydrateAndApplyTasks]);
+  }, [syncFromBackend]);
 
   useEffect(() => {
     if (typeof window === "undefined" || refreshTrigger === 0) return;
-
-    const refreshFromBackend = async () => {
-      try {
-        const backendTasks = await fetchBackendKanbanTasks();
-        hydrateAndApplyTasks(backendTasks, backendTasks.length > 0);
-      } catch (error) {
-        console.warn("No se pudo refrescar el kanban desde backend.", error);
-        hydrateAndApplyTasks([], false);
-      }
-    };
-
-    void refreshFromBackend();
-  }, [refreshTrigger, hydrateAndApplyTasks]);
+    void syncFromBackend();
+  }, [refreshTrigger, syncFromBackend]);
 
   useEffect(() => {
+    if (disableKanbanMemoryTimer) return;
+
     const autoDiscardExpiredFollowUps = () => {
       const updated = kanbanTasksRef.current.map((task) => {
         if (
@@ -634,7 +715,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       runAutoAdvance();
     }, 60000);
     return () => clearInterval(interval);
-  }, [commitKanbanTasks]);
+  }, [commitKanbanTasks, disableKanbanMemoryTimer]);
 
   const filteredTasks = useMemo(() => {
     let list: KanbanTask[];
@@ -643,7 +724,10 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
         list = kanbanTasks;
       } else {
         list = kanbanTasks.filter((task) =>
-          Array.isArray(task.assignedTo) ? task.assignedTo.includes(filterByEmployee) : false,
+          isTaskAssignedToEmpleado(task, {
+            nombre: filterByEmployee,
+            userId: filterByEmployeeUserId,
+          }),
         );
       }
     } else if (viewMode === "mine") {
@@ -657,7 +741,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       list = list.filter(pipelineFilter);
     }
     return list;
-  }, [kanbanTasks, viewMode, filterByEmployee, pipelineFilter]);
+  }, [kanbanTasks, viewMode, filterByEmployee, filterByEmployeeUserId, pipelineFilter]);
 
   const updateTask = (taskId: string, updater: (task: KanbanTask) => KanbanTask) => {
     const nextTasks = kanbanTasksRef.current.map((task) =>
@@ -786,6 +870,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   };
 
   const confirmFollowUp = async (taskId: string) => {
+    if (!canManageFollowUp) return;
     const task = kanbanTasksRef.current.find((t) => t.id === taskId);
     // Compromiso del cliente: en Seguimiento la tarjeta sale del tablero; en Citas/Diseños/Cotización el flujo sigue.
     updateTask(taskId, (t) => ({
@@ -809,6 +894,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   };
 
   const discardFollowUp = async (taskId: string) => {
+    if (!canManageFollowUp) return;
     const task = kanbanTasksRef.current.find((t) => t.id === taskId);
     updateTask(taskId, (t) => ({
       ...t,
@@ -967,9 +1053,40 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     }
   };
 
-  const startCotizacionFormal = (taskId: string) => {
+  const startCotizacionFormal = async (taskId: string) => {
+    const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
     updateTask(taskId, (t) => ({ ...t, citaStarted: true }));
-    router.push(`/dashboard/cotizador?taskId=${encodeURIComponent(taskId)}`);
+    let canContinue = true;
+    if (taskSnapshot) {
+      const patchOk = await syncTaskPatchWithBackend(taskSnapshot, { citaStarted: true });
+      if (!patchOk) {
+        canContinue = false;
+        updateTask(taskId, (task) => ({ ...task, citaStarted: taskSnapshot.citaStarted ?? false }));
+        setBackendSyncMessage("No se pudo sincronizar el inicio de cotización en backend.");
+        window.setTimeout(() => setBackendSyncMessage(null), 4500);
+      }
+    }
+    if (canContinue) {
+      router.push(`/dashboard/cotizador?taskId=${encodeURIComponent(taskId)}`);
+    }
+  };
+
+  const finishCotizacionFormal = async (taskId: string) => {
+    const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
+    const patch: Partial<KanbanTask> = { citaStarted: true, citaFinished: true };
+    updateTask(taskId, (t) => ({ ...t, ...patch }));
+    if (taskSnapshot) {
+      const patchOk = await syncTaskPatchWithBackend(taskSnapshot, patch);
+      if (!patchOk) {
+        updateTask(taskId, (task) => ({
+          ...task,
+          citaStarted: taskSnapshot.citaStarted ?? false,
+          citaFinished: taskSnapshot.citaFinished ?? false,
+        }));
+        setBackendSyncMessage("No se pudo sincronizar el fin de cotización en backend.");
+        window.setTimeout(() => setBackendSyncMessage(null), 4500);
+      }
+    }
   };
 
   const approveDesignAsAdmin = async (taskId: string) => {
@@ -1050,6 +1167,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       showUploadToast("success", "Diseño final cargado. Ya está disponible para aprobación del cliente.");
       setUploadAcceptedDesignsTaskId(null);
       setDropboxStagingFile(null);
+      await syncFromBackend();
     } finally {
       setDropboxUploading(false);
     }
@@ -1367,6 +1485,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       "success",
       nextFiles.length === 1 ? "Archivo subido correctamente." : `${nextFiles.length} archivos subidos correctamente.`,
     );
+    await syncFromBackend();
     return true;
   };
 
@@ -1670,7 +1789,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                                   type="button"
                                   onClick={(event) => {
                                     event.stopPropagation();
-                                    startCotizacionFormal(task.id);
+                                    void startCotizacionFormal(task.id);
                                   }}
                                   className="inline-flex w-auto items-center rounded-full bg-primary px-3 py-1 text-[11px] font-semibold text-white"
                                 >
@@ -1682,7 +1801,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                                   type="button"
                                   onClick={(event) => {
                                     event.stopPropagation();
-                                    updateTask(task.id, (t) => ({ ...t, citaFinished: true }));
+                                    void finishCotizacionFormal(task.id);
                                   }}
                                   className="inline-flex w-auto items-center rounded-full bg-emerald-600 px-3 py-1 text-[11px] font-semibold text-white"
                                 >
@@ -2216,7 +2335,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                       {!activeTask.citaStarted ? (
                         <button
                           type="button"
-                          onClick={() => startCotizacionFormal(activeTask.id)}
+                          onClick={() => void startCotizacionFormal(activeTask.id)}
                           className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white"
                         >
                           Iniciar cotizacion
@@ -2224,7 +2343,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                       ) : activeTask.citaStarted && !activeTask.citaFinished ? (
                         <button
                           type="button"
-                          onClick={() => updateTask(activeTask.id, (t) => ({ ...t, citaFinished: true }))}
+                          onClick={() => void finishCotizacionFormal(activeTask.id)}
                           className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white"
                         >
                           Terminar cotizacion
@@ -2409,7 +2528,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                       <XCircle className="h-5 w-5" />
                       <span className="font-semibold">Cliente descartado</span>
                     </div>
-                  ) : (
+                  ) : canManageFollowUp ? (
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -2427,6 +2546,11 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                         <XCircle className="h-4 w-4" />
                         Descartar
                       </button>
+                    </div>
+                  ) : (
+                    <div className="mt-3 flex items-center gap-2 rounded-2xl bg-sky-50 px-4 py-3 text-sm text-sky-700">
+                      <Clock className="h-5 w-5 shrink-0" />
+                      <span className="font-semibold">Seguimiento pendiente</span>
                     </div>
                   )}
                 </div>

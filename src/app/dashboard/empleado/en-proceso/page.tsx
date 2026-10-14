@@ -1,16 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, User, X } from "lucide-react";
-import { getTaskCardSubtitle, stageStyles, type KanbanTask } from "@/lib/kanban";
+import { getMontoRestante, getTaskCardSubtitle, stageStyles, type KanbanTask } from "@/lib/kanban";
 import { ClientDocuments } from "@/components/admin/ClientDocuments";
+import { PublicStatusEditorModal } from "@/components/admin/PublicStatusEditorModal";
+import { formatCurrencyMXN } from "@/lib/formatters";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
 import { useAuthContext } from "@/contexts/AuthContext";
-import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { EMPLEADO_DASHBOARD_USER } from "@/lib/empleado-dashboard-user";
+import {
+  isTaskAssignedToEmpleado,
+  loadKanbanTasksForEmpleadoView,
+  taskIsEnProcesoPipeline,
+} from "@/lib/empleado-kanban-filters";
 
 const stageLabel: Record<string, string> = {
   citas: "Citas",
@@ -19,45 +25,50 @@ const stageLabel: Record<string, string> = {
   contrato: "Seguimiento",
 };
 
-/** Excluye seguimiento ya confirmado o descartado; luego solo tareas asignadas al empleado. */
-function getTasksInProgressForEmpleado(tasks: KanbanTask[], empleado: string): KanbanTask[] {
-  return tasks.filter((task) => {
-    if (task.stage === "contrato" && (task.followUpStatus === "confirmado" || task.followUpStatus === "descartado")) {
-      return false;
-    }
-    return Array.isArray(task.assignedTo) && task.assignedTo.includes(empleado);
-  });
+function getTasksInProgressForEmpleado(
+  tasks: KanbanTask[],
+  empleado: { nombre: string; userId?: string | null },
+): KanbanTask[] {
+  return tasks.filter(
+    (task) => taskIsEnProcesoPipeline(task) && isTaskAssignedToEmpleado(task, empleado),
+  );
 }
 
 export default function EmpleadoClientesEnProcesoPage() {
   const { user } = useAuthContext();
   const currentEmployeeName = user?.nombre?.trim() || EMPLEADO_DASHBOARD_USER;
+  const currentEmployeeId = user?.id ?? user?._id ?? null;
+  const empleadoMatch = useMemo(
+    () => ({ nombre: currentEmployeeName, userId: currentEmployeeId }),
+    [currentEmployeeName, currentEmployeeId],
+  );
   const [tasks, setTasks] = useState<KanbanTask[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
   const [selectedClient, setSelectedClient] = useState<KanbanTask | null>(null);
+  const [isContratoEditorOpen, setIsContratoEditorOpen] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadTasks = async () => {
-      if (typeof window === "undefined") return;
-      await syncKanbanTasksFromBackend();
-      if (!cancelled) {
-        setTasks([]);
-        setIsHydrated(true);
-      }
-    };
-
-    void loadTasks();
-
-    return () => {
-      cancelled = true;
-    };
+  const loadTasks = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    try {
+      const allTasks = await loadKanbanTasksForEmpleadoView();
+      setTasks(allTasks);
+      setSelectedClient((sel) => {
+        if (!sel) return sel;
+        const refreshed = allTasks.find((t) => t.id === sel.id);
+        return refreshed ?? sel;
+      });
+    } finally {
+      setIsHydrated(true);
+    }
   }, []);
 
+  useEffect(() => {
+    void loadTasks();
+  }, [loadTasks]);
+
   const inProgress = useMemo(
-    () => getTasksInProgressForEmpleado(tasks, currentEmployeeName),
-    [currentEmployeeName, tasks],
+    () => getTasksInProgressForEmpleado(tasks, empleadoMatch),
+    [empleadoMatch, tasks],
   );
 
   const columnCount = useClientCardColumns(3);
@@ -139,6 +150,7 @@ export default function EmpleadoClientesEnProcesoPage() {
                 <div key={colIdx} className="flex min-w-0 flex-1 flex-col gap-4">
                   {col.map((task) => {
                     const cardSubtitle = getTaskCardSubtitle(task);
+                    const montoRestante = getMontoRestante(task);
                     return (
                     <div
                       key={task.id}
@@ -170,9 +182,19 @@ export default function EmpleadoClientesEnProcesoPage() {
                         </span>
                       </div>
 
-                      <div className="mt-4 border-t border-gray-100 pt-4 text-xs text-secondary">
-                        Asignado:{" "}
-                        {task.assignedTo?.length ? task.assignedTo.join(", ") : "Sin asignar"}
+                      <div className="mt-4 space-y-2 border-t border-gray-100 pt-4 text-xs text-secondary">
+                        <p>
+                          Asignado:{" "}
+                          {task.assignedTo?.length ? task.assignedTo.join(", ") : "Sin asignar"}
+                        </p>
+                        <p>
+                          Restante por pagar:{" "}
+                          {montoRestante !== null ? (
+                            <span className="font-semibold text-gray-800">{formatCurrencyMXN(montoRestante)}</span>
+                          ) : (
+                            "Sin presupuesto"
+                          )}
+                        </p>
                       </div>
 
                       <button
@@ -258,12 +280,33 @@ export default function EmpleadoClientesEnProcesoPage() {
               </div>
 
               <div className="min-h-0 flex-1 px-6 py-6">
+                <div className="mb-6">
+                  <button
+                    type="button"
+                    disabled={!selectedClient.codigoProyecto}
+                    onClick={() => setIsContratoEditorOpen(true)}
+                    className="w-full rounded-2xl border border-primary/15 bg-white py-3 text-sm font-semibold text-primary shadow-sm transition hover:bg-primary/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Pagos y estatus público
+                  </button>
+                </div>
                 <ClientDocuments task={selectedClient} />
               </div>
             </motion.div>
           </motion.div>
         ) : null}
       </AnimatePresence>
+
+      {isContratoEditorOpen && selectedClient?.codigoProyecto ? (
+        <PublicStatusEditorModal
+          open
+          onClose={() => setIsContratoEditorOpen(false)}
+          role="employee"
+          codigoProyecto={selectedClient.codigoProyecto}
+          subtitle={`${selectedClient.project ?? selectedClient.title}`}
+          onSaved={() => void loadTasks()}
+        />
+      ) : null}
     </div>
   );
 }

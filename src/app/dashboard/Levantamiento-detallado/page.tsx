@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FilePenLine,
+  Loader2,
   Minus,
   Plus,
   Search,
@@ -26,6 +27,8 @@ import {
   citaReturnUrlStorageKey,
   getPreliminarList,
   getTasksFromLocalStorage,
+  mergeKanbanTaskLists,
+  resolveKanbanTaskPersistenceId,
   saveKanbanTasksToLocalStorage,
   seguimientoProjectStoragePrefix,
   type KanbanTask,
@@ -78,7 +81,12 @@ import { createPreliminarSeguimientoPdfKey, saveFormalPdf } from "@/lib/formal-p
 import { subirArchivoCliente } from "@/lib/axios/archivosClienteApi";
 import { formatDeliveryWeeksLabel } from "@/lib/delivery-weeks";
 import { emptyWhenZeroIntString, emptyWhenZeroNumericString } from "@/lib/numeric-input-empty-zero";
-import { fetchBackendKanbanTasks } from "@/lib/admin-workflow";
+import {
+  fetchBackendKanbanTasks,
+  syncTaskPatchWithBackend,
+  syncTaskStageWithBackend,
+} from "@/lib/admin-workflow";
+import { seguimientoApi } from "@/lib/axios";
 import ApplianceTypeImage from "@/components/levantamiento/ApplianceTypeImage";
 import HorizontalScrollStrip from "@/components/levantamiento/HorizontalScrollStrip";
 import LightingTypeImage from "@/components/levantamiento/LightingTypeImage";
@@ -115,6 +123,23 @@ const formatMeters = (value: number) =>
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(value);
+
+const PUBLIC_PROJECT_CODE_RE = /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{6}$/;
+
+function normalizePublicProjectCode(raw: string): string {
+  return raw.trim().toUpperCase().replace(/^K-/, "");
+}
+
+function isValidPublicProjectCode6(code: string | undefined | null): boolean {
+  if (!code?.trim()) return false;
+  return PUBLIC_PROJECT_CODE_RE.test(normalizePublicProjectCode(code));
+}
+
+async function pdfDataUrlToFile(dataUrl: string, filename: string): Promise<File> {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  return new File([blob], filename, { type: "application/pdf" });
+}
 
 /** Metros lineales asignados a un frente en la tarjeta del showroom (reparto igual entre seleccionados). */
 function resolveShowroomFrenteMetrosForCard(
@@ -626,6 +651,7 @@ export default function CotizadorPreliminarPage() {
   const [selectedScenario, setSelectedScenario] = useState<AutoScenarioId>("esencial");
   const [materialSearch, setMaterialSearch] = useState("");
   const [finishError, setFinishError] = useState<string | null>(null);
+  const [isFinishingLevantamiento, setIsFinishingLevantamiento] = useState(false);
   const [levantamiento, setLevantamiento] = useState<LevantamientoDetalle>(() => defaultLevantamientoDetalle());
   /** Índice 0-based de la pared actual en el flujo dinámico (Sección B). */
   const [currentWallIndex, setCurrentWallIndex] = useState(0);
@@ -1116,8 +1142,9 @@ export default function CotizadorPreliminarPage() {
         try {
           const backendTasks = await fetchBackendKanbanTasks();
           if (cancelled) return;
-          saveKanbanTasksToLocalStorage(backendTasks);
-          task = backendTasks.find((item) => item.id === taskId);
+          const merged = mergeKanbanTaskLists(getTasksFromLocalStorage(), backendTasks);
+          saveKanbanTasksToLocalStorage(merged);
+          task = merged.find((item) => item.id === taskId);
         } catch (error) {
           if (!cancelled) {
             setActiveCitaTaskLoadError(
@@ -1201,36 +1228,9 @@ export default function CotizadorPreliminarPage() {
     };
   };
 
-  /**
-   * Sube el PDF del levantamiento a Cloudinary y lo relaciona con el cliente/proyecto
-   * (expediente). Reutiliza el data URL ya generado para IndexedDB, evitando renderizar el PDF
-   * dos veces. Es "best effort": si falla (red, Cloudinary caído, etc.) no bloquea el cierre de
-   * la cita, ya que el PDF sigue disponible localmente (IndexedDB + tarjeta del kanban).
-   */
-  const uploadPreliminarPdfToCloudinary = async (
-    dataUrl: string,
-    codigoProyecto: string | undefined,
-    taskId: string,
-    projectType: string,
-  ) => {
-    if (!codigoProyecto) return;
-    try {
-      const pdfBlob = await (await fetch(dataUrl)).blob();
-      const fileSlug = (projectType || "proyecto").replace(/\s+/g, "-").toLowerCase();
-      const pdfFile = new File([pdfBlob], `levantamiento-detallado-${fileSlug}.pdf`, {
-        type: "application/pdf",
-      });
-      await subirArchivoCliente(pdfFile, codigoProyecto, "levantamiento_detallado", {
-        tareasId: taskId,
-      });
-    } catch {
-      // Silencioso: el levantamiento ya quedó guardado localmente; la subida remota se puede
-      // reintentar luego (ej. reabriendo la cita) sin perder la información capturada.
-    }
-  };
-
   const savePreliminarAndGetNextTasks = (options?: {
-    seguimientoPdf?: { key: string; fileLabel: string };
+    codigoProyectoOverride?: string;
+    seguimientoPdf?: { key?: string; fileLabel: string; remoteUrl?: string };
   }): { codigoProyecto: string | undefined; updatedTasks: KanbanTask[] } | null => {
     if (!activeCitaTaskId || !activeCitaTask) return null;
     const err = validatePreliminarSections();
@@ -1258,7 +1258,10 @@ export default function CotizadorPreliminarPage() {
       if (task.id !== activeCitaTaskId) return task;
       const existingList = getPreliminarList(task);
       const preliminarCotizaciones = [...existingList, newPreliminar];
-      codigoProyecto = task.codigoProyecto ?? generatePublicProjectCode();
+      codigoProyecto =
+        task.codigoProyecto?.trim() ||
+        options?.codigoProyectoOverride?.trim() ||
+        generatePublicProjectCode();
       return {
         ...task,
         codigoProyecto,
@@ -1313,15 +1316,20 @@ export default function CotizadorPreliminarPage() {
         const prevArchivos = Array.isArray(existingParsed.archivos)
           ? [...(existingParsed.archivos as object[])]
           : [];
-        seguimientoProject.archivos = [
-          ...prevArchivos,
-          {
-            id: `seg-preliminar-${options.seguimientoPdf.key}`,
-            name: options.seguimientoPdf.fileLabel,
-            type: "pdf",
-            indexedPdfKey: options.seguimientoPdf.key,
-          },
-        ];
+        const pdfEntry = options.seguimientoPdf.remoteUrl
+          ? {
+              id: `seg-preliminar-${Date.now()}`,
+              name: options.seguimientoPdf.fileLabel,
+              type: "pdf",
+              src: options.seguimientoPdf.remoteUrl,
+            }
+          : {
+              id: `seg-preliminar-${options.seguimientoPdf.key ?? Date.now()}`,
+              name: options.seguimientoPdf.fileLabel,
+              type: "pdf",
+              indexedPdfKey: options.seguimientoPdf.key,
+            };
+        seguimientoProject.archivos = [...prevArchivos, pdfEntry];
       }
       try {
         window.localStorage.setItem(projectKey, JSON.stringify(seguimientoProject));
@@ -1333,54 +1341,86 @@ export default function CotizadorPreliminarPage() {
     return { codigoProyecto, updatedTasks };
   };
 
-  const handleFinishCita = async () => {
-    setFinishError(null);
-    if (!activeCitaTaskId || !activeCitaTask) return;
-    const err = validatePreliminarSections();
-    if (err) {
-      setFinishError(err);
-      return;
+  const syncPreliminarToBackend = async (params: {
+    taskBefore: KanbanTask;
+    taskAfter: KanbanTask;
+    newPreliminar: PreliminarData;
+    preliminarCotizaciones: PreliminarData[];
+    estimatedInversion: number;
+    remotePdfUrl?: string;
+    advanceStage: boolean;
+  }): Promise<string | null> => {
+    const warnings: string[] = [];
+    const patch: Partial<KanbanTask> = {
+      codigoProyecto: params.taskAfter.codigoProyecto,
+      preliminarData: params.taskAfter.preliminarData,
+      preliminarCotizaciones: params.taskAfter.preliminarCotizaciones,
+      inversion: params.estimatedInversion,
+      citaFinished: true,
+    };
+    if (params.advanceStage) {
+      patch.stage = "disenos";
+      patch.status = "pendiente";
     }
-    const newPreliminar = buildPreliminarDataFromForm();
-    const existingCount = getPreliminarList(activeCitaTask).length;
-    const preliminarPdfKey = createPreliminarSeguimientoPdfKey(activeCitaTaskId, existingCount);
-    let dataUrl: string;
-    try {
-      dataUrl = await buildPreliminarPdfDataUrl(newPreliminar, applianceItems);
-    } catch {
-      setFinishError("No se pudo generar el PDF para seguimiento. Intenta de nuevo.");
-      return;
+    const patchOk = await syncTaskPatchWithBackend(params.taskBefore, patch);
+    if (!patchOk) {
+      warnings.push("No se sincronizó la tarea con el servidor.");
     }
-    try {
-      await saveFormalPdf(preliminarPdfKey, dataUrl);
-    } catch {
-      setFinishError("No se pudo guardar el PDF. Intenta de nuevo.");
-      return;
+    if (params.advanceStage) {
+      const stageOk = await syncTaskStageWithBackend(params.taskBefore, "disenos");
+      if (!stageOk) {
+        warnings.push("No se actualizó la etapa de la tarea en el servidor.");
+      }
     }
-    const fileLabel = `Levantamiento detallado — ${newPreliminar.projectType}.pdf`;
-    const result = savePreliminarAndGetNextTasks({
-      seguimientoPdf: { key: preliminarPdfKey, fileLabel },
-    });
-    if (!result) return;
-    void uploadPreliminarPdfToCloudinary(
-      dataUrl,
-      result.codigoProyecto,
-      activeCitaTaskId,
-      newPreliminar.projectType,
-    );
-    const updatedTasksWithStage = result.updatedTasks.map((task) =>
-      task.id === activeCitaTaskId
-        ? { ...task, stage: "disenos" as const, status: "pendiente" as const }
-        : task,
-    );
-    saveKanbanTasksToLocalStorage(updatedTasksWithStage);
-    window.localStorage.removeItem(activeCitaTaskStorageKey);
-    const returnUrl = window.localStorage.getItem(citaReturnUrlStorageKey);
-    window.localStorage.removeItem(citaReturnUrlStorageKey);
-    router.push(returnUrl || "/dashboard/empleado");
+
+    const codigo = params.taskAfter.codigoProyecto?.trim();
+    if (codigo && isValidPublicProjectCode6(codigo)) {
+      try {
+        let existingArchivos: unknown[] = [];
+        const auth = await seguimientoApi.autenticarSeguimientoCliente(codigo);
+        if (auth.success && auth.data?.token) {
+          const projectResponse = await seguimientoApi.obtenerProyectoSeguimiento(auth.data.token);
+          if (
+            projectResponse.success &&
+            projectResponse.data &&
+            Array.isArray(projectResponse.data.archivos)
+          ) {
+            existingArchivos = projectResponse.data.archivos as unknown[];
+          }
+        }
+
+        const archivos = params.remotePdfUrl
+          ? [
+              ...existingArchivos,
+              {
+                id: `seg-levantamiento-${Date.now()}`,
+                name: "Levantamiento Preliminar.pdf",
+                type: "pdf",
+                src: params.remotePdfUrl,
+              },
+            ]
+          : existingArchivos;
+
+        const segResponse = await seguimientoApi.actualizarEstatusPublico(codigo, {
+          inversion: params.estimatedInversion,
+          preliminarCotizaciones: params.preliminarCotizaciones,
+          preliminarData: params.newPreliminar,
+          archivos,
+          fechaEntrega: params.newPreliminar.date || "Por definir",
+          estadoProyecto: ESTADO_PROYECTO.EN_PROCESO,
+        });
+        if (!segResponse.success) {
+          warnings.push(segResponse.message || "No se actualizó el portal de seguimiento.");
+        }
+      } catch {
+        warnings.push("No se pudo sincronizar el portal de seguimiento.");
+      }
+    }
+
+    return warnings.length > 0 ? warnings.join(" ") : null;
   };
 
-  const handleFinishAndContinue = async () => {
+  const finalizePreliminarSession = async (mode: "finish" | "continue") => {
     setFinishError(null);
     if (!activeCitaTaskId || !activeCitaTask) return;
     const err = validatePreliminarSections();
@@ -1388,53 +1428,142 @@ export default function CotizadorPreliminarPage() {
       setFinishError(err);
       return;
     }
-    const newPreliminar = buildPreliminarDataFromForm();
-    const existingCount = getPreliminarList(activeCitaTask).length;
-    const preliminarPdfKey = createPreliminarSeguimientoPdfKey(activeCitaTaskId, existingCount);
-    let dataUrl: string;
+
+    setIsFinishingLevantamiento(true);
+    const warnings: string[] = [];
+
     try {
-      dataUrl = await buildPreliminarPdfDataUrl(newPreliminar, applianceItems);
-    } catch {
-      setFinishError("No se pudo generar el PDF para seguimiento. Intenta de nuevo.");
-      return;
+      const kanbanSnapshot = getTasksFromLocalStorage();
+      const mongoTaskId = resolveKanbanTaskPersistenceId(activeCitaTask, kanbanSnapshot);
+      const newPreliminar = buildPreliminarDataFromForm();
+      const existingCount = getPreliminarList(activeCitaTask).length;
+      const preliminarPdfKey = createPreliminarSeguimientoPdfKey(activeCitaTaskId, existingCount);
+      const resolvedCodigo =
+        activeCitaTask.codigoProyecto?.trim() || generatePublicProjectCode();
+      const pdfFilename = "Levantamiento Preliminar.pdf";
+      const fileLabel = `Levantamiento detallado — ${newPreliminar.projectType}.pdf`;
+
+      let dataUrl: string;
+      try {
+        dataUrl = await buildPreliminarPdfDataUrl(newPreliminar);
+      } catch {
+        setFinishError("No se pudo generar el PDF para seguimiento. Intenta de nuevo.");
+        return;
+      }
+
+      let remotePdfUrl: string | undefined;
+      try {
+        const pdfFile = await pdfDataUrlToFile(dataUrl, pdfFilename);
+        const upload = await subirArchivoCliente(
+          pdfFile,
+          resolvedCodigo,
+          "levantamiento_detallado",
+          { tareasId: mongoTaskId },
+        );
+        if (upload.success && upload.data?.url) {
+          remotePdfUrl = upload.data.url;
+        } else {
+          console.error("[levantamiento] subirArchivoCliente falló", {
+            tareasId: mongoTaskId,
+            codigo: resolvedCodigo,
+            message: upload.message,
+          });
+          warnings.push(
+            upload.message || "No se pudo subir el PDF a la nube; se intentará guardar localmente.",
+          );
+        }
+      } catch (uploadError) {
+        console.error("[levantamiento] subirArchivoCliente error", {
+          tareasId: mongoTaskId,
+          codigo: resolvedCodigo,
+          error: uploadError,
+        });
+        warnings.push(
+          "No se pudo subir el PDF a la nube (red o configuración). Se intentará guardar localmente.",
+        );
+      }
+
+      try {
+        await saveFormalPdf(preliminarPdfKey, dataUrl);
+      } catch {
+        if (!remotePdfUrl) {
+          warnings.push("No se pudo guardar copia local del PDF en este dispositivo.");
+        }
+      }
+
+      const result = savePreliminarAndGetNextTasks({
+        codigoProyectoOverride: resolvedCodigo,
+        seguimientoPdf: remotePdfUrl
+          ? { fileLabel, remoteUrl: remotePdfUrl }
+          : { key: preliminarPdfKey, fileLabel },
+      });
+      if (!result) return;
+
+      const taskAfterBase =
+        result.updatedTasks.find((t) => t.id === activeCitaTaskId) ?? activeCitaTask;
+      const advanceStage = mode === "finish";
+      const taskAfter: KanbanTask = advanceStage
+        ? { ...taskAfterBase, stage: "disenos", status: "pendiente" }
+        : taskAfterBase;
+      const preliminarCotizaciones = getPreliminarList(taskAfter);
+      const estimatedInversion = Math.round(metrics.total);
+
+      const updatedTasksWithStage = result.updatedTasks.map((task) =>
+        task.id === activeCitaTaskId ? taskAfter : task,
+      );
+      saveKanbanTasksToLocalStorage(updatedTasksWithStage);
+
+      const taskForBackend = { ...activeCitaTask, id: mongoTaskId };
+      const backendWarning = await syncPreliminarToBackend({
+        taskBefore: taskForBackend,
+        taskAfter: { ...taskAfter, id: mongoTaskId },
+        newPreliminar,
+        preliminarCotizaciones,
+        estimatedInversion,
+        remotePdfUrl,
+        advanceStage,
+      });
+      if (backendWarning) warnings.push(backendWarning);
+
+      if (warnings.length > 0) {
+        setFinishError(warnings.join(" "));
+      }
+
+      if (mode === "finish") {
+        window.localStorage.removeItem(activeCitaTaskStorageKey);
+        const returnUrl = window.localStorage.getItem(citaReturnUrlStorageKey);
+        window.localStorage.removeItem(citaReturnUrlStorageKey);
+        router.push(returnUrl || "/dashboard/empleado");
+        return;
+      }
+
+      setProjectType(CATALOG_PROJECT_TYPES[0]);
+      setLocation("");
+      setDeliveryWeeksMin("");
+      setDeliveryWeeksMax("");
+      setLargo("");
+      setAlto("");
+      setSelectedCubierta(null);
+      setSelectedFrenteIds([]);
+      setSelectedHerraje(null);
+      setLevantamiento(defaultLevantamientoDetalle());
+      setCurrentWallIndex(0);
+      setWallSearch("");
+      setApplianceStep(0);
+      setApplianceSearch("");
+      setApplianceBrowseMode(true);
+      setLightingShowOtro(false);
+      setLightingBrowseMode(true);
+      setLightingFocusedId(null);
+      setLightingSearch("");
+    } finally {
+      setIsFinishingLevantamiento(false);
     }
-    try {
-      await saveFormalPdf(preliminarPdfKey, dataUrl);
-    } catch {
-      setFinishError("No se pudo guardar el PDF. Intenta de nuevo.");
-      return;
-    }
-    const fileLabel = `Levantamiento detallado — ${newPreliminar.projectType}.pdf`;
-    const result = savePreliminarAndGetNextTasks({
-      seguimientoPdf: { key: preliminarPdfKey, fileLabel },
-    });
-    if (!result) return;
-    void uploadPreliminarPdfToCloudinary(
-      dataUrl,
-      result.codigoProyecto,
-      activeCitaTaskId,
-      newPreliminar.projectType,
-    );
-    setProjectType(CATALOG_PROJECT_TYPES[0]);
-    setLocation("");
-    setDeliveryWeeksMin("");
-    setDeliveryWeeksMax("");
-    setLargo("");
-    setAlto("");
-    setSelectedCubierta(null);
-    setSelectedFrenteIds([]);
-    setSelectedHerraje(null);
-    setLevantamiento(defaultLevantamientoDetalle());
-    setCurrentWallIndex(0);
-    setWallSearch("");
-    setApplianceStep(0);
-    setApplianceSearch("");
-    setApplianceBrowseMode(true);
-    setLightingShowOtro(false);
-    setLightingBrowseMode(true);
-    setLightingFocusedId(null);
-    setLightingSearch("");
   };
+
+  const handleFinishCita = () => void finalizePreliminarSession("finish");
+
+  const handleFinishAndContinue = () => void finalizePreliminarSession("continue");
 
   const metrics = useMemo(() => {
     const largoValue = Math.max(0, Number.parseFloat(largo) || 0);
@@ -3963,17 +4092,26 @@ export default function CotizadorPreliminarPage() {
               <button
                 type="button"
                 onClick={handleFinishCita}
-                className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-700"
+                disabled={isFinishingLevantamiento}
+                className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-70"
               >
-                <CheckCircle2 className="h-4 w-4" />
-                Terminar
+                {isFinishingLevantamiento ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" />
+                )}
+                {isFinishingLevantamiento ? "Guardando..." : "Terminar"}
               </button>
               <button
                 type="button"
                 onClick={handleFinishAndContinue}
-                className="flex items-center justify-center gap-2 rounded-2xl border-2 border-emerald-600 bg-white px-5 py-2.5 text-sm font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-50"
+                disabled={isFinishingLevantamiento}
+                className="flex items-center justify-center gap-2 rounded-2xl border-2 border-emerald-600 bg-white px-5 py-2.5 text-sm font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-50 disabled:cursor-wait disabled:opacity-70"
               >
-                Terminar y continuar
+                {isFinishingLevantamiento ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : null}
+                {isFinishingLevantamiento ? "Guardando..." : "Terminar y continuar"}
               </button>
             </div>
           </div>

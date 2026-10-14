@@ -20,13 +20,19 @@ export type ExpedientePdfSectionsProps = {
   client: KanbanTask;
   /** Adds top border + padding when stacked below other panel sections (ej. contrato en confirmados). */
   withTopDivider?: boolean;
+  /** Oculta el aviso vacío cuando hay PDFs equivalentes servidos por URL remota. */
+  hideEmptyCotizacionesMessage?: boolean;
 };
 
 /**
  * Bloques compartidos: levantamiento detallado (PDF) y cotización formal + hoja de taller.
  * Usado en expedientes de Clientes confirmados y Proyectos inactivos.
  */
-export function ExpedientePdfSections({ client, withTopDivider = false }: ExpedientePdfSectionsProps) {
+export function ExpedientePdfSections({
+  client,
+  withTopDivider = false,
+  hideEmptyCotizacionesMessage = false,
+}: ExpedientePdfSectionsProps) {
   const wrapperClass = withTopDivider
     ? "space-y-4 border-t border-gray-100 pt-6"
     : "space-y-4";
@@ -140,7 +146,9 @@ export function ExpedientePdfSections({ client, withTopDivider = false }: Expedi
         </div>
       ) : null}
 
-      {getPreliminarList(client).length === 0 && getCotizacionesFormalesList(client).length === 0 ? (
+      {!hideEmptyCotizacionesMessage &&
+      getPreliminarList(client).length === 0 &&
+      getCotizacionesFormalesList(client).length === 0 ? (
         <p className="text-sm text-secondary">Sin cotizaciones PDF en esta tarjeta.</p>
       ) : null}
     </div>

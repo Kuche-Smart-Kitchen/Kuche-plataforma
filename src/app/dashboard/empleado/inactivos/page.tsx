@@ -4,13 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, XCircle, User, Calendar, RotateCcw, X, MessageSquare } from "lucide-react";
+import { getTaskCardSubtitle, notifyKanbanTasksUpdated, type KanbanTask } from "@/lib/kanban";
+import { syncTaskFollowUpWithBackend } from "@/lib/admin-workflow";
 import {
-  getTasksFromLocalStorage,
-  getTaskCardSubtitle,
-  saveKanbanTasksToLocalStorage,
-  type KanbanTask,
-} from "@/lib/kanban";
-import { syncKanbanTasksFromBackend, syncTaskFollowUpWithBackend } from "@/lib/admin-workflow";
+  isTaskAssignedToEmpleado,
+  loadKanbanTasksForEmpleadoView,
+  taskIsInactivo,
+} from "@/lib/empleado-kanban-filters";
 import { ClientDocuments } from "@/components/admin/ClientDocuments";
 import { splitIntoColumns } from "@/lib/split-into-columns";
 import { useClientCardColumns } from "@/hooks/useClientCardColumns";
@@ -23,18 +23,22 @@ const formatDate = (timestamp: number | undefined): string => {
   return date.toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" });
 };
 
-function isAssignedToEmpleado(t: KanbanTask, empleado: string): boolean {
-  return (t.assignedTo ?? []).some((n) => n === empleado);
-}
-
-/** Inactivos: seguimiento descartado en Kanban (`followUpStatus`), no el campo `status` de la tarea. */
-function isEmpleadoInactivo(t: KanbanTask, empleado: string): boolean {
-  return t.followUpStatus === "descartado" && isAssignedToEmpleado(t, empleado);
+function isEmpleadoInactivo(
+  t: KanbanTask,
+  empleado: { nombre: string; userId?: string | null },
+): boolean {
+  return taskIsInactivo(t) && isTaskAssignedToEmpleado(t, empleado);
 }
 
 export default function EmpleadoInactivosPage() {
   const { user } = useAuthContext();
   const currentEmployeeName = user?.nombre?.trim() || EMPLEADO_DASHBOARD_USER;
+  const currentEmployeeId = user?.id ?? user?._id ?? null;
+  const empleadoMatch = useMemo(
+    () => ({ nombre: currentEmployeeName, userId: currentEmployeeId }),
+    [currentEmployeeName, currentEmployeeId],
+  );
+  const canReactivateClient = user?.rol === "admin";
   const [clients, setClients] = useState<KanbanTask[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
   const [selectedClient, setSelectedClient] = useState<KanbanTask | null>(null);
@@ -48,24 +52,17 @@ export default function EmpleadoInactivosPage() {
 
   useEffect(() => {
     const load = async () => {
-      try {
-        const synced = await syncKanbanTasksFromBackend();
-        const allTasks = (synced ?? getTasksFromLocalStorage()) as KanbanTask[];
-        setClients(allTasks.filter((task) => isEmpleadoInactivo(task, currentEmployeeName)));
-      } catch {
-        const allTasks = getTasksFromLocalStorage();
-        setClients(allTasks.filter((task) => isEmpleadoInactivo(task, currentEmployeeName)));
-      } finally {
-        setIsHydrated(true);
-      }
+      const allTasks = await loadKanbanTasksForEmpleadoView();
+      setClients(allTasks.filter((task) => isEmpleadoInactivo(task, empleadoMatch)));
+      setIsHydrated(true);
     };
 
     void load();
-  }, [currentEmployeeName]);
+  }, [empleadoMatch]);
 
   const handleReactivate = async (clientId: string) => {
     const target = clients.find((c) => c.id === clientId);
-    if (!target || !isAssignedToEmpleado(target, currentEmployeeName)) return;
+    if (!target || !isTaskAssignedToEmpleado(target, empleadoMatch)) return;
 
     setReactivatingId(clientId);
     setReactivateError(null);
@@ -76,20 +73,9 @@ export default function EmpleadoInactivosPage() {
         return;
       }
 
-      const tasks = getTasksFromLocalStorage();
-      const updatedTasks = tasks.map((task) => {
-        if (task.id !== clientId) return task;
-        if (!isAssignedToEmpleado(task, currentEmployeeName)) return task;
-        return {
-          ...task,
-          followUpStatus: "pendiente" as const,
-          status: "pendiente" as const,
-          stage: "contrato" as const,
-          followUpEnteredAt: Date.now(),
-        };
-      });
-      saveKanbanTasksToLocalStorage(updatedTasks);
-      setClients(updatedTasks.filter((task) => isEmpleadoInactivo(task, currentEmployeeName)));
+      const allTasks = await loadKanbanTasksForEmpleadoView();
+      notifyKanbanTasksUpdated(allTasks);
+      setClients(allTasks.filter((task) => isEmpleadoInactivo(task, empleadoMatch)));
       setSelectedClient(null);
     } catch {
       setReactivateError("No se pudo reactivar al cliente. Intenta de nuevo.");
@@ -246,7 +232,9 @@ export default function EmpleadoInactivosPage() {
             <strong>Total (mis proyectos inactivos):</strong> {clients.length}
           </p>
           <p className="mt-1 text-xs text-secondary">
-            Puedes reactivar un cliente si vuelve a estar en seguimiento; solo aplica a tus proyectos asignados.
+            {canReactivateClient
+              ? "Como administrador puedes reactivar un cliente para volver a ponerlo en seguimiento."
+              : "La reactivación de clientes inactivos la realiza un administrador desde operaciones."}
           </p>
         </motion.div>
       </div>
@@ -323,22 +311,24 @@ export default function EmpleadoInactivosPage() {
                   <ClientDocuments task={selectedClient} />
                 </div>
 
-                <div className="border-t border-gray-100 pt-6">
-                  {reactivateError ? (
-                    <p className="mb-3 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
-                      {reactivateError}
-                    </p>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => void handleReactivate(selectedClient.id)}
-                    disabled={reactivatingId === selectedClient.id}
-                    className="flex w-full items-center justify-center gap-2 rounded-2xl border border-primary/15 bg-primary py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
-                  >
-                    <RotateCcw className={`h-4 w-4 ${reactivatingId === selectedClient.id ? "animate-spin" : ""}`} />
-                    {reactivatingId === selectedClient.id ? "Reactivando..." : "Reactivar cliente"}
-                  </button>
-                </div>
+                {canReactivateClient ? (
+                  <div className="border-t border-gray-100 pt-6">
+                    {reactivateError ? (
+                      <p className="mb-3 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                        {reactivateError}
+                      </p>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => void handleReactivate(selectedClient.id)}
+                      disabled={reactivatingId === selectedClient.id}
+                      className="flex w-full items-center justify-center gap-2 rounded-2xl border border-primary/15 bg-primary py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
+                    >
+                      <RotateCcw className={`h-4 w-4 ${reactivatingId === selectedClient.id ? "animate-spin" : ""}`} />
+                      {reactivatingId === selectedClient.id ? "Reactivando..." : "Reactivar cliente"}
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </motion.aside>
           </motion.div>

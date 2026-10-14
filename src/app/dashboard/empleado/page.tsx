@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { CheckCircle2, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
@@ -12,48 +12,35 @@ import { KanbanTablero } from "@/components/admin/KanbanTablero";
 import { PublicStatusEditorModal } from "@/components/admin/PublicStatusEditorModal";
 import { useAuthContext } from "@/contexts/AuthContext";
 import {
-  kanbanColumns,
   getTasksFromLocalStorage,
-  saveKanbanTasksToLocalStorage,
+  kanbanColumns,
+  kanbanTasksUpdatedEventName,
   type KanbanTask,
   type TaskPriority,
   type TaskStage,
 } from "@/lib/kanban";
-import { syncKanbanTasksFromBackend } from "@/lib/admin-workflow";
 import { generatePublicProjectCode } from "@/lib/project-code";
 import { EMPLEADO_DASHBOARD_USER as CURRENT_USER } from "@/lib/empleado-dashboard-user";
 import { fetchAssignableUsers } from "@/lib/axios/usuariosApi";
-
-function isAssignedToCurrentUser(t: KanbanTask, currentUserName: string): boolean {
-  return (t.assignedTo ?? []).some((n) => n === currentUserName);
-}
-
-/** Alineado con “clientes en proceso”: fuera del tablero activo si ya está confirmado o descartado en contrato. */
-function taskIsEnProcesoPipeline(t: KanbanTask): boolean {
-  if (
-    t.stage === "contrato" &&
-    (t.followUpStatus === "confirmado" || t.followUpStatus === "descartado")
-  ) {
-    return false;
-  }
-  return true;
-}
-
-function taskIsConfirmado(t: KanbanTask): boolean {
-  return t.stage === "contrato" && t.followUpStatus === "confirmado";
-}
-
-/** Inactivos: descarte de seguimiento en Kanban (`followUpStatus === "descartado"`). */
-function taskIsInactivo(t: KanbanTask): boolean {
-  return t.followUpStatus === "descartado";
-}
+import { crearTarea } from "@/lib/axios/tareasApi";
+import {
+  isTaskAssignedToEmpleado,
+  loadKanbanTasksForEmpleadoView,
+  taskIsConfirmado,
+  taskIsEnProcesoPipeline,
+  taskIsInactivo,
+} from "@/lib/empleado-kanban-filters";
 
 export default function EmpleadoDashboard() {
   const router = useRouter();
   const { user } = useAuthContext();
   const currentUserName = user?.nombre?.trim() || CURRENT_USER;
+  const currentUserId = user?.id ?? user?._id ?? null;
+  const empleadoMatch = useMemo(
+    () => ({ nombre: currentUserName, userId: currentUserId }),
+    [currentUserName, currentUserId],
+  );
   const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>([]);
-  const [viewMode, setViewMode] = useState<"all" | "mine">("mine");
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isPublicEditorOpen, setIsPublicEditorOpen] = useState(false);
   const [isNewTaskModalOpen, setIsNewTaskModalOpen] = useState(false);
@@ -72,6 +59,7 @@ export default function EmpleadoDashboard() {
   const [newTaskLocation, setNewTaskLocation] = useState("");
   const [newTaskMapsUrl, setNewTaskMapsUrl] = useState("");
   const [taskError, setTaskError] = useState("");
+  const [taskSaving, setTaskSaving] = useState(false);
 
   const newTaskModalRef = useRef<HTMLDivElement | null>(null);
 
@@ -82,21 +70,30 @@ export default function EmpleadoDashboard() {
     if (typeof window === "undefined") return;
 
     const load = async () => {
-      try {
-        const synced = await syncKanbanTasksFromBackend();
-        setKanbanTasks((synced ?? getTasksFromLocalStorage()) as KanbanTask[]);
-      } catch {
-        setKanbanTasks(getTasksFromLocalStorage());
-      }
+      const tasks = await loadKanbanTasksForEmpleadoView();
+      setKanbanTasks(tasks);
     };
 
     void load();
   }, [refreshTrigger]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const syncDropdownFromKanban = () => {
+      setKanbanTasks(getTasksFromLocalStorage());
+    };
+
+    window.addEventListener(kanbanTasksUpdatedEventName, syncDropdownFromKanban);
+    return () => window.removeEventListener(kanbanTasksUpdatedEventName, syncDropdownFromKanban);
+  }, []);
+
   /** Todas las tareas asignadas al empleado que tienen código (incluye confirmadas e inactivas). */
   const myTasksWithCode = useMemo(() => {
-    return kanbanTasks.filter((t) => Boolean(t.codigoProyecto?.trim()) && isAssignedToCurrentUser(t, currentUserName));
-  }, [currentUserName, kanbanTasks]);
+    return kanbanTasks.filter(
+      (t) => Boolean(t.codigoProyecto?.trim()) && isTaskAssignedToEmpleado(t, empleadoMatch),
+    );
+  }, [empleadoMatch, kanbanTasks]);
 
   const tasksProceso = useMemo(
     () => myTasksWithCode.filter(taskIsEnProcesoPipeline),
@@ -125,37 +122,40 @@ export default function EmpleadoDashboard() {
     [myTasksWithCode, selectedPublicTaskIdSafe],
   );
 
-  const handleCreateTask = () => {
+  const handleCreateTask = async () => {
     const project = newTaskProject.trim();
     if (!project) {
       setTaskError("Escribe el proyecto o cliente.");
       return;
     }
-    const now = Date.now();
-    const newTask: KanbanTask = {
-      id: `task-${now}`,
-      title: project,
-      stage: newTaskStage,
-      status: "pendiente",
-      assignedTo: [currentUserName],
-      project,
-      notes: "",
-      files: [],
-      priority: newTaskPriority,
-      dueDate: newTaskDueDate.trim() || undefined,
-      location: newTaskLocation.trim() || undefined,
-      mapsUrl: newTaskMapsUrl.trim() || undefined,
-      createdAt: now,
-      codigoProyecto: generatePublicProjectCode(),
-    };
+
+    const userId = currentUserId?.trim();
+    const asignadoA = Array.from(
+      new Set([...(userId ? [userId] : []), currentUserName].filter(Boolean)),
+    );
+
+    setTaskSaving(true);
+    setTaskError("");
+
     try {
-      const current = getTasksFromLocalStorage();
-      const next = [...current, newTask];
-      if (!saveKanbanTasksToLocalStorage(next)) {
-        setTaskError("No se pudo guardar la tarea.");
-        return;
+      const response = await crearTarea({
+        nombreProyecto: project,
+        etapa: newTaskStage,
+        estado: "pendiente",
+        asignadoA,
+        prioridad: newTaskPriority,
+        ubicacion: newTaskLocation.trim() || undefined,
+        mapsUrl: newTaskMapsUrl.trim() || undefined,
+        notas: "",
+        codigoProyecto: generatePublicProjectCode(),
+        fechaLimite: newTaskDueDate.trim() || undefined,
+      });
+
+      if (!response.success) {
+        throw new Error(response.message || "No se pudo crear la tarea");
       }
-      setRefreshTrigger((t) => t + 1);
+
+      setRefreshTrigger((prev) => prev + 1);
       setIsNewTaskModalOpen(false);
       setNewTaskProject("");
       setNewTaskStage("citas");
@@ -165,7 +165,9 @@ export default function EmpleadoDashboard() {
       setNewTaskMapsUrl("");
       setTaskError("");
     } catch {
-      setTaskError("No se pudo guardar la tarea.");
+      setTaskError("No se pudo guardar la tarea en backend.");
+    } finally {
+      setTaskSaving(false);
     }
   };
 
@@ -190,40 +192,14 @@ export default function EmpleadoDashboard() {
             Hola {currentUserName}, aquí está tu flujo de trabajo.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex rounded-2xl border border-primary/10 bg-white p-1 shadow-sm">
-            <button
-              type="button"
-              onClick={() => setViewMode("mine")}
-              className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
-                viewMode === "mine"
-                  ? "bg-primary text-white"
-                  : "text-secondary hover:bg-primary/5"
-              }`}
-            >
-              Mis tareas
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("all")}
-              className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
-                viewMode === "all"
-                  ? "bg-primary text-white"
-                  : "text-secondary hover:bg-primary/5"
-              }`}
-            >
-              Ver todo
-            </button>
-          </div>
-          <button
-            type="button"
-            onClick={openNewTaskModal}
-            className="flex items-center gap-2 rounded-2xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-90"
-          >
-            <Plus className="h-4 w-4" />
-            Nueva tarea
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={openNewTaskModal}
+          className="flex shrink-0 items-center gap-2 self-start rounded-2xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 sm:self-center"
+        >
+          <Plus className="h-4 w-4" />
+          Nueva tarea
+        </button>
       </div>
 
       <motion.section
@@ -233,11 +209,15 @@ export default function EmpleadoDashboard() {
         className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-md"
       >
         <KanbanTablero
-          filterByEmployee={viewMode === "mine" ? currentUserName : null}
+          filterByEmployee={currentUserName}
+          filterByEmployeeUserId={currentUserId}
           pipelineFilter={taskIsEnProcesoPipeline}
           refreshTrigger={refreshTrigger}
           teamMembers={teamMembers}
           allowDeleteTask={false}
+          allowFollowUpDecisions={false}
+          disableKanbanMemoryTimer
+          onKanbanTasksChange={setKanbanTasks}
         />
       </motion.section>
 
@@ -247,17 +227,6 @@ export default function EmpleadoDashboard() {
         transition={{ duration: 0.4, delay: 0.05 }}
         className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3"
       >
-        <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-md">
-          <p className="text-xs uppercase tracking-[0.3em] text-secondary">Salud del día</p>
-          <h3 className="mt-2 text-xl font-semibold">Ritmo impecable</h3>
-          <p className="mt-3 text-sm text-secondary">
-            4 tareas completadas, 2 citas próximas y 1 diseño para validar.
-          </p>
-          <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-emerald-600">
-            <CheckCircle2 className="h-4 w-4" />
-            Todo en orden
-          </div>
-        </div>
         <div className="rounded-3xl border border-white/70 bg-white/80 p-6 shadow-lg backdrop-blur-md">
           <p className="text-xs uppercase tracking-[0.3em] text-secondary">Cotización</p>
           <h3 className="mt-2 text-xl font-semibold">Cotizador Pro</h3>
@@ -518,10 +487,11 @@ export default function EmpleadoDashboard() {
                 </button>
                 <button
                   type="button"
-                  onClick={handleCreateTask}
-                  className="rounded-2xl bg-primary px-5 py-2 text-xs font-semibold text-white"
+                  onClick={() => void handleCreateTask()}
+                  disabled={taskSaving}
+                  className="rounded-2xl bg-primary px-5 py-2 text-xs font-semibold text-white disabled:cursor-wait disabled:opacity-60"
                 >
-                  Crear tarea
+                  {taskSaving ? "Guardando…" : "Crear tarea"}
                 </button>
               </div>
             </div>
