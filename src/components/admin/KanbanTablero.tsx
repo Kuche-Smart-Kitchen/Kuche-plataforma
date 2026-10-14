@@ -53,6 +53,7 @@ import {
   stageStyles,
   getCotizacionesFormalesList,
   mergeKanbanTaskLists,
+  resolveKanbanTaskPersistenceId,
 } from "@/lib/kanban";
 import { dueDateToSortTimestamp, formatDueDateTimeDisplay } from "@/lib/kanban-due-datetime";
 import { subirArchivoCliente } from "@/lib/axios/archivosClienteApi";
@@ -977,7 +978,10 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
           telefonoCliente: visitDraft.phone.trim(),
           ubicacion: visitDraft.location.trim() || undefined,
           informacionAdicional: "Presentación de diseño",
-          tareaId: task.id,
+          // La tarjeta pudo avanzar a "Diseños" localmente antes de que el backend reemplace el id
+          // de Cita por el id real de Tarea; resolvemos el id correcto para que el backend valide
+          // la visita contra el mismo cliente/tarea (evita "La visita debe corresponder al cliente de la tarea").
+          tareaId: resolveKanbanTaskPersistenceId(task, kanbanTasksRef.current),
         },
         visitCaptchaToken,
       );
