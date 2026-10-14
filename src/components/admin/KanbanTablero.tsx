@@ -919,9 +919,9 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const confirmFollowUp = async (taskId: string) => {
     if (!canManageFollowUp) return;
     const task = kanbanTasksRef.current.find((t) => t.id === taskId);
-    // Confirmar/descartar solo aplica en Seguimiento: hacerlo en otra etapa manda `estado:
-    // "completada"` al backend y provoca que la tarea salte de etapa sola (bug reportado).
-    if (!task || task.stage !== "contrato") return;
+    // Confirmar al cliente está permitido en cualquier etapa y no debe mover la tarjeta de
+    // columna: solo marca al cliente como confirmado, conserva task.stage tal cual.
+    if (!task) return;
     updateTask(taskId, (t) => ({
       ...t,
       ...followUpDecisionUpdates(t, "confirmado"),
@@ -941,7 +941,9 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
   const discardFollowUp = async (taskId: string) => {
     if (!canManageFollowUp) return;
     const task = kanbanTasksRef.current.find((t) => t.id === taskId);
-    if (!task || task.stage !== "contrato") return;
+    // Descartar también está permitido en cualquier etapa: cierra el ciclo y oculta la tarjeta
+    // del tablero (ver filtro columnTasksRaw), sin mover task.stage.
+    if (!task) return;
     updateTask(taskId, (t) => ({
       ...t,
       ...followUpDecisionUpdates(t, "descartado"),
@@ -1698,10 +1700,10 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
           {kanbanColumns.map((column) => {
             const columnTasksRaw = filteredTasks.filter((task) => {
               if (task.stage !== column.id) return false;
-              // Un cliente confirmado/descartado ya cerró su ciclo: se oculta del tablero sin
-              // importar en qué etapa haya quedado (incluye tarjetas con datos heredados de antes
-              // de este fix, cuando se podía confirmar/descartar fuera de Seguimiento).
-              if (task.followUpStatus === "confirmado" || task.followUpStatus === "descartado") {
+              // Descartar cierra el ciclo del cliente: se oculta del tablero (solo aparece en
+              // Clientes descartados) sin importar en qué etapa haya quedado. Confirmar NO oculta
+              // ni mueve la tarjeta: el cliente sigue su flujo normal en la etapa donde está.
+              if (task.followUpStatus === "descartado") {
                 return false;
               }
               return true;
@@ -2635,7 +2637,9 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                   </div>
                 ) : null}
 
-                {activeTask.stage === "contrato" ? (
+                {/* Confirmar/descartar está disponible en cualquier etapa: confirmar no mueve ni
+                    oculta la tarjeta (el cliente sigue su flujo normal), descartar la oculta del
+                    tablero (ver filtro columnTasksRaw) sin tocar activeTask.stage. */}
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
                     Estado del cliente
@@ -2669,14 +2673,13 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                         Descartar
                       </button>
                     </div>
-                  ) : (
+                  ) : activeTask.stage === "contrato" ? (
                     <div className="mt-3 flex items-center gap-2 rounded-2xl bg-sky-50 px-4 py-3 text-sm text-sky-700">
                       <Clock className="h-5 w-5 shrink-0" />
                       <span className="font-semibold">Seguimiento pendiente</span>
                     </div>
-                  )}
+                  ) : null}
                 </div>
-                ) : null}
 
                 {activeTask.stage === "disenos" || activeTask.stage === "contrato" ? (
                   <div>

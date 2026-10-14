@@ -617,9 +617,11 @@ export async function syncTaskFollowUpWithBackend(
   if (!taskId) return false;
 
   try {
+    // No se envía `estado` aquí: ese campo lo usa mapKanbanItemToTask como señal de "cita
+    // terminada" para avanzar de etapa (citas -> disenos). Si confirmar/descartar lo pisara con
+    // "completada" en cualquier etapa, el próximo sync movería la tarjeta sola (bug reportado).
     await actualizarTarea(taskId, {
       followUpStatus: followUpStatus === "descartado" ? "inactivo" : followUpStatus,
-      estado: followUpStatus === "pendiente" ? "pendiente" : "completada",
     });
     return true;
   } catch (error) {
