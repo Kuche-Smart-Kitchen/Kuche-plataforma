@@ -317,11 +317,11 @@ const normalizeTask = (task: Partial<KanbanTask> & Record<string, unknown>): Kan
     designFeedback: effectiveFeedback,
     ...(() => {
       const code =
+        (typeof task.clienteId === "string" && task.clienteId.trim()) ||
+        (typeof task.codigo === "string" && task.codigo.trim()) ||
         (typeof task.codigoProyecto === "string" && task.codigoProyecto.trim()) ||
         (typeof task.codigoCliente === "string" && task.codigoCliente.trim()) ||
-        (typeof task.clienteId === "string" && task.clienteId.trim()) ||
         (typeof task.clientId === "string" && task.clientId.trim()) ||
-        (typeof task.codigo === "string" && task.codigo.trim()) ||
         "";
       return {
         codigoProyecto: code || undefined,

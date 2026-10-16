@@ -12,10 +12,12 @@ import {
   type KanbanItem,
 } from "@/lib/axios/kanbanApi";
 import { actualizarTarea, asignarTrabajadoresTarea, cambiarEtapa } from "@/lib/axios/tareasApi";
+import { readPersistedPublicCode } from "@/lib/project-code";
 import { obtenerVisitas } from "@/lib/axios/visitasApi";
 import {
   getTasksFromLocalStorage,
   mergeKanbanTaskLists,
+  taskPublicCode,
   resolveKanbanTaskPersistenceId,
   saveKanbanTasksToLocalStorage,
   type CotizacionFormalData,
@@ -324,17 +326,12 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     designFeedback: toFeedbackString(raw.designFeedback),
     ...(() => {
       const code =
-        toStringValue(itemRecord.codigoProyecto) ??
-        toStringValue(raw.codigoProyecto) ??
-        toStringValue(raw.codigo) ??
-        toStringValue(raw.codigoCliente) ??
-        toStringValue(itemRecord.clienteId) ??
-        toStringValue(raw.clienteId) ??
-        toStringValue(raw.clientId);
+        readPersistedPublicCode(itemRecord) ??
+        readPersistedPublicCode(cliente);
       return {
         codigoProyecto: code,
-        codigo: code,
         clienteId: code,
+        codigo: code,
         codigoCliente: code,
       };
     })(),
@@ -471,8 +468,12 @@ const buildTaskPatchPayload = (task: KanbanTask, patch: Partial<KanbanTask>): Re
   if (patch.mapsUrl !== undefined || task.mapsUrl !== undefined) payload.mapsUrl = snapshot.mapsUrl;
   if (patch.dueDate !== undefined || task.dueDate !== undefined) payload.fechaLimite = snapshot.dueDate;
   if (patch.priority !== undefined || task.priority !== undefined) payload.prioridad = snapshot.priority;
-  if (patch.codigoProyecto !== undefined || task.codigoProyecto !== undefined) {
-    payload.codigoProyecto = snapshot.codigoProyecto;
+  const publicCode = taskPublicCode(snapshot);
+  if (publicCode) {
+    payload.codigoProyecto = publicCode;
+    payload.clienteId = publicCode;
+    payload.codigo = publicCode;
+    payload.codigoCliente = publicCode;
   }
   // followUpEnteredAt/followUpReminderStepsSent/followUpLastReminderAt son propiedad exclusiva del backend/cron
   // (ver GUIA_FRONTEND_CRON_SEGUIMIENTO_EMAIL.md): nunca se envían al servidor, solo se leen.

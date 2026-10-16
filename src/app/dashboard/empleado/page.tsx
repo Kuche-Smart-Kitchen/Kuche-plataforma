@@ -22,7 +22,7 @@ import {
   type TaskPriority,
   type TaskStage,
 } from "@/lib/kanban";
-import { generatePublicProjectCode } from "@/lib/project-code";
+import { generatePublicProjectCode, readPersistedPublicCode } from "@/lib/project-code";
 import { EMPLEADO_DASHBOARD_USER as CURRENT_USER } from "@/lib/empleado-dashboard-user";
 import { fetchAssignableUsers } from "@/lib/axios/usuariosApi";
 import { actualizarTarea, crearTarea } from "@/lib/axios/tareasApi";
@@ -190,13 +190,28 @@ export default function EmpleadoDashboard() {
       }
 
       const createdId = readCreatedTaskId(response.data) ?? `task-${Date.now()}`;
+      const createdRecord = response.data;
+      const pickCode = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+      let persistedCode =
+        pickCode(createdRecord.clienteId) ||
+        pickCode(createdRecord.codigo) ||
+        readPersistedPublicCode(createdRecord);
       if (!createdId.startsWith("task-")) {
         try {
-          await actualizarTarea(createdId, contacto);
+          const patchResponse = await actualizarTarea(createdId, contacto);
+          if (patchResponse.success) {
+            persistedCode = readPersistedPublicCode(patchResponse.data) || persistedCode;
+          }
         } catch (patchError) {
           console.warn("La tarea se creó, pero no se pudo reafirmar el código de proyecto.", patchError);
         }
       }
+      if (!persistedCode) {
+        console.warn(
+          "El backend creó la tarea sin devolver clienteId ni codigoProyecto. El GET del Kanban no podrá rehidratar el código hasta que el modelo Tarea persista ese campo.",
+        );
+      }
+      const codeForCard = persistedCode || codigoProyecto;
 
       const localTask = withUnifiedProjectCode(
         {
@@ -218,10 +233,10 @@ export default function EmpleadoDashboard() {
           clientPhone: telefono || undefined,
           createdAt: Date.now(),
         },
-        codigoProyecto,
+        codeForCard,
       );
       const nextTasks = [
-        ...getTasksFromLocalStorage().filter((task) => task.id !== createdId && taskPublicCode(task) !== codigoProyecto),
+        ...getTasksFromLocalStorage().filter((task) => task.id !== createdId && taskPublicCode(task) !== codeForCard),
         localTask,
       ];
       notifyKanbanTasksUpdated(nextTasks);

@@ -193,6 +193,7 @@ export default function OperacionesPage() {
           newTaskAssignedTo && newTaskAssignedTo !== "Sin asignar"
             ? [newTaskAssignedTo]
             : [];
+        const codigoProyecto = generatePublicProjectCode();
         const response = await crearTarea({
           nombreProyecto: project,
           etapa: newTaskStage,
@@ -202,7 +203,10 @@ export default function OperacionesPage() {
           ubicacion: newTaskLocation.trim() || undefined,
           mapsUrl: newTaskMapsUrl.trim() || undefined,
           notas: "",
-          codigoProyecto: generatePublicProjectCode(),
+          codigoProyecto,
+          clienteId: codigoProyecto,
+          codigo: codigoProyecto,
+          codigoCliente: codigoProyecto,
           fechaLimite: newTaskDueDate.trim() || undefined,
         });
         if (!response.success) {

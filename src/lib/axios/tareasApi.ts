@@ -45,8 +45,18 @@ export const actualizarTarea = async (
 export const crearTarea = async (
   data: Record<string, unknown>,
 ): Promise<ApiResponse<Record<string, unknown>>> => {
-  const response = await axiosInstance.post<ApiResponse<Record<string, unknown>>>("/api/tareas", data);
-  return response.data;
+  const response = await axiosInstance.post<ApiResponse<Record<string, unknown>> | Record<string, unknown>>(
+    "/api/tareas",
+    data,
+  );
+  const body = response.data;
+  if (body && typeof body === "object" && "success" in body) {
+    return body as ApiResponse<Record<string, unknown>>;
+  }
+  if (response.status === 201 || response.status === 200) {
+    return { success: true, data: (body ?? {}) as Record<string, unknown> };
+  }
+  return { success: false, message: "No se pudo crear la tarea" };
 };
 
 export const eliminarTarea = async (

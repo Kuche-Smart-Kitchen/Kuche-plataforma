@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useMemo, type ReactNode } from 
 import { actualizarCita, finalizarCita } from "@/lib/axios/citasApi";
 import { actualizarTarea, asignarTrabajadoresTarea } from "@/lib/axios/tareasApi";
 import { dueDateToSortTimestamp } from "@/lib/kanban-due-datetime";
-import type { KanbanTask } from "@/lib/kanban";
+import { taskPublicCode, type KanbanTask } from "@/lib/kanban";
 
 type TareasContextType = {
   actualizar: (task: KanbanTask, patch?: Partial<KanbanTask>) => Promise<void>;
@@ -43,7 +43,13 @@ export function TareasProvider({ children }: { children: ReactNode }) {
     if (patch.citaFinished !== undefined) data.citaFinished = snapshot.citaFinished;
     if (patch.designApprovedByAdmin !== undefined) data.designApprovedByAdmin = snapshot.designApprovedByAdmin;
     if (patch.designApprovedByClient !== undefined) data.designApprovedByClient = snapshot.designApprovedByClient;
-    if (patch.codigoProyecto !== undefined) data.codigoProyecto = snapshot.codigoProyecto;
+    const publicCode = taskPublicCode(snapshot);
+    if (publicCode) {
+      data.codigoProyecto = publicCode;
+      data.clienteId = publicCode;
+      data.codigo = publicCode;
+      data.codigoCliente = publicCode;
+    }
     if (Object.keys(data).length === 0) return;
 
     const response = await actualizarTarea(task.id, data);
