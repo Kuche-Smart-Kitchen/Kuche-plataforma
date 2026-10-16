@@ -22,7 +22,7 @@ import {
 import { generatePublicProjectCode } from "@/lib/project-code";
 import { EMPLEADO_DASHBOARD_USER as CURRENT_USER } from "@/lib/empleado-dashboard-user";
 import { fetchAssignableUsers } from "@/lib/axios/usuariosApi";
-import { crearTarea } from "@/lib/axios/tareasApi";
+import { actualizarTarea, crearTarea } from "@/lib/axios/tareasApi";
 import {
   isTaskAssignedToEmpleado,
   loadKanbanTasksForEmpleadoView,
@@ -30,6 +30,18 @@ import {
   taskIsEnProcesoPipeline,
   taskIsInactivo,
 } from "@/lib/empleado-kanban-filters";
+
+const readCreatedTaskId = (data: unknown): string | null => {
+  if (!data || typeof data !== "object") return null;
+  const record = data as Record<string, unknown>;
+  const direct = record._id ?? record.id;
+  if (typeof direct === "string" && direct.trim()) return direct.trim();
+  const nested = record.tarea ?? record.task ?? record.data;
+  if (!nested || typeof nested !== "object") return null;
+  const inner = nested as Record<string, unknown>;
+  const nestedId = inner._id ?? inner.id;
+  return typeof nestedId === "string" && nestedId.trim() ? nestedId.trim() : null;
+};
 
 export default function EmpleadoDashboard() {
   const router = useRouter();
@@ -47,6 +59,8 @@ export default function EmpleadoDashboard() {
   const [kanbanTasks, setKanbanTasks] = useState<KanbanTask[]>([]);
   const [selectedPublicTaskId, setSelectedPublicTaskId] = useState<string | null>(null);
   const [newTaskProject, setNewTaskProject] = useState("");
+  const [newTaskEmail, setNewTaskEmail] = useState("");
+  const [newTaskPhone, setNewTaskPhone] = useState("");
   const [newTaskStage, setNewTaskStage] = useState<TaskStage>("citas");
   const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>("media");
   const [newTaskDueDate, setNewTaskDueDate] = useState("");
@@ -58,6 +72,7 @@ export default function EmpleadoDashboard() {
   }, []);
   const [newTaskLocation, setNewTaskLocation] = useState("");
   const [newTaskMapsUrl, setNewTaskMapsUrl] = useState("");
+  const [newTaskCode, setNewTaskCode] = useState("");
   const [taskError, setTaskError] = useState("");
   const [taskSaving, setTaskSaving] = useState(false);
 
@@ -134,12 +149,27 @@ export default function EmpleadoDashboard() {
       new Set([...(userId ? [userId] : []), currentUserName].filter(Boolean)),
     );
 
+    const codigoProyecto = newTaskCode.trim() || generatePublicProjectCode();
+    const correo = newTaskEmail.trim();
+    const telefono = newTaskPhone.trim();
+    const contacto = {
+      nombre: project,
+      nombreCliente: project,
+      nombreProyecto: project,
+      correo: correo || undefined,
+      correoCliente: correo || undefined,
+      telefono: telefono || undefined,
+      telefonoCliente: telefono || undefined,
+      codigoProyecto,
+      clienteId: codigoProyecto,
+      codigoCliente: codigoProyecto,
+    };
+
     setTaskSaving(true);
     setTaskError("");
 
     try {
       const response = await crearTarea({
-        nombreProyecto: project,
         etapa: newTaskStage,
         estado: "pendiente",
         asignadoA,
@@ -147,25 +177,40 @@ export default function EmpleadoDashboard() {
         ubicacion: newTaskLocation.trim() || undefined,
         mapsUrl: newTaskMapsUrl.trim() || undefined,
         notas: "",
-        codigoProyecto: generatePublicProjectCode(),
         fechaLimite: newTaskDueDate.trim() || undefined,
+        ...contacto,
       });
 
       if (!response.success) {
         throw new Error(response.message || "No se pudo crear la tarea");
       }
 
+      const createdId = readCreatedTaskId(response.data);
+      if (createdId) {
+        try {
+          await actualizarTarea(createdId, contacto);
+        } catch (patchError) {
+          console.warn("La tarea se creó, pero no se pudo reafirmar el código de proyecto.", patchError);
+        }
+      }
+
       setRefreshTrigger((prev) => prev + 1);
       setIsNewTaskModalOpen(false);
       setNewTaskProject("");
+      setNewTaskEmail("");
+      setNewTaskPhone("");
       setNewTaskStage("citas");
       setNewTaskPriority("media");
       setNewTaskDueDate("");
       setNewTaskLocation("");
       setNewTaskMapsUrl("");
       setTaskError("");
-    } catch {
-      setTaskError("No se pudo guardar la tarea en backend.");
+    } catch (error) {
+      const backendMessage = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setTaskError(
+        backendMessage ||
+          (error instanceof Error ? error.message : "No se pudo guardar la tarea en backend."),
+      );
     } finally {
       setTaskSaving(false);
     }
@@ -173,11 +218,14 @@ export default function EmpleadoDashboard() {
 
   const openNewTaskModal = () => {
     setNewTaskProject("");
+    setNewTaskEmail("");
+    setNewTaskPhone("");
     setNewTaskStage("citas");
     setNewTaskPriority("media");
     setNewTaskDueDate("");
     setNewTaskLocation("");
     setNewTaskMapsUrl("");
+    setNewTaskCode(generatePublicProjectCode());
     setTaskError("");
     setIsNewTaskModalOpen(true);
   };
@@ -400,6 +448,10 @@ export default function EmpleadoDashboard() {
               <p className="mt-2 text-sm text-secondary">
                 La tarea será asignada automáticamente a ti ({currentUserName}).
               </p>
+              <p className="mt-3 text-sm text-gray-900">
+                Código de proyecto:{" "}
+                <span className="font-semibold tracking-wide text-primary">{newTaskCode}</span>
+              </p>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
             <div className="space-y-4">
@@ -409,6 +461,26 @@ export default function EmpleadoDashboard() {
                   value={newTaskProject}
                   onChange={(e) => setNewTaskProject(e.target.value)}
                   placeholder="Ej. Residencial Vega"
+                  className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
+                />
+              </label>
+              <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
+                Correo
+                <input
+                  type="email"
+                  value={newTaskEmail}
+                  onChange={(e) => setNewTaskEmail(e.target.value)}
+                  placeholder="cliente@correo.com"
+                  className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
+                />
+              </label>
+              <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
+                Teléfono
+                <input
+                  type="tel"
+                  value={newTaskPhone}
+                  onChange={(e) => setNewTaskPhone(e.target.value)}
+                  placeholder="55 0000 0000"
                   className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
                 />
               </label>

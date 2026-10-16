@@ -237,6 +237,7 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     toStringValue(cliente?.nombre) ??
     toStringValue(cita?.nombreCliente) ??
     toStringValue(raw.nombreProyecto) ??
+    toStringValue(raw.nombre) ??
     toStringValue(raw.proyecto) ??
     "Proyecto sin nombre";
   const notes =
@@ -249,6 +250,7 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     toStringValue(cita?.correoCliente) ??
     toStringValue(cita?.email) ??
     toStringValue(raw.correoCliente) ??
+    toStringValue(raw.correo) ??
     toStringValue(raw.emailCliente) ??
     toStringValue(raw.clientEmail) ??
     toStringValue(raw.email);
@@ -350,6 +352,34 @@ export type FetchBackendKanbanTasksResult = {
   failedColumns: KanbanBackendColumn[];
 };
 
+/**
+ * La columna citas mezcla citas reales y tareas creadas en esa etapa.
+ * Front_plataforma solo marcaba cita si venía `sourceType: "cita"` o un documento `cita` anidado.
+ * Una tarea con `nombreProyecto` y sin cita no debe disparar `PUT /api/citas/:id/iniciar`.
+ */
+const resolveColumnSourceType = (
+  item: KanbanItem,
+  columnSource: "cita" | "tarea",
+): "cita" | "tarea" => {
+  if (columnSource !== "cita") return "tarea";
+
+  const raw = toRecord(item);
+  if (!raw) return "cita";
+
+  const declared = toStringValue(raw.sourceType)?.toLowerCase();
+  if (declared === "tarea") return "tarea";
+  if (declared === "cita") return "cita";
+  if (toRecord(raw.cita)) return "cita";
+
+  const hasAppointmentFields = Boolean(
+    toStringValue(raw.nombreCliente) || toStringValue(raw.fechaAgendada),
+  );
+  const hasTaskFields = Boolean(toStringValue(raw.nombreProyecto) || toStringValue(raw.titulo));
+  if (hasTaskFields && !hasAppointmentFields) return "tarea";
+
+  return "cita";
+};
+
 const KANBAN_BACKEND_COLUMNS: {
   column: KanbanBackendColumn;
   sourceType: "cita" | "tarea";
@@ -379,7 +409,10 @@ export async function fetchBackendKanbanTasksWithStatus(): Promise<FetchBackendK
       continue;
     }
     for (const item of response.data) {
-      mapped.push({ ...mapKanbanItemToTask(item), sourceType });
+      mapped.push({
+        ...mapKanbanItemToTask(item),
+        sourceType: resolveColumnSourceType(item, sourceType),
+      });
     }
   }
 

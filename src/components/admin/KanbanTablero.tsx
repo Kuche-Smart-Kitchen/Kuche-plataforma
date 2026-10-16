@@ -37,6 +37,7 @@ import {
 import { syncSeguimientoEstadoFromKanbanConfirm } from "@/lib/seguimiento-project";
 import {
   activeCitaTaskStorageKey,
+  citaReturnUrlStorageKey,
   kanbanColumns,
   initialKanbanTasks,
   kanbanTasksUpdatedEventName,
@@ -1053,29 +1054,33 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
     }
   };
 
-  const startCita = async (taskId: string) => {
+  const startCita = (taskId: string) => {
     const taskSnapshot = kanbanTasksRef.current.find((t) => t.id === taskId);
     updateTask(taskId, (task) => ({ ...task, citaStarted: true }));
-    let canContinue = true;
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(activeCitaTaskStorageKey, taskId);
+      window.localStorage.setItem(citaReturnUrlStorageKey, window.location.pathname);
+    }
+
     if (taskSnapshot) {
       const isCita = taskSnapshot.sourceType?.toLowerCase() === "cita";
-      const citaOk = isCita ? await syncCitaStartWithBackend(taskSnapshot) : true;
-      const patchOk = isCita
-        ? true
-        : await syncTaskPatchWithBackend(taskSnapshot, { citaStarted: true });
-      if (!citaOk || !patchOk) {
-        canContinue = false;
-        updateTask(taskId, (task) => ({ ...task, citaStarted: taskSnapshot.citaStarted ?? false }));
-        setBackendSyncMessage("No se pudo sincronizar el inicio de cita en backend.");
-        window.setTimeout(() => setBackendSyncMessage(null), 4500);
-      }
+      const sync = isCita
+        ? syncCitaStartWithBackend(taskSnapshot)
+        : syncTaskPatchWithBackend(taskSnapshot, { citaStarted: true });
+      void sync.then(
+        (ok) => {
+          if (!ok) {
+            console.warn("Inicio de cita local: el backend no confirmó citaStarted.", taskSnapshot.id);
+          }
+        },
+        (error: unknown) => {
+          console.warn("Inicio de cita local: la sincronización falló.", taskSnapshot.id, error);
+        },
+      );
     }
-    if (canContinue) {
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(activeCitaTaskStorageKey, taskId);
-      }
-      router.push(`/dashboard/Levantamiento-detallado?taskId=${encodeURIComponent(taskId)}`);
-    }
+
+    router.push(`/dashboard/Levantamiento-detallado?taskId=${encodeURIComponent(taskId)}`);
   };
 
   const resumeCita = (taskId: string) => {
