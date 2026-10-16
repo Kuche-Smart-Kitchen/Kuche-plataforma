@@ -1878,11 +1878,6 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                               {task.project}
                             </p>
                           </div>
-                          {taskPublicCode(task) ? (
-                            <p className="mt-1 font-mono text-xs font-semibold tracking-[0.18em] text-primary">
-                              {taskPublicCode(task)}
-                            </p>
-                          ) : null}
                             {(task.location || task.mapsUrl) ? (
                               <p className="mt-1 line-clamp-1 break-words text-xs leading-4 text-secondary">
                                 {task.location}
