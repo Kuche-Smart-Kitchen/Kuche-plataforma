@@ -38,7 +38,9 @@ import { syncSeguimientoEstadoFromKanbanConfirm } from "@/lib/seguimiento-projec
 import {
   activeCitaTaskStorageKey,
   citaReturnUrlStorageKey,
+  getTasksFromLocalStorage,
   kanbanColumns,
+  taskPublicCode,
   initialKanbanTasks,
   kanbanTasksUpdatedEventName,
   notifyKanbanTasksUpdated,
@@ -313,12 +315,21 @@ const normalizeTask = (task: Partial<KanbanTask> & Record<string, unknown>): Kan
     designApprovedByAdmin: Boolean(task.designApprovedByAdmin),
     designApprovedByClient: Boolean(task.designApprovedByClient),
     designFeedback: effectiveFeedback,
-    codigoProyecto:
-      (typeof task.codigoProyecto === "string" && task.codigoProyecto.trim()) ||
-      (typeof task.codigoCliente === "string" && task.codigoCliente.trim()) ||
-      (typeof task.clientId === "string" && task.clientId.trim()) ||
-      (typeof task.codigo === "string" && task.codigo.trim()) ||
-      undefined,
+    ...(() => {
+      const code =
+        (typeof task.codigoProyecto === "string" && task.codigoProyecto.trim()) ||
+        (typeof task.codigoCliente === "string" && task.codigoCliente.trim()) ||
+        (typeof task.clienteId === "string" && task.clienteId.trim()) ||
+        (typeof task.clientId === "string" && task.clientId.trim()) ||
+        (typeof task.codigo === "string" && task.codigo.trim()) ||
+        "";
+      return {
+        codigoProyecto: code || undefined,
+        codigo: code || undefined,
+        clienteId: code || undefined,
+        codigoCliente: code || undefined,
+      };
+    })(),
     contractDate: typeof task.contractDate === "string" ? task.contractDate : undefined,
     estimatedDeliveryDate:
       typeof task.estimatedDeliveryDate === "string" ? task.estimatedDeliveryDate : undefined,
@@ -569,9 +580,10 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       options?: { failedColumns?: KanbanBackendColumn[] },
     ) => {
       const failedColumns = options?.failedColumns ?? [];
-      let mergedInput = mergeBackendWithPreservedFailedColumns(
+      let mergedInput = mergeKanbanTaskLists(getTasksFromLocalStorage(), rawTasks);
+      mergedInput = mergeBackendWithPreservedFailedColumns(
         kanbanTasksRef.current,
-        rawTasks,
+        mergedInput,
         failedColumns,
       );
       mergedInput = mergeKanbanTaskLists(kanbanTasksRef.current, mergedInput);
@@ -708,7 +720,13 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       if (shouldThrottleWindowSync()) return;
       void syncFromBackend();
     };
-    const handleKanbanTasksUpdated = () => void syncFromBackend();
+    const handleKanbanTasksUpdated = () => {
+      const local = getTasksFromLocalStorage();
+      if (local.length > 0) {
+        hydrateAndApplyTasks(local, false);
+      }
+      void syncFromBackend();
+    };
     window.addEventListener("focus", handleFocus);
     window.addEventListener(kanbanTasksUpdatedEventName, handleKanbanTasksUpdated);
     document.addEventListener("visibilitychange", handleVisibility);
@@ -1852,13 +1870,19 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                           ) : null}
                         </div>
                         <div className="mt-3 flex flex-1 flex-col">
-                          <div className="min-h-[3.75rem] max-h-[3.75rem]">
+                          <div className="min-h-[3rem] max-h-[3rem]">
                             <p
                               className="line-clamp-2 break-words text-base font-semibold leading-6 text-gray-900"
                               title={task.project}
                             >
                               {task.project}
                             </p>
+                          </div>
+                          {taskPublicCode(task) ? (
+                            <p className="mt-1 font-mono text-xs font-semibold tracking-[0.18em] text-primary">
+                              {taskPublicCode(task)}
+                            </p>
+                          ) : null}
                             {(task.location || task.mapsUrl) ? (
                               <p className="mt-1 line-clamp-1 break-words text-xs leading-4 text-secondary">
                                 {task.location}
@@ -1881,7 +1905,6 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                                 {task.title}
                               </p>
                             ) : null}
-                          </div>
                           <div className="mt-3 min-h-[1.75rem]">
                             <div className="flex flex-wrap gap-2">
                               {/* CITAS: Iniciar → Terminar */}
@@ -2127,11 +2150,11 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
                       ) : null}
                     </p>
                   ) : null}
-                  {activeTask.codigoProyecto ? (
+                  {taskPublicCode(activeTask) ? (
                     <p className="mt-2 text-sm text-secondary">
                       Código de seguimiento{" "}
                       <span className="font-mono text-base font-semibold tracking-wide text-primary">
-                        {activeTask.codigoProyecto}
+                        {taskPublicCode(activeTask)}
                       </span>
                     </p>
                   ) : null}

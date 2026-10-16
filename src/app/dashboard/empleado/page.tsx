@@ -15,6 +15,9 @@ import {
   getTasksFromLocalStorage,
   kanbanColumns,
   kanbanTasksUpdatedEventName,
+  notifyKanbanTasksUpdated,
+  taskPublicCode,
+  withUnifiedProjectCode,
   type KanbanTask,
   type TaskPriority,
   type TaskStage,
@@ -106,7 +109,7 @@ export default function EmpleadoDashboard() {
   /** Todas las tareas asignadas al empleado que tienen código (incluye confirmadas e inactivas). */
   const myTasksWithCode = useMemo(() => {
     return kanbanTasks.filter(
-      (t) => Boolean(t.codigoProyecto?.trim()) && isTaskAssignedToEmpleado(t, empleadoMatch),
+      (t) => Boolean(taskPublicCode(t)) && isTaskAssignedToEmpleado(t, empleadoMatch),
     );
   }, [empleadoMatch, kanbanTasks]);
 
@@ -161,6 +164,7 @@ export default function EmpleadoDashboard() {
       telefono: telefono || undefined,
       telefonoCliente: telefono || undefined,
       codigoProyecto,
+      codigo: codigoProyecto,
       clienteId: codigoProyecto,
       codigoCliente: codigoProyecto,
     };
@@ -185,14 +189,43 @@ export default function EmpleadoDashboard() {
         throw new Error(response.message || "No se pudo crear la tarea");
       }
 
-      const createdId = readCreatedTaskId(response.data);
-      if (createdId) {
+      const createdId = readCreatedTaskId(response.data) ?? `task-${Date.now()}`;
+      if (!createdId.startsWith("task-")) {
         try {
           await actualizarTarea(createdId, contacto);
         } catch (patchError) {
           console.warn("La tarea se creó, pero no se pudo reafirmar el código de proyecto.", patchError);
         }
       }
+
+      const localTask = withUnifiedProjectCode(
+        {
+          id: createdId,
+          sourceId: createdId,
+          sourceType: "tarea",
+          title: project,
+          project,
+          stage: newTaskStage,
+          status: "pendiente" as const,
+          assignedTo: [currentUserName],
+          assignedToIds: userId ? [userId] : undefined,
+          notes: "",
+          priority: newTaskPriority,
+          dueDate: newTaskDueDate.trim() || undefined,
+          location: newTaskLocation.trim() || undefined,
+          mapsUrl: newTaskMapsUrl.trim() || undefined,
+          clientEmail: correo || undefined,
+          clientPhone: telefono || undefined,
+          createdAt: Date.now(),
+        },
+        codigoProyecto,
+      );
+      const nextTasks = [
+        ...getTasksFromLocalStorage().filter((task) => task.id !== createdId && taskPublicCode(task) !== codigoProyecto),
+        localTask,
+      ];
+      notifyKanbanTasksUpdated(nextTasks);
+      setKanbanTasks(nextTasks);
 
       setRefreshTrigger((prev) => prev + 1);
       setIsNewTaskModalOpen(false);
@@ -354,8 +387,8 @@ export default function EmpleadoDashboard() {
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-secondary">Detalles de proyecto</p>
             <h3 className="mt-2 text-xl font-semibold">
-              {selectedPublicTask && selectedPublicTask.codigoProyecto
-                ? `Cliente ${selectedPublicTask.codigoProyecto} · ${selectedPublicTask.project ?? selectedPublicTask.title}`
+              {selectedPublicTask && taskPublicCode(selectedPublicTask)
+                ? `Cliente ${taskPublicCode(selectedPublicTask)} · ${selectedPublicTask.project ?? selectedPublicTask.title}`
                 : "Sin proyectos asignados con código"}
             </h3>
             <p className="mt-2 text-sm text-secondary">
@@ -376,7 +409,7 @@ export default function EmpleadoDashboard() {
                     <optgroup label="En Proceso">
                       {tasksProceso.map((t) => (
                         <option key={t.id} value={t.id}>
-                          {t.codigoProyecto} · {t.project ?? t.title}
+                          {taskPublicCode(t)} · {t.project ?? t.title}
                         </option>
                       ))}
                     </optgroup>
@@ -385,7 +418,7 @@ export default function EmpleadoDashboard() {
                     <optgroup label="Confirmados">
                       {tasksConfirmados.map((t) => (
                         <option key={t.id} value={t.id}>
-                          {t.codigoProyecto} · {t.project ?? t.title}
+                          {taskPublicCode(t)} · {t.project ?? t.title}
                         </option>
                       ))}
                     </optgroup>
@@ -394,7 +427,7 @@ export default function EmpleadoDashboard() {
                     <optgroup label="Inactivos/Descartados">
                       {tasksInactivos.map((t) => (
                         <option key={t.id} value={t.id}>
-                          {t.codigoProyecto} · {t.project ?? t.title}
+                          {taskPublicCode(t)} · {t.project ?? t.title}
                         </option>
                       ))}
                     </optgroup>
@@ -404,7 +437,7 @@ export default function EmpleadoDashboard() {
             ) : null}
             <button
               type="button"
-              disabled={!selectedPublicTask?.codigoProyecto}
+              disabled={!selectedPublicTask || !taskPublicCode(selectedPublicTask)}
               onClick={() => setIsPublicEditorOpen(true)}
               className="rounded-2xl bg-primary px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -414,12 +447,12 @@ export default function EmpleadoDashboard() {
         </div>
       </motion.section>
 
-      {isPublicEditorOpen && selectedPublicTask?.codigoProyecto ? (
+      {isPublicEditorOpen && selectedPublicTask && taskPublicCode(selectedPublicTask) ? (
         <PublicStatusEditorModal
           open
           onClose={() => setIsPublicEditorOpen(false)}
           role="employee"
-          codigoProyecto={selectedPublicTask.codigoProyecto}
+          codigoProyecto={taskPublicCode(selectedPublicTask)}
           subtitle={`${selectedPublicTask.project ?? selectedPublicTask.title}`}
           onSaved={() => setRefreshTrigger((t) => t + 1)}
         />

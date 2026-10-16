@@ -112,8 +112,12 @@ export type KanbanTask = {
   preliminarCotizaciones?: PreliminarData[];
   /** Varias cotizaciones formales en la misma tarjeta. Si existe, tiene prioridad sobre cotizacionFormalData. */
   cotizacionesFormales?: CotizacionFormalData[];
-  /** Código para que el cliente acceda a /seguimiento (ej. K-8821). Se genera al crear la tarea. */
+  /** Código para que el cliente acceda a /seguimiento. Se genera al crear la tarea. */
   codigoProyecto?: string;
+  /** Mismo código público. La tarjeta y el selector de estatus leen cualquiera de estos alias. */
+  codigo?: string;
+  clienteId?: string;
+  codigoCliente?: string;
   /** `Tarea.proyectoId`: ObjectId del `Proyecto` ya vinculado a esta tarea (backend). Si falta,
    * el cliente aún no tiene proyecto creado/ligado (ver docs/AREA_CONTRATOS_Y_PROYECTOS_RUTAS.md). */
   proyectoId?: string;
@@ -137,6 +141,36 @@ const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
 
 function normalizeProjectCodeForMatch(code: string): string {
   return code.trim().toUpperCase().replace(/^K-?/, "");
+}
+
+/** Código público de 6 caracteres, sin depender de un solo nombre de campo. */
+export function taskPublicCode(task: {
+  codigoProyecto?: string;
+  codigo?: string;
+  clienteId?: string;
+  codigoCliente?: string;
+  clientId?: string;
+}): string {
+  return (
+    task.codigoProyecto?.trim() ||
+    task.codigo?.trim() ||
+    task.clienteId?.trim() ||
+    task.codigoCliente?.trim() ||
+    task.clientId?.trim() ||
+    ""
+  );
+}
+
+export function withUnifiedProjectCode<T extends object>(task: T, code: string): T {
+  const unified = code.trim();
+  if (!unified) return task;
+  return {
+    ...task,
+    codigoProyecto: unified,
+    codigo: unified,
+    clienteId: unified,
+    codigoCliente: unified,
+  };
 }
 
 export function isMongoObjectId(value: string | undefined): boolean {
@@ -316,7 +350,7 @@ export function saveKanbanTasksToLocalStorage(tasks: KanbanTask[]): boolean {
 export const kanbanTasksUpdatedEventName = "kuche:kanban-tasks-updated";
 
 export function kanbanTaskMergeKey(task: KanbanTask): string {
-  const code = task.codigoProyecto?.trim();
+  const code = taskPublicCode(task);
   if (code) return `code:${normalizeProjectCodeForMatch(code)}`;
   const sourceId = task.sourceId?.trim();
   if (sourceId) return `src:${sourceId}`;
@@ -339,11 +373,24 @@ export function mergeKanbanTaskLists(local: KanbanTask[], incoming: KanbanTask[]
   }
 
   for (const task of incoming) {
-    const key = kanbanTaskMergeKey(task);
-    const existing = merged.get(key);
+    let key = kanbanTaskMergeKey(task);
+    let existing = merged.get(key);
+    if (!existing && task.id) {
+      for (const [existingKey, candidate] of merged) {
+        if (candidate.id === task.id) {
+          key = existingKey;
+          existing = candidate;
+          break;
+        }
+      }
+    }
     if (!existing) {
-      merged.set(key, task);
+      merged.set(key, withUnifiedProjectCode(task, taskPublicCode(task)));
       continue;
+    }
+    if (kanbanTaskMergeKey(task) !== key) {
+      merged.delete(key);
+      key = kanbanTaskMergeKey({ ...existing, ...task, codigoProyecto: taskPublicCode(existing) || taskPublicCode(task) });
     }
 
     const stage =
@@ -368,7 +415,15 @@ export function mergeKanbanTaskLists(local: KanbanTask[], incoming: KanbanTask[]
       linkedTareaId: existing.linkedTareaId ?? task.linkedTareaId,
       citaStarted: Boolean(existing.citaStarted || task.citaStarted),
       citaFinished: Boolean(existing.citaFinished || task.citaFinished),
-      codigoProyecto: existing.codigoProyecto ?? task.codigoProyecto,
+      ...(() => {
+        const code = taskPublicCode(existing) || taskPublicCode(task);
+        return {
+          codigoProyecto: code || undefined,
+          codigo: code || undefined,
+          clienteId: code || undefined,
+          codigoCliente: code || undefined,
+        };
+      })(),
       location: existing.location?.trim() ? existing.location : task.location,
       followUpStatus: existing.followUpStatus ?? task.followUpStatus,
       designApprovedByAdmin: existing.designApprovedByAdmin || task.designApprovedByAdmin,

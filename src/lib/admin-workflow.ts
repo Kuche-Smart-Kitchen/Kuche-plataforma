@@ -322,14 +322,22 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     designApprovedByAdmin: toBooleanValue(raw.designApprovedByAdmin),
     designApprovedByClient: toBooleanValue(raw.designApprovedByClient),
     designFeedback: toFeedbackString(raw.designFeedback),
-    codigoProyecto:
-      toStringValue(itemRecord.codigoProyecto) ??
-      toStringValue(raw.codigoProyecto) ??
-      toStringValue(raw.codigo) ??
-      toStringValue(raw.codigoCliente) ??
-      toStringValue(itemRecord.clienteId) ??
-      toStringValue(raw.clienteId) ??
-      toStringValue(raw.clientId),
+    ...(() => {
+      const code =
+        toStringValue(itemRecord.codigoProyecto) ??
+        toStringValue(raw.codigoProyecto) ??
+        toStringValue(raw.codigo) ??
+        toStringValue(raw.codigoCliente) ??
+        toStringValue(itemRecord.clienteId) ??
+        toStringValue(raw.clienteId) ??
+        toStringValue(raw.clientId);
+      return {
+        codigoProyecto: code,
+        codigo: code,
+        clienteId: code,
+        codigoCliente: code,
+      };
+    })(),
     proyectoId: toStringValue(raw.proyectoId),
     preliminarData,
     preliminarCotizaciones: preliminarCotizaciones.length > 0 ? preliminarCotizaciones : undefined,
