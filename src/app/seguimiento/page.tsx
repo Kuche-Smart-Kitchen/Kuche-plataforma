@@ -1,15 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { seguimientoApi } from "@/lib/axios";
-import { type KanbanTask } from "@/lib/kanban";
+import { getTasksFromLocalStorage } from "@/lib/kanban";
 import {
-  normalizePublicProjectCodeInput,
-  resolveSeguimientoProjectByCode,
+  normalizeSeguimientoLookupCode,
+  seguimientoProjectFromLocalKanban,
 } from "@/lib/seguimiento-access";
 import {
   mergeSeguimientoFromStorage,
@@ -37,97 +37,125 @@ export default function SeguimientoPage() {
 
   const currentProject = project ?? VOID_SEGUIMIENTO;
   const isProspect = currentProject.isProspect;
-  const normalizedCodigo = useMemo(() => normalizePublicProjectCodeInput(codigo), [codigo]);
   const [filesWarning, setFilesWarning] = useState<string | null>(null);
+  const [isLookingUp, setIsLookingUp] = useState(false);
+  const lookupInFlight = useRef(false);
+
+  const BUSY_MESSAGE = "Servidor ocupado. Espera unos segundos e intenta de nuevo";
 
   const openImage = (name: string, src: string) => setSelectedImage({ name, src });
 
   const handleAccessSubmit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
+      if (lookupInFlight.current) return;
 
       const fromForm = new FormData(event.currentTarget).get("codigo");
       const rawCode =
         (typeof fromForm === "string" && fromForm) ||
         codigoInputRef.current?.value ||
         codigo;
+      const lookupCode = normalizeSeguimientoLookupCode(rawCode);
 
-      if (!rawCode.trim()) {
+      if (!lookupCode) {
         setCodeError("Ingresa un código de proyecto.");
         return;
       }
 
       setFilesWarning(null);
+      setCodeError(null);
 
       if (typeof window === "undefined") {
         setCodeError("No se pudo validar el código en este dispositivo.");
         return;
       }
 
-      let parsed = resolveSeguimientoProjectByCode(rawCode);
+      lookupInFlight.current = true;
+      setIsLookingUp(true);
 
-      if (!parsed) {
-        const candidates = [
-          rawCode.trim().toUpperCase().replace(/\s+/g, ""),
-          normalizePublicProjectCodeInput(rawCode),
-          normalizePublicProjectCodeInput(rawCode).replace(/^K-/, ""),
-        ].filter(Boolean);
+      const openProject = (parsed: Record<string, unknown>) => {
+        const enriched = enrichSeguimientoParsedWithKanbanIfMissing(
+          parsed,
+          getTasksFromLocalStorage(),
+        );
+        setProject(mergeSeguimientoFromStorage(enriched) as SeguimientoProject);
+        setCodigo(String(enriched.codigo ?? lookupCode).trim());
+        setHasAccess(true);
+        setCodeError(null);
+      };
 
-        const uniqueCandidates = Array.from(new Set(candidates));
+      try {
+        let parsed: Record<string, unknown> | null = null;
 
-        for (const candidate of uniqueCandidates) {
-          try {
-            const response = await seguimientoApi.autenticarSeguimientoCliente(candidate);
-            if (!response.success || !response.data?.project) continue;
-
+        try {
+          const response = await seguimientoApi.consultarSeguimientoPorCodigo(lookupCode);
+          if (response.success && response.data?.project) {
             const token = response.data.token;
             setTrackingToken(token);
-            const [projectResponse, filesResponse, paymentsResponse] = await Promise.all([
-              seguimientoApi.obtenerProyectoSeguimiento(token),
-              seguimientoApi.obtenerArchivosSeguimiento(token),
-              seguimientoApi.obtenerPagosSeguimiento(token),
-            ]);
-            parsed = projectResponse.success && projectResponse.data
-              ? projectResponse.data
-              : response.data.project;
-            if (filesResponse.success && filesResponse.data) {
-              parsed = {
-                ...parsed,
-                archivos: filesResponse.data.map((file) => ({
-                  id: file.id ?? file._id ?? file.url,
-                  name: file.nombre,
-                  type: file.tipo ?? "otro",
-                  src: file.url,
-                })),
-              };
-            } else {
-              setFilesWarning(filesResponse.message || "No pudimos cargar los archivos del seguimiento.");
+            parsed = response.data.project;
+            try {
+              const [projectResponse, filesResponse, paymentsResponse] = await Promise.all([
+                seguimientoApi.obtenerProyectoSeguimiento(token),
+                seguimientoApi.obtenerArchivosSeguimiento(token),
+                seguimientoApi.obtenerPagosSeguimiento(token),
+              ]);
+              if (projectResponse.success && projectResponse.data) {
+                parsed = projectResponse.data;
+              }
+              if (filesResponse.success && filesResponse.data) {
+                parsed = {
+                  ...parsed,
+                  archivos: filesResponse.data.map((file) => ({
+                    id: file.id ?? file._id ?? file.url,
+                    name: file.nombre,
+                    type: file.tipo ?? "otro",
+                    src: file.url,
+                  })),
+                };
+              } else {
+                setFilesWarning(filesResponse.message || "No pudimos cargar los archivos del seguimiento.");
+              }
+              if (paymentsResponse.success && paymentsResponse.data) {
+                parsed = { ...parsed, pagos: paymentsResponse.data.pagos ?? paymentsResponse.data };
+              }
+            } catch (detailError) {
+              if (seguimientoApi.seguimientoHttpStatus(detailError) === 429) {
+                setCodeError(BUSY_MESSAGE);
+                return;
+              }
+              if (seguimientoApi.seguimientoHttpStatus(detailError) === 404) {
+                parsed = seguimientoProjectFromLocalKanban(lookupCode) ?? parsed;
+              }
             }
-            if (paymentsResponse.success && paymentsResponse.data) {
-              parsed = { ...parsed, pagos: paymentsResponse.data.pagos ?? paymentsResponse.data };
-            }
-            break;
-          } catch {
-            // Keep trying fallback code formats before reporting an error.
+          }
+        } catch (error) {
+          const status = seguimientoApi.seguimientoHttpStatus(error);
+          if (status === 429) {
+            setCodeError(BUSY_MESSAGE);
+            return;
+          }
+          if (status === 404) {
+            parsed = seguimientoProjectFromLocalKanban(lookupCode);
+          } else {
+            setCodeError("No encontramos un proyecto con ese código.");
+            return;
           }
         }
 
         if (!parsed) {
+          parsed = seguimientoProjectFromLocalKanban(lookupCode);
+        }
+        if (!parsed) {
           setCodeError("No encontramos un proyecto con ese código.");
           return;
         }
-      }
 
-      const tasks: KanbanTask[] = [];
-
-      try {
-        const enriched = enrichSeguimientoParsedWithKanbanIfMissing(parsed, tasks);
-        setProject(mergeSeguimientoFromStorage(enriched) as SeguimientoProject);
-        setCodigo(String(enriched.codigo ?? rawCode).trim());
-        setHasAccess(true);
-        setCodeError(null);
+        openProject(parsed);
       } catch {
         setCodeError("Hubo un problema al leer tu proyecto. Intenta de nuevo.");
+      } finally {
+        lookupInFlight.current = false;
+        setIsLookingUp(false);
       }
     },
     [codigo],
@@ -178,9 +206,10 @@ export default function SeguimientoPage() {
                   ) : null}
                   <button
                     type="submit"
-                    className="mt-6 w-full rounded-2xl bg-accent py-3 text-sm font-semibold text-white shadow-lg transition hover:brightness-110"
+                    disabled={isLookingUp}
+                    className="mt-6 w-full rounded-2xl bg-accent py-3 text-sm font-semibold text-white shadow-lg transition hover:brightness-110 disabled:cursor-wait disabled:opacity-70"
                   >
-                    Ver Progreso
+                    {isLookingUp ? "Consultando..." : "Ver Progreso"}
                   </button>
                 </form>
               </div>

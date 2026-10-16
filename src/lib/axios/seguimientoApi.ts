@@ -83,6 +83,35 @@ export const autenticarSeguimientoCliente = async (
   return postSeguimientoLogin({ clienteId: normalized });
 };
 
+/** Una sola consulta pública: sin reintentos a `/auth` ni `/access`. */
+export const consultarSeguimientoPorCodigo = async (
+  codigo: string,
+): Promise<ApiResponse<SeguimientoLoginResponse>> => {
+  const normalized = codigo
+    .trim()
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\s+/g, "")
+    .toUpperCase();
+  if (!normalized) {
+    return { success: false, message: "Ingresa un codigo valido." };
+  }
+
+  const response = await axiosInstance.post<ApiResponse<SeguimientoLoginResponse>>(
+    "/api/seguimiento/login",
+    { codigo: normalized },
+    ({
+      skipAuthToken: true,
+      skipAuthRedirect: true,
+      withCredentials: false,
+    } as never),
+  );
+
+  return normalizeSeguimientoResponse<SeguimientoLoginResponse>(response.data);
+};
+
+export const seguimientoHttpStatus = (error: unknown): number | undefined =>
+  error instanceof AxiosError ? error.response?.status : undefined;
+
 export const obtenerProyectoSeguimiento = async (token: string): Promise<ApiResponse<Record<string, unknown>>> => {
   const response = await axiosInstance.get<ApiResponse<Record<string, unknown>>>(
     "/api/seguimiento/proyecto",
