@@ -6,13 +6,15 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { seguimientoApi } from "@/lib/axios";
-import { getTasksFromLocalStorage } from "@/lib/kanban";
+import { getTasksFromLocalStorage, type KanbanTask } from "@/lib/kanban";
+import { loadKanbanTasksForEmpleadoView } from "@/lib/empleado-kanban-filters";
 import {
   normalizeSeguimientoLookupCode,
   seguimientoProjectFromLocalKanban,
 } from "@/lib/seguimiento-access";
 import {
   mergeSeguimientoFromStorage,
+  mergeSeguimientoProjectQuotes,
   enrichSeguimientoParsedWithKanbanIfMissing,
 } from "@/lib/seguimiento-project";
 import { ConfirmedDashboard } from "./ConfirmedDashboard";
@@ -73,11 +75,25 @@ export default function SeguimientoPage() {
       lookupInFlight.current = true;
       setIsLookingUp(true);
 
-      const openProject = (parsed: Record<string, unknown>) => {
-        const enriched = enrichSeguimientoParsedWithKanbanIfMissing(
-          parsed,
-          getTasksFromLocalStorage(),
-        );
+      const openProject = async (parsed: Record<string, unknown>) => {
+        let tasks: KanbanTask[] = getTasksFromLocalStorage();
+        const lookup = lookupCode.trim().toUpperCase().replace(/^K-/, "");
+        const memoryHasQuote = tasks.some((task) => {
+          const code = (task.codigoProyecto || task.clienteId || task.codigo || task.codigoCliente || "")
+            .trim()
+            .toUpperCase()
+            .replace(/^K-/, "");
+          return code === lookup && Boolean(task.preliminarData || task.preliminarCotizaciones?.length);
+        });
+        if (!memoryHasQuote) {
+          try {
+            const loaded = await loadKanbanTasksForEmpleadoView();
+            if (loaded.length > 0) tasks = loaded;
+          } catch {
+            tasks = getTasksFromLocalStorage();
+          }
+        }
+        const enriched = enrichSeguimientoParsedWithKanbanIfMissing(parsed, tasks);
         setProject(mergeSeguimientoFromStorage(enriched) as SeguimientoProject);
         setCodigo(String(enriched.codigo ?? lookupCode).trim());
         setHasAccess(true);
@@ -100,7 +116,7 @@ export default function SeguimientoPage() {
                 seguimientoApi.obtenerPagosSeguimiento(token),
               ]);
               if (projectResponse.success && projectResponse.data) {
-                parsed = projectResponse.data;
+                parsed = mergeSeguimientoProjectQuotes(projectResponse.data, parsed, project);
               }
               if (filesResponse.success && filesResponse.data) {
                 parsed = {
@@ -108,8 +124,11 @@ export default function SeguimientoPage() {
                   archivos: filesResponse.data.map((file) => ({
                     id: file.id ?? file._id ?? file.url,
                     name: file.nombre,
+                    nombre: file.nombre,
                     type: file.tipo ?? "otro",
+                    tipo: file.tipo ?? "otro",
                     src: file.url,
+                    url: file.url,
                   })),
                 };
               } else {
@@ -150,7 +169,7 @@ export default function SeguimientoPage() {
           return;
         }
 
-        openProject(parsed);
+        await openProject(parsed);
       } catch {
         setCodeError("Hubo un problema al leer tu proyecto. Intenta de nuevo.");
       } finally {
@@ -158,7 +177,7 @@ export default function SeguimientoPage() {
         setIsLookingUp(false);
       }
     },
-    [codigo],
+    [codigo, project],
   );
 
   return (

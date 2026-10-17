@@ -25,7 +25,7 @@ import {
 import { generatePublicProjectCode, readPersistedPublicCode } from "@/lib/project-code";
 import { EMPLEADO_DASHBOARD_USER as CURRENT_USER } from "@/lib/empleado-dashboard-user";
 import { fetchAssignableUsers } from "@/lib/axios/usuariosApi";
-import { actualizarTarea, crearTarea } from "@/lib/axios/tareasApi";
+import { crearTarea } from "@/lib/axios/tareasApi";
 import {
   isTaskAssignedToEmpleado,
   loadKanbanTasksForEmpleadoView,
@@ -192,20 +192,10 @@ export default function EmpleadoDashboard() {
       const createdId = readCreatedTaskId(response.data) ?? `task-${Date.now()}`;
       const createdRecord = response.data;
       const pickCode = (value: unknown) => (typeof value === "string" ? value.trim() : "");
-      let persistedCode =
+      const persistedCode =
         pickCode(createdRecord.clienteId) ||
         pickCode(createdRecord.codigo) ||
         readPersistedPublicCode(createdRecord);
-      if (!createdId.startsWith("task-")) {
-        try {
-          const patchResponse = await actualizarTarea(createdId, contacto);
-          if (patchResponse.success) {
-            persistedCode = readPersistedPublicCode(patchResponse.data) || persistedCode;
-          }
-        } catch (patchError) {
-          console.warn("La tarea se creó, pero no se pudo reafirmar el código de proyecto.", patchError);
-        }
-      }
       if (!persistedCode) {
         console.warn(
           "El backend creó la tarea sin devolver clienteId ni codigoProyecto. El GET del Kanban no podrá rehidratar el código hasta que el modelo Tarea persista ese campo.",

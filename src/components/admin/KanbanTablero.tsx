@@ -1188,15 +1188,22 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
         window.setTimeout(() => setBackendSyncMessage(null), 4500);
         return;
       }
-      const refreshedTasks = await fetchBackendKanbanTasks();
-      const refreshedTask = refreshedTasks.find((task) => task.id === taskId);
-      if (!refreshedTask?.designApprovedByAdmin || refreshedTask.stage !== "disenos") {
-        setBackendSyncMessage("Backend no confirmó la aprobación administrativa; la tarjeta conserva su estado anterior.");
-        window.setTimeout(() => setBackendSyncMessage(null), 6000);
-        return;
-      }
-      updateTask(taskId, (task) => ({ ...task, designApprovedByAdmin: true }));
+      updateTask(taskId, (task) => ({ ...task, designApprovedByAdmin: true, designFeedback: undefined }));
       showUploadToast("success", "Diseño aprobado. Ya puedes agendar la visita.");
+      try {
+        const refreshedTasks = await fetchBackendKanbanTasks();
+        const refreshedTask = refreshedTasks.find((task) => task.id === taskId);
+        if (refreshedTask?.designApprovedByAdmin && refreshedTask.stage === "disenos") {
+          updateTask(taskId, (task) => ({
+            ...task,
+            ...refreshedTask,
+            designApprovedByAdmin: true,
+            files: refreshedTask.files?.length ? refreshedTask.files : task.files,
+          }));
+        }
+      } catch (error) {
+        console.warn("La aprobación quedó en la tarjeta. El Kanban aún no rehidrató el flag.", error);
+      }
     } finally {
       setApprovingDesignTaskId(null);
     }
@@ -1601,10 +1608,31 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
         name: result.data.nombre ?? file.name,
         type,
         provider: result.data.provider,
-        nivel: result.data.nivel,
+        nivel: tipo === "diseno" ? "preliminar" : result.data.nivel,
         src: result.data.url,
       });
     }
+
+    const keepUploadedFiles = () => {
+      updateTask(taskId, (task) => {
+        const merged = [...(task.files ?? [])];
+        for (const file of nextFiles) {
+          const index = merged.findIndex(
+            (item) => item.id === file.id || (Boolean(file.src) && item.src === file.src),
+          );
+          if (index >= 0) {
+            merged[index] = { ...merged[index], ...file, nivel: file.nivel ?? merged[index].nivel };
+          } else {
+            merged.push(file);
+          }
+        }
+        return {
+          ...task,
+          files: merged,
+          ...(tipo === "diseno" ? { designFeedback: undefined, designApprovedByAdmin: false } : {}),
+        };
+      });
+    };
 
     if (nextFiles.length > 0) {
       try {
@@ -1613,21 +1641,15 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
         // ignore quota / private mode
       }
 
-      const patchUpdates: Partial<KanbanTask> = {
-        files: [...nextFiles],
-        designFeedback: undefined,
-        designApprovedByAdmin: false,
-      };
-      updateTask(taskId, (task) => ({ ...task, ...patchUpdates }));
+      keepUploadedFiles();
 
-      if (taskSnapshot) {
-        try {
-          await syncTaskPatchWithBackend(taskSnapshot, {
-              designFeedback: "",
-            designApprovedByAdmin: false,
-          });
-        } catch (e) {
-          console.warn("Error al sincronizar limpieza de feedback en backend:", e);
+      if (allowDesignApproval && taskSnapshot && tipo === "diseno") {
+        const cleared = await syncTaskPatchWithBackend(taskSnapshot, {
+          designFeedback: "",
+          designApprovedByAdmin: false,
+        });
+        if (!cleared) {
+          console.warn("El diseño quedó en la tarjeta. No se pudo limpiar el feedback en el servidor.");
         }
       }
     }
@@ -1647,6 +1669,7 @@ export function KanbanTablero(props: KanbanTableroProps = {}) {
       nextFiles.length === 1 ? "Archivo subido correctamente." : `${nextFiles.length} archivos subidos correctamente.`,
     );
     await syncFromBackend();
+    keepUploadedFiles();
     return true;
   };
 

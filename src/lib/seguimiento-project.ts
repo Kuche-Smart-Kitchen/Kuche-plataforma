@@ -2,7 +2,13 @@
  * Modelo y utilidades del proyecto de seguimiento del cliente (`kuche_project_${codigo}` en localStorage).
  */
 
-import { type KanbanTask } from "@/lib/kanban";
+import {
+  kanbanStorageKey,
+  seguimientoProjectStoragePrefix,
+  taskPublicCode,
+  type KanbanTask,
+  type PreliminarData,
+} from "@/lib/kanban";
 
 /** Orden del embudo en el tablero. Las etapas que se añadan después de `contrato` deben ir al final. */
 export const KANBAN_PIPELINE_STAGES = ["citas", "disenos", "cotizacion", "contrato"] as const;
@@ -66,29 +72,213 @@ function resolveIsProspectFromParsed(parsed: Record<string, unknown>): boolean {
   return Boolean(parsed.isProspect);
 }
 
+function normalizeLookupCode(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/^K-/, "");
+}
+
+function isFilledPreliminar(value: unknown): value is PreliminarData {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  const textKeys = ["client", "projectType", "location", "cubierta", "frente", "herraje", "largo", "alto", "rangeLabel"];
+  const hasText = textKeys.some((key) => {
+    const text = record[key];
+    return typeof text === "string" && text.trim().length > 0 && text.trim() !== "—";
+  });
+  const hasMoney = ["total", "subtotal", "iva", "costoBase", "costoMateriales"].some((key) => {
+    const amount = record[key];
+    return typeof amount === "number" && Number.isFinite(amount) && amount > 0;
+  });
+  const hasLevantamiento = Boolean(record.levantamiento && typeof record.levantamiento === "object");
+  return hasText || hasMoney || hasLevantamiento;
+}
+
+function filledPreliminarList(value: unknown): PreliminarData[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const list = value.filter(isFilledPreliminar);
+  return list.length > 0 ? list : undefined;
+}
+
+function firstFilledPreliminar(value: unknown): PreliminarData | undefined {
+  return isFilledPreliminar(value) ? value : undefined;
+}
+
+function readStoredKanbanTasks(): KanbanTask[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(kanbanStorageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as KanbanTask[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function readStoredSeguimientoProject(codigo: string): Record<string, unknown> | null {
+  if (typeof window === "undefined") return null;
+  const stripped = normalizeLookupCode(codigo);
+  if (!stripped) return null;
+  const keys = [
+    `${seguimientoProjectStoragePrefix}${stripped}`,
+    `${seguimientoProjectStoragePrefix}K-${stripped}`,
+    `${seguimientoProjectStoragePrefix}${codigo.trim()}`,
+  ];
+  for (const key of keys) {
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // La clave dañada no bloquea el resto de respaldos.
+    }
+  }
+  return null;
+}
+
+function taskFromStoredProject(record: Record<string, unknown>, codigo: string): KanbanTask | null {
+  const preliminarCotizaciones = filledPreliminarList(record.preliminarCotizaciones);
+  const preliminarData = firstFilledPreliminar(record.preliminarData) ?? preliminarCotizaciones?.[0];
+  if (!preliminarCotizaciones && !preliminarData) return null;
+  const cliente = String(record.cliente ?? record.nombre ?? "Cliente");
+  return {
+    id: `stored-${normalizeLookupCode(codigo)}`,
+    title: cliente,
+    project: cliente,
+    stage: "citas",
+    status: "pendiente",
+    assignedTo: [],
+    codigoProyecto: normalizeLookupCode(codigo),
+    clienteId: normalizeLookupCode(codigo),
+    preliminarData,
+    preliminarCotizaciones,
+  };
+}
+
+/** Conserva la cotización real. Un arreglo u objeto vacío no pisa un levantamiento ya capturado. */
+export function mergeSeguimientoProjectQuotes(
+  apiProject: Record<string, unknown>,
+  ...previousProjects: Array<Record<string, unknown> | null | undefined>
+): Record<string, unknown> {
+  const previous = previousProjects.filter((item): item is Record<string, unknown> => Boolean(item));
+  const preliminarCotizaciones =
+    filledPreliminarList(apiProject.preliminarCotizaciones) ??
+    previous.map((item) => filledPreliminarList(item.preliminarCotizaciones)).find(Boolean);
+  const preliminarData =
+    firstFilledPreliminar(apiProject.preliminarData) ??
+    previous.map((item) => firstFilledPreliminar(item.preliminarData)).find(Boolean);
+
+  return {
+    ...previous.reduce<Record<string, unknown>>((acc, item) => ({ ...acc, ...item }), {}),
+    ...apiProject,
+    preliminarCotizaciones,
+    preliminarData,
+  };
+}
+
+function taskMatchesSeguimientoCode(task: KanbanTask, codigo: string): boolean {
+  const target = normalizeLookupCode(codigo);
+  if (!target) return false;
+  const aliases = [
+    taskPublicCode(task),
+    task.codigoProyecto,
+    task.clienteId,
+    task.codigo,
+    task.codigoCliente,
+  ];
+  return aliases.some((value) => normalizeLookupCode(value) === target);
+}
+
 /**
- * Si el JSON no trae snapshot de Kanban, intenta enlazarlo con la tarea actual por `codigoProyecto`.
+ * Copia el levantamiento de la tarjeta Kanban al proyecto de seguimiento.
+ * Ocurre aunque el proyecto ya tenga etapa y estatus de tablero.
  */
 export function enrichSeguimientoParsedWithKanbanIfMissing(
   parsed: Record<string, unknown>,
   tasks: KanbanTask[] | null | undefined,
 ): Record<string, unknown> {
-  if (
-    typeof parsed.kanbanStage === "string" &&
-    typeof parsed.kanbanFollowUpStatus === "string"
-  ) {
-    return parsed;
-  }
-  const codigo = String(parsed.codigo ?? "").trim();
-  if (!codigo || !tasks?.length) return parsed;
-  const task = tasks.find((t) => (t.codigoProyecto ?? "").trim() === codigo);
+  const codigo = String(parsed.codigo ?? parsed.codigoProyecto ?? parsed.clienteId ?? "").trim();
+  if (!codigo) return parsed;
+
+  const memoryTask = tasks?.find((item) => taskMatchesSeguimientoCode(item, codigo));
+  const storedTask = readStoredKanbanTasks().find((item) => taskMatchesSeguimientoCode(item, codigo));
+  const storedProject = readStoredSeguimientoProject(codigo);
+  const storedProjectTask = storedProject ? taskFromStoredProject(storedProject, codigo) : null;
+  const task =
+    [memoryTask, storedTask, storedProjectTask].find(
+      (candidate) =>
+        Boolean(candidate && (filledPreliminarList(candidate.preliminarCotizaciones) || firstFilledPreliminar(candidate.preliminarData))),
+    ) ?? memoryTask ?? storedTask ?? storedProjectTask;
   if (!task) return parsed;
+
+  const parsedQuotes = filledPreliminarList(parsed.preliminarCotizaciones);
+  const parsedData = firstFilledPreliminar(parsed.preliminarData);
+  const levantamiento =
+    task.preliminarData?.levantamiento ??
+    task.preliminarCotizaciones?.find((item) => item.levantamiento)?.levantamiento ??
+    parsedData?.levantamiento ??
+    parsed.levantamiento;
+  const attachLevantamiento = (data: PreliminarData): PreliminarData =>
+    data.levantamiento || !levantamiento || typeof levantamiento !== "object"
+      ? data
+      : { ...data, levantamiento: levantamiento as PreliminarData["levantamiento"] };
+  const preliminarCotizaciones = (
+    filledPreliminarList(task.preliminarCotizaciones) ?? parsedQuotes
+  )?.map(attachLevantamiento);
+  const chosenData = firstFilledPreliminar(task.preliminarData) ?? parsedData;
+  const preliminarData = chosenData ? attachLevantamiento(chosenData) : undefined;
+
+  const hasKanbanSnapshot =
+    typeof parsed.kanbanStage === "string" && typeof parsed.kanbanFollowUpStatus === "string";
+
   return {
     ...parsed,
-    kanbanStage: task.stage,
-    kanbanFollowUpStatus: task.followUpStatus ?? "pendiente",
-    isProspect: task.followUpStatus === "confirmado" ? false : Boolean(parsed.isProspect),
+    kanbanStage: hasKanbanSnapshot ? parsed.kanbanStage : task.stage,
+    kanbanFollowUpStatus: hasKanbanSnapshot
+      ? parsed.kanbanFollowUpStatus
+      : (task.followUpStatus ?? "pendiente"),
+    isProspect: hasKanbanSnapshot
+      ? computeIsProspectFromKanban(parsed.kanbanStage, parsed.kanbanFollowUpStatus)
+      : task.followUpStatus === "confirmado"
+        ? false
+        : Boolean(parsed.isProspect),
+    preliminarCotizaciones,
+    preliminarData,
+    levantamiento,
+    archivos: mergeDesignArchivos(parsed.archivos, task),
   };
+}
+
+function mergeDesignArchivos(existing: unknown, task: KanbanTask): unknown[] {
+  const current = Array.isArray(existing) ? [...existing] : [];
+  const seen = new Set(
+    current.map((file) => {
+      if (!file || typeof file !== "object") return "";
+      const row = file as Record<string, unknown>;
+      return String(row.src ?? row.url ?? row.id ?? "");
+    }),
+  );
+  for (const file of task.files ?? []) {
+    if (file.nivel !== "preliminar" && file.nivel !== "final") continue;
+    const src = file.src?.trim();
+    if (!src || seen.has(src) || seen.has(file.id)) continue;
+    seen.add(src);
+    current.push({
+      id: file.id,
+      name: file.name,
+      nombre: file.name,
+      type: "diseno",
+      tipo: "diseno",
+      src,
+      url: src,
+    });
+  }
+  return current;
 }
 
 export const TIMELINE_STEPS = [
