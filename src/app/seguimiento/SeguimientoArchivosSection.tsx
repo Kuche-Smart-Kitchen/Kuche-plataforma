@@ -9,12 +9,14 @@ import {
 import {
   getPdfButtonPrimaryLabelFromFileName,
   getPdfButtonSecondaryFromFileName,
+  isPlaceholderPreliminarArchivo,
   type SeguimientoArchivo,
 } from "./lib";
 
 type Props = {
   files: SeguimientoArchivo[];
   onOpenImage: (name: string, src: string) => void;
+  onGeneratedLevantamiento?: (action: "open" | "download") => void;
 };
 
 const isImageType = (type: string) => {
@@ -28,28 +30,56 @@ const fileLooksLikePdf = (name: string, src?: string) =>
 const fileLooksLikeImage = (name: string, src?: string) =>
   /\.(png|jpe?g|webp|gif)(\?|$)/i.test(name) || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(src ?? "");
 
-export function SeguimientoArchivosSection({ files, onOpenImage }: Props) {
+export function SeguimientoArchivosSection({ files, onOpenImage, onGeneratedLevantamiento }: Props) {
+  const visibleFiles = files.filter((file) => !isPlaceholderPreliminarArchivo(file));
   return (
     <div className="mt-6 rounded-3xl border border-primary/10 bg-white p-6">
       <p className="text-xs uppercase tracking-[0.3em] text-secondary">Archivos</p>
       <div className="mt-4 flex flex-wrap justify-center gap-3">
-        {files.length === 0 ? (
+        {visibleFiles.length === 0 ? (
           <p className="w-full text-center text-sm text-secondary">
             Aún no hay archivos compartidos en tu expediente.
           </p>
         ) : null}
-        {files.map((f) => {
+        {visibleFiles.map((f) => {
           const normalizedType = f.type.trim().toLowerCase();
+          const isGenerated = f.isGeneratedPdf === true;
           const isDesign = normalizedType === "diseno";
-          const opensAsPdf = normalizedType === "pdf" || (isDesign && fileLooksLikePdf(f.name, f.src));
+          const opensAsPdf = isGenerated || normalizedType === "pdf" || (isDesign && fileLooksLikePdf(f.name, f.src));
           const opensAsImage =
             isImageType(normalizedType) ||
             (isDesign && !opensAsPdf && (fileLooksLikeImage(f.name, f.src) || Boolean(f.src?.trim())));
           const primary = opensAsPdf ? getPdfButtonPrimaryLabelFromFileName(f.name) : "";
           const secondary = opensAsPdf ? getPdfButtonSecondaryFromFileName(f.name) : "";
-          const canOpenFile = opensAsPdf
-            ? Boolean(f.indexedPdfKey || f.src?.trim())
-            : Boolean(f.src?.trim());
+          const canOpenFile = isGenerated
+            ? Boolean(onGeneratedLevantamiento)
+            : opensAsPdf
+              ? Boolean(f.indexedPdfKey || f.src?.trim())
+              : Boolean(f.src?.trim());
+          if (isGenerated) {
+            return (
+              <div
+                key={f.id}
+                className="flex items-center gap-3 rounded-full border border-gray-200 bg-gray-50/50 p-1 pl-4"
+              >
+                <button
+                  type="button"
+                  className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-primary"
+                  onClick={() => onGeneratedLevantamiento?.("open")}
+                >
+                  <FileText className="h-4 w-4" />
+                  Levantamiento detallado
+                </button>
+                <button
+                  type="button"
+                  className="rounded-full bg-black px-3 py-1 text-xs text-white transition hover:bg-gray-800"
+                  onClick={() => onGeneratedLevantamiento?.("download")}
+                >
+                  Descargar
+                </button>
+              </div>
+            );
+          }
           return (
             <button
               key={f.id}

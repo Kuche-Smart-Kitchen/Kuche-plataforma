@@ -19,10 +19,69 @@ import {
 } from "@/lib/seguimiento-project";
 import { ConfirmedDashboard } from "./ConfirmedDashboard";
 import { ProspectDashboard } from "./ProspectDashboard";
-import type { SeguimientoProject } from "./lib";
+import {
+  isPlaceholderPreliminarArchivo,
+  withLevantamientoDetalladoArchivo,
+  type SeguimientoProject,
+} from "./lib";
 
 /** Evita null en hooks antes de cargar proyecto con código. */
 const VOID_SEGUIMIENTO = mergeSeguimientoFromStorage({ codigo: "", cliente: "" });
+
+function positiveAmount(value: unknown): number {
+  const amount = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
+}
+
+function totalFromQuoteRecord(value: unknown): number {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return 0;
+  return positiveAmount((value as Record<string, unknown>).total);
+}
+
+function totalFromQuoteList(value: unknown): number {
+  if (!Array.isArray(value)) return 0;
+  for (const item of value) {
+    const total = totalFromQuoteRecord(item);
+    if (total > 0) return total;
+  }
+  return 0;
+}
+
+function sumPagosAmounts(pagos: unknown): number {
+  if (!pagos || typeof pagos !== "object") return 0;
+  const record = pagos as Record<string, unknown>;
+  const amountOf = (key: string) => {
+    const row = record[key];
+    if (!row || typeof row !== "object") return 0;
+    return positiveAmount((row as Record<string, unknown>).amount);
+  };
+  return amountOf("anticipo") + amountOf("segundoPago") + amountOf("liquidacion");
+}
+
+/** Si el portal no trae inversión, la toma del levantamiento, de la cotización formal o de los pagos. */
+function coalesceSeguimientoInversion(parsed: Record<string, unknown>): Record<string, unknown> {
+  if (positiveAmount(parsed.inversion) > 0) return parsed;
+  const inversion =
+    totalFromQuoteList(parsed.preliminarCotizaciones) ||
+    totalFromQuoteRecord(parsed.preliminarData) ||
+    totalFromQuoteList(parsed.cotizacionesFormales) ||
+    totalFromQuoteRecord(parsed.cotizacionFormalData) ||
+    sumPagosAmounts(parsed.pagos);
+  if (inversion <= 0) return parsed;
+  return { ...parsed, inversion };
+}
+
+function preferQuoteRecord<T>(primary: unknown, fallback: T | undefined): T | undefined {
+  if (primary && typeof primary === "object" && !Array.isArray(primary) && Object.keys(primary).length > 0) {
+    return primary as T;
+  }
+  return fallback;
+}
+
+function preferQuoteList<T>(primary: unknown, fallback: T[] | undefined): T[] | undefined {
+  if (Array.isArray(primary) && primary.length > 0) return primary as T[];
+  return fallback;
+}
 
 export default function SeguimientoPage() {
   const [codigo, setCodigo] = useState("");
@@ -93,8 +152,28 @@ export default function SeguimientoPage() {
             tasks = getTasksFromLocalStorage();
           }
         }
-        const enriched = enrichSeguimientoParsedWithKanbanIfMissing(parsed, tasks);
-        setProject(mergeSeguimientoFromStorage(enriched) as SeguimientoProject);
+        const enriched = coalesceSeguimientoInversion(
+          enrichSeguimientoParsedWithKanbanIfMissing(parsed, tasks),
+        );
+        const merged = mergeSeguimientoFromStorage(enriched) as SeguimientoProject;
+        setProject(
+          withLevantamientoDetalladoArchivo({
+            ...merged,
+            preliminarData: preferQuoteRecord(enriched.preliminarData, merged.preliminarData),
+            preliminarCotizaciones: preferQuoteList(
+              enriched.preliminarCotizaciones,
+              merged.preliminarCotizaciones,
+            ),
+            cotizacionFormalData: preferQuoteRecord(
+              enriched.cotizacionFormalData,
+              merged.cotizacionFormalData,
+            ),
+            cotizacionesFormales: preferQuoteList(
+              enriched.cotizacionesFormales,
+              merged.cotizacionesFormales,
+            ),
+          }),
+        );
         setCodigo(String(enriched.codigo ?? lookupCode).trim());
         setHasAccess(true);
         setCodeError(null);
@@ -121,15 +200,17 @@ export default function SeguimientoPage() {
               if (filesResponse.success && filesResponse.data) {
                 parsed = {
                   ...parsed,
-                  archivos: filesResponse.data.map((file) => ({
-                    id: file.id ?? file._id ?? file.url,
-                    name: file.nombre,
-                    nombre: file.nombre,
-                    type: file.tipo ?? "otro",
-                    tipo: file.tipo ?? "otro",
-                    src: file.url,
-                    url: file.url,
-                  })),
+                  archivos: filesResponse.data
+                    .map((file) => ({
+                      id: file.id ?? file._id ?? file.url,
+                      name: file.nombre,
+                      nombre: file.nombre,
+                      type: file.tipo ?? "otro",
+                      tipo: file.tipo ?? "otro",
+                      src: file.url,
+                      url: file.url,
+                    }))
+                    .filter((file) => !isPlaceholderPreliminarArchivo(file)),
                 };
               } else {
                 setFilesWarning(filesResponse.message || "No pudimos cargar los archivos del seguimiento.");

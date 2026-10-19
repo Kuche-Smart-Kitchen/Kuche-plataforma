@@ -2,6 +2,7 @@
  * Modelo y utilidades del proyecto de seguimiento del cliente (`kuche_project_${codigo}` en localStorage).
  */
 
+import { actualizarEstatusPublico } from "@/lib/axios/seguimientoApi";
 import {
   kanbanStorageKey,
   seguimientoProjectStoragePrefix,
@@ -42,15 +43,35 @@ export function isProyectoEntregado(estado: unknown): boolean {
   return normalizeEstadoProyecto(estado) === ESTADO_PROYECTO.ENTREGADO;
 }
 
+type ConfirmacionClienteInput = {
+  estadoProyecto?: unknown;
+  isConfirmed?: unknown;
+  confirmed?: unknown;
+};
+
 /**
- * Portal `/seguimiento` completo cuando:
- * - Se pulsó «Confirmar cliente» en cualquier etapa del tablero, o
- * - La tarjeta ya está en columna Seguimiento (`contrato`) y no está descartada.
- *
- * Descartado en Seguimiento → vista limitada (prospecto).
+ * Portal `/seguimiento` completo cuando se cumple cualquiera de estas señales:
+ * - `kanbanFollowUpStatus` / `followUpStatus` es «confirmado»
+ * - la etapa es `contrato` y el cliente no fue descartado
+ * - `estadoProyecto` es «Cliente confirmado» o «Proyecto entregado»
+ * - la tarjeta o el API traen `isConfirmed` o `confirmed` en true
  */
-export function isClienteConfirmadoSegunKanban(stage: unknown, followUpStatus: unknown): boolean {
+export function isClienteConfirmadoSegunKanban(
+  stage: unknown,
+  followUpStatus: unknown,
+  extra?: ConfirmacionClienteInput | Record<string, unknown> | null,
+): boolean {
   if (followUpStatus === "confirmado") return true;
+
+  const record =
+    extra && typeof extra === "object" ? (extra as Record<string, unknown>) : undefined;
+  if (record?.isConfirmed === true || record?.confirmed === true) return true;
+
+  const estadoRaw = record?.estadoProyecto;
+  if (typeof estadoRaw === "string" && estadoRaw.trim()) {
+    const estado = normalizeEstadoProyecto(estadoRaw);
+    if (estado === ESTADO_PROYECTO.CONFIRMADO || estado === ESTADO_PROYECTO.ENTREGADO) return true;
+  }
 
   const s = typeof stage === "string" ? stage : "";
   if (s === "contrato" && followUpStatus !== "descartado") return true;
@@ -58,18 +79,59 @@ export function isClienteConfirmadoSegunKanban(stage: unknown, followUpStatus: u
   return false;
 }
 
-/** Prospecto mientras no cumpla la condición de confirmación en Kanban. */
-export function computeIsProspectFromKanban(stage: unknown, followUpStatus: unknown): boolean {
-  return !isClienteConfirmadoSegunKanban(stage, followUpStatus);
+/** Prospecto mientras no cumpla ninguna señal de confirmación. */
+export function computeIsProspectFromKanban(
+  stage: unknown,
+  followUpStatus: unknown,
+  extra?: ConfirmacionClienteInput | Record<string, unknown> | null,
+): boolean {
+  return !isClienteConfirmadoSegunKanban(stage, followUpStatus, extra);
+}
+
+function sourceIsConfirmed(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return isClienteConfirmadoSegunKanban(
+    record.kanbanStage ?? record.stage,
+    record.kanbanFollowUpStatus ?? record.followUpStatus,
+    record,
+  );
+}
+
+/** Fija el snapshot público en confirmado para que el merge posterior no lo devuelva a prospecto. */
+function applyConfirmedFollowUp(
+  parsed: Record<string, unknown>,
+  sources: unknown[],
+): Record<string, unknown> {
+  if (!sources.some(sourceIsConfirmed)) return parsed;
+  const estadoActual = normalizeEstadoProyecto(parsed.estadoProyecto);
+  return {
+    ...parsed,
+    kanbanFollowUpStatus: "confirmado",
+    isProspect: false,
+    isConfirmed: true,
+    confirmed: true,
+    estadoProyecto:
+      estadoActual === ESTADO_PROYECTO.ENTREGADO
+        ? ESTADO_PROYECTO.ENTREGADO
+        : ESTADO_PROYECTO.CONFIRMADO,
+  };
 }
 
 function resolveIsProspectFromParsed(parsed: Record<string, unknown>): boolean {
+  if (
+    isClienteConfirmadoSegunKanban(
+      parsed.kanbanStage ?? parsed.stage,
+      parsed.kanbanFollowUpStatus ?? parsed.followUpStatus,
+      parsed,
+    )
+  ) {
+    return false;
+  }
   const hasKanbanSync =
     typeof parsed.kanbanStage === "string" || typeof parsed.kanbanFollowUpStatus === "string";
-  if (hasKanbanSync) {
-    return computeIsProspectFromKanban(parsed.kanbanStage, parsed.kanbanFollowUpStatus);
-  }
-  return Boolean(parsed.isProspect);
+  if (hasKanbanSync) return true;
+  return parsed.isProspect === false ? false : Boolean(parsed.isProspect);
 }
 
 function normalizeLookupCode(value: unknown): string {
@@ -172,13 +234,33 @@ export function mergeSeguimientoProjectQuotes(
   const preliminarData =
     firstFilledPreliminar(apiProject.preliminarData) ??
     previous.map((item) => firstFilledPreliminar(item.preliminarData)).find(Boolean);
+  const cotizacionesFormales =
+    filledRecordList(apiProject.cotizacionesFormales) ??
+    previous.map((item) => filledRecordList(item.cotizacionesFormales)).find(Boolean);
+  const cotizacionFormalData =
+    filledRecord(apiProject.cotizacionFormalData) ??
+    previous.map((item) => filledRecord(item.cotizacionFormalData)).find(Boolean);
 
   return {
     ...previous.reduce<Record<string, unknown>>((acc, item) => ({ ...acc, ...item }), {}),
     ...apiProject,
     preliminarCotizaciones,
     preliminarData,
+    cotizacionesFormales,
+    cotizacionFormalData,
   };
+}
+
+function filledRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  return Object.keys(record).length > 0 ? record : undefined;
+}
+
+function filledRecordList(value: unknown): unknown[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const list = value.filter((item) => filledRecord(item));
+  return list.length > 0 ? list : undefined;
 }
 
 function taskMatchesSeguimientoCode(task: KanbanTask, codigo: string): boolean {
@@ -203,18 +285,19 @@ export function enrichSeguimientoParsedWithKanbanIfMissing(
   tasks: KanbanTask[] | null | undefined,
 ): Record<string, unknown> {
   const codigo = String(parsed.codigo ?? parsed.codigoProyecto ?? parsed.clienteId ?? "").trim();
-  if (!codigo) return parsed;
+  if (!codigo) return applyConfirmedFollowUp(parsed, [parsed]);
 
   const memoryTask = tasks?.find((item) => taskMatchesSeguimientoCode(item, codigo));
   const storedTask = readStoredKanbanTasks().find((item) => taskMatchesSeguimientoCode(item, codigo));
   const storedProject = readStoredSeguimientoProject(codigo);
   const storedProjectTask = storedProject ? taskFromStoredProject(storedProject, codigo) : null;
+  const confirmationSources = [parsed, memoryTask, storedTask, storedProject];
   const task =
     [memoryTask, storedTask, storedProjectTask].find(
       (candidate) =>
         Boolean(candidate && (filledPreliminarList(candidate.preliminarCotizaciones) || firstFilledPreliminar(candidate.preliminarData))),
     ) ?? memoryTask ?? storedTask ?? storedProjectTask;
-  if (!task) return parsed;
+  if (!task) return applyConfirmedFollowUp(parsed, confirmationSources);
 
   const parsedQuotes = filledPreliminarList(parsed.preliminarCotizaciones);
   const parsedData = firstFilledPreliminar(parsed.preliminarData);
@@ -235,23 +318,23 @@ export function enrichSeguimientoParsedWithKanbanIfMissing(
 
   const hasKanbanSnapshot =
     typeof parsed.kanbanStage === "string" && typeof parsed.kanbanFollowUpStatus === "string";
-
-  return {
+  const draft: Record<string, unknown> = {
     ...parsed,
     kanbanStage: hasKanbanSnapshot ? parsed.kanbanStage : task.stage,
     kanbanFollowUpStatus: hasKanbanSnapshot
       ? parsed.kanbanFollowUpStatus
       : (task.followUpStatus ?? "pendiente"),
-    isProspect: hasKanbanSnapshot
-      ? computeIsProspectFromKanban(parsed.kanbanStage, parsed.kanbanFollowUpStatus)
-      : task.followUpStatus === "confirmado"
-        ? false
-        : Boolean(parsed.isProspect),
+    isProspect: computeIsProspectFromKanban(
+      hasKanbanSnapshot ? parsed.kanbanStage : task.stage,
+      hasKanbanSnapshot ? parsed.kanbanFollowUpStatus : task.followUpStatus,
+      parsed,
+    ),
     preliminarCotizaciones,
     preliminarData,
     levantamiento,
     archivos: mergeDesignArchivos(parsed.archivos, task),
   };
+  return applyConfirmedFollowUp(draft, [...confirmationSources, task]);
 }
 
 function mergeDesignArchivos(existing: unknown, task: KanbanTask): unknown[] {
@@ -475,10 +558,59 @@ export function mergeKanbanSnapshotIntoSeguimientoRecord(
   return next;
 }
 
-/** Sin persistencia: no-op, se mantiene la firma para no romper llamadores. */
+/** Tras «Confirmar cliente» en cualquier columna del tablero. */
 export function syncSeguimientoEstadoFromKanbanConfirm(
-  _task: Pick<KanbanTask, "codigoProyecto" | "project" | "title" | "stage" | "followUpStatus">,
+  task: Pick<KanbanTask, "codigoProyecto" | "project" | "title" | "stage" | "followUpStatus"> & {
+    codigo?: string;
+    clienteId?: string;
+    codigoCliente?: string;
+    clientId?: string;
+  },
 ): void {
-  // no-op: ya no se persiste en localStorage
+  if (typeof window === "undefined") return;
+  const code = taskPublicCode(task) || task.codigoProyecto?.trim() || "";
+  if (!code || task.followUpStatus !== "confirmado") return;
+  const key = `${seguimientoProjectStoragePrefix}${code}`;
+  let merged: Record<string, unknown> = {
+    codigo: code,
+    cliente: String(task.project ?? task.title ?? "Cliente").trim() || "Cliente",
+    kanbanStage: task.stage,
+    kanbanFollowUpStatus: "confirmado",
+    estadoProyecto: ESTADO_PROYECTO.CONFIRMADO,
+    isProspect: false,
+    isConfirmed: true,
+    confirmed: true,
+  };
+  try {
+    const raw = window.localStorage.getItem(key);
+    const base = raw
+      ? (JSON.parse(raw) as Record<string, unknown>)
+      : {
+          codigo: code,
+          cliente: String(task.project ?? task.title ?? "Cliente").trim() || "Cliente",
+        };
+    merged = {
+      ...mergeKanbanSnapshotIntoSeguimientoRecord(base, task),
+      isProspect: false,
+      isConfirmed: true,
+      confirmed: true,
+      kanbanFollowUpStatus: "confirmado",
+    };
+    window.localStorage.setItem(key, JSON.stringify(merged));
+  } catch {
+    // El respaldo local dañado no impide avisar al portal público.
+  }
+
+  void actualizarEstatusPublico(code, {
+    kanbanStage: merged.kanbanStage ?? task.stage,
+    kanbanFollowUpStatus: "confirmado",
+    followUpStatus: "confirmado",
+    estadoProyecto: merged.estadoProyecto ?? ESTADO_PROYECTO.CONFIRMADO,
+    isProspect: false,
+    isConfirmed: true,
+    confirmed: true,
+  }).catch((error) => {
+    console.warn("No se pudo sincronizar la confirmación con el seguimiento público.", error);
+  });
 }
 

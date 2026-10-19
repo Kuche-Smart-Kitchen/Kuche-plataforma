@@ -18,6 +18,8 @@ import {
   inversionPdfCtaSecondaryClass,
   inversionPdfQuoteRowClass,
   filterArchivosForCliente,
+  resolveEntregaEstimada,
+  resolvePreliminarForPdf,
   type SeguimientoProject,
 } from "./lib";
 
@@ -31,6 +33,16 @@ export function ProspectDashboard({ project, onOpenImage }: Props) {
   const quoteButtonLabel = "Ver Levantamiento Detallado";
   const quoteImageSrc = String(project.cotizacionPreliminarImage ?? "");
   const files = filterArchivosForCliente(project.archivos as unknown[] | undefined);
+  const entregaEstimada = resolveEntregaEstimada(project);
+  const openGeneratedLevantamiento = (action: "open" | "download") => {
+    const data = resolvePreliminarForPdf(project);
+    if (!data) return;
+    if (action === "download") {
+      downloadPreliminarPdf(data, "Levantamiento Detallado.pdf");
+      return;
+    }
+    openPreliminarPdfInNewTab(data);
+  };
 
   return (
     <section className="space-y-6">
@@ -41,7 +53,7 @@ export function ProspectDashboard({ project, onOpenImage }: Props) {
         </h1>
       </div>
 
-      <div className="grid items-start gap-4 md:grid-cols-1">
+      <div className="grid items-start gap-4 md:grid-cols-2">
         <div className="rounded-3xl border border-white bg-white p-6 shadow-lg">
           <p className="text-xs uppercase tracking-[0.2em] text-secondary">Inversión total</p>
           <p className="mt-3 text-xl font-semibold text-primary">
@@ -113,9 +125,17 @@ export function ProspectDashboard({ project, onOpenImage }: Props) {
             );
           })()}
         </div>
+        <div className="rounded-3xl border border-accent/40 bg-white p-6 shadow-lg">
+          <p className="text-xs uppercase tracking-[0.2em] text-secondary">Entrega estimada</p>
+          <p className="mt-3 text-xl font-semibold text-accent">{entregaEstimada}</p>
+        </div>
       </div>
 
-      <SeguimientoArchivosSection files={files} onOpenImage={onOpenImage} />
+      <SeguimientoArchivosSection
+        files={files}
+        onOpenImage={onOpenImage}
+        onGeneratedLevantamiento={openGeneratedLevantamiento}
+      />
 
       <div className="rounded-3xl border border-accent/25 bg-gradient-to-br from-accent/10 via-white to-white p-8 shadow-lg">
         <p className="text-sm leading-relaxed text-secondary">

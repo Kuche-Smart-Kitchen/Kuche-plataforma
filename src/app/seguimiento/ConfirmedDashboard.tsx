@@ -7,6 +7,8 @@ import type { CotizacionFormalData } from "@/lib/kanban";
 import {
   openFormalPdfInNewTab,
   downloadFormalPdf,
+  openPreliminarPdfInNewTab,
+  downloadPreliminarPdf,
   openPdfDataUrlOrUrlInNewTab,
 } from "@/lib/pdf-preliminar";
 import {
@@ -29,6 +31,8 @@ import {
   inversionPdfCtaSecondaryClass,
   inversionPdfQuoteRowClass,
   filterArchivosForCliente,
+  resolveEntregaEstimada,
+  resolvePreliminarForPdf,
   type SeguimientoProject,
 } from "./lib";
 
@@ -152,6 +156,16 @@ export function ConfirmedDashboard({ project, onOpenImage }: Props) {
   const quoteButtonLabel = "Ver cotización formal";
   const quoteImageSrc = String(project.cotizacionFormalImage ?? "");
   const files = filterArchivosForCliente(project.archivos as unknown[] | undefined);
+  const entregaEstimada = resolveEntregaEstimada(project);
+  const openGeneratedLevantamiento = (action: "open" | "download") => {
+    const data = resolvePreliminarForPdf(project);
+    if (!data) return;
+    if (action === "download") {
+      downloadPreliminarPdf(data, "Levantamiento Detallado.pdf");
+      return;
+    }
+    openPreliminarPdfInNewTab(data);
+  };
 
   const inversionValue = project.inversion > 0 ? formatCurrency(project.inversion) : "Por definir";
 
@@ -251,7 +265,7 @@ export function ConfirmedDashboard({ project, onOpenImage }: Props) {
           </div>
           <div className="rounded-3xl border border-accent/40 bg-white p-6 shadow-lg">
             <p className="text-xs uppercase tracking-[0.2em] text-secondary">Entrega estimada</p>
-            <p className="mt-3 text-xl font-semibold text-accent">{project.fechaEntrega}</p>
+            <p className="mt-3 text-xl font-semibold text-accent">{entregaEstimada}</p>
           </div>
         </div>
 
@@ -307,7 +321,11 @@ export function ConfirmedDashboard({ project, onOpenImage }: Props) {
           </div>
         )}
 
-        <SeguimientoArchivosSection files={files} onOpenImage={onOpenImage} />
+        <SeguimientoArchivosSection
+          files={files}
+          onOpenImage={onOpenImage}
+          onGeneratedLevantamiento={openGeneratedLevantamiento}
+        />
       </section>
 
       <section className="rounded-3xl bg-white p-8 shadow-lg">

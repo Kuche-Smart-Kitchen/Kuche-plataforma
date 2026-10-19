@@ -3,7 +3,7 @@ import {
   taskPublicCode,
   type KanbanTask,
 } from "@/lib/kanban";
-import { computeIsProspectFromKanban } from "@/lib/seguimiento-project";
+import { ESTADO_PROYECTO, isClienteConfirmadoSegunKanban } from "@/lib/seguimiento-project";
 
 /** Código de consulta: sin espacios y en mayúsculas. No agrega ni quita el prefijo `K-`. */
 export function normalizeSeguimientoLookupCode(raw: string): string {
@@ -41,14 +41,22 @@ export function seguimientoProjectFromLocalKanban(codeInput: string): Record<str
   if (!task) return null;
 
   const cliente = task.project?.trim() || task.title?.trim() || "Cliente";
+  const confirmed = isClienteConfirmadoSegunKanban(task.stage, task.followUpStatus, task);
   return {
     codigo: taskPublicCode(task) || code.replace(/^K-/, ""),
     cliente,
     nombre: cliente,
     titulo: task.title,
-    isProspect: computeIsProspectFromKanban(task.stage, task.followUpStatus),
+    isProspect: !confirmed,
     kanbanStage: task.stage,
-    kanbanFollowUpStatus: task.followUpStatus ?? "pendiente",
+    kanbanFollowUpStatus: confirmed ? "confirmado" : (task.followUpStatus ?? "pendiente"),
+    ...(confirmed
+      ? {
+          isConfirmed: true,
+          confirmed: true,
+          estadoProyecto: ESTADO_PROYECTO.CONFIRMADO,
+        }
+      : {}),
     inversion: taskAmount(task),
     preliminarData: task.preliminarData,
     preliminarCotizaciones: task.preliminarCotizaciones,
