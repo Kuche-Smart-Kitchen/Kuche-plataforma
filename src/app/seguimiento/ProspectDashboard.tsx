@@ -3,6 +3,8 @@
 import {
   openPreliminarPdfInNewTab,
   downloadPreliminarPdf,
+  openFormalPdfInNewTab,
+  downloadFormalPdf,
   openPdfDataUrlOrUrlInNewTab,
 } from "@/lib/pdf-preliminar";
 import {
@@ -13,6 +15,7 @@ import {
 import { SeguimientoArchivosSection } from "./SeguimientoArchivosSection";
 import {
   formatCurrency,
+  getFormalesListFromProject,
   getPreliminarListFromProject,
   inversionPdfCtaPrimaryClass,
   inversionPdfCtaSecondaryClass,
@@ -42,6 +45,16 @@ export function ProspectDashboard({ project, onOpenImage }: Props) {
       return;
     }
     openPreliminarPdfInNewTab(data);
+  };
+  const openGeneratedFormal = (action: "open" | "download") => {
+    const data = getFormalesListFromProject(project)[0];
+    if (!data) return;
+    const filename = `cotizacion-formal-${(data.projectType || "proyecto").replace(/\s+/g, "-")}.pdf`;
+    if (action === "download") {
+      downloadFormalPdf(data, filename);
+      return;
+    }
+    openFormalPdfInNewTab(data);
   };
 
   return (
@@ -135,6 +148,7 @@ export function ProspectDashboard({ project, onOpenImage }: Props) {
         files={files}
         onOpenImage={onOpenImage}
         onGeneratedLevantamiento={openGeneratedLevantamiento}
+        onGeneratedFormal={openGeneratedFormal}
       />
 
       <div className="rounded-3xl border border-accent/25 bg-gradient-to-br from-accent/10 via-white to-white p-8 shadow-lg">

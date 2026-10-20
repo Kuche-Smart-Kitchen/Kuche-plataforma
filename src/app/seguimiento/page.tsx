@@ -21,6 +21,8 @@ import { ConfirmedDashboard } from "./ConfirmedDashboard";
 import { ProspectDashboard } from "./ProspectDashboard";
 import {
   isPlaceholderPreliminarArchivo,
+  applyEntregaDesdeLevantamiento,
+  withCotizacionFormalArchivo,
   withLevantamientoDetalladoArchivo,
   type SeguimientoProject,
 } from "./lib";
@@ -58,14 +60,14 @@ function sumPagosAmounts(pagos: unknown): number {
   return amountOf("anticipo") + amountOf("segundoPago") + amountOf("liquidacion");
 }
 
-/** Si el portal no trae inversión, la toma del levantamiento, de la cotización formal o de los pagos. */
+/** Si el portal no trae inversión, la cotización formal gana al levantamiento y, si no hay cotización, a la suma de pagos. */
 function coalesceSeguimientoInversion(parsed: Record<string, unknown>): Record<string, unknown> {
   if (positiveAmount(parsed.inversion) > 0) return parsed;
   const inversion =
-    totalFromQuoteList(parsed.preliminarCotizaciones) ||
-    totalFromQuoteRecord(parsed.preliminarData) ||
     totalFromQuoteList(parsed.cotizacionesFormales) ||
     totalFromQuoteRecord(parsed.cotizacionFormalData) ||
+    totalFromQuoteList(parsed.preliminarCotizaciones) ||
+    totalFromQuoteRecord(parsed.preliminarData) ||
     sumPagosAmounts(parsed.pagos);
   if (inversion <= 0) return parsed;
   return { ...parsed, inversion };
@@ -81,6 +83,27 @@ function preferQuoteRecord<T>(primary: unknown, fallback: T | undefined): T | un
 function preferQuoteList<T>(primary: unknown, fallback: T[] | undefined): T[] | undefined {
   if (Array.isArray(primary) && primary.length > 0) return primary as T[];
   return fallback;
+}
+
+function archivoIdentity(file: unknown): string {
+  if (!file || typeof file !== "object") return "";
+  const row = file as Record<string, unknown>;
+  return String(row.id ?? row.src ?? row.url ?? row.name ?? row.nombre ?? "").trim();
+}
+
+function mergeSeguimientoArchivos(fromProject: unknown[], fromEndpoint: unknown[]): unknown[] {
+  const merged: unknown[] = [];
+  const seen = new Set<string>();
+  for (const file of [...fromEndpoint, ...fromProject]) {
+    if (!file || typeof file !== "object") continue;
+    const row = file as { id?: unknown; name?: unknown; nombre?: unknown };
+    if (isPlaceholderPreliminarArchivo(row)) continue;
+    const key = archivoIdentity(file);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(file);
+  }
+  return merged;
 }
 
 export default function SeguimientoPage() {
@@ -157,22 +180,26 @@ export default function SeguimientoPage() {
         );
         const merged = mergeSeguimientoFromStorage(enriched) as SeguimientoProject;
         setProject(
-          withLevantamientoDetalladoArchivo({
-            ...merged,
-            preliminarData: preferQuoteRecord(enriched.preliminarData, merged.preliminarData),
-            preliminarCotizaciones: preferQuoteList(
-              enriched.preliminarCotizaciones,
-              merged.preliminarCotizaciones,
-            ),
-            cotizacionFormalData: preferQuoteRecord(
-              enriched.cotizacionFormalData,
-              merged.cotizacionFormalData,
-            ),
-            cotizacionesFormales: preferQuoteList(
-              enriched.cotizacionesFormales,
-              merged.cotizacionesFormales,
-            ),
-          }),
+          applyEntregaDesdeLevantamiento(
+          withCotizacionFormalArchivo(
+            withLevantamientoDetalladoArchivo({
+              ...merged,
+              preliminarData: preferQuoteRecord(enriched.preliminarData, merged.preliminarData),
+              preliminarCotizaciones: preferQuoteList(
+                enriched.preliminarCotizaciones,
+                merged.preliminarCotizaciones,
+              ),
+              cotizacionFormalData: preferQuoteRecord(
+                enriched.cotizacionFormalData,
+                merged.cotizacionFormalData,
+              ),
+              cotizacionesFormales: preferQuoteList(
+                enriched.cotizacionesFormales,
+                merged.cotizacionesFormales,
+              ),
+            }),
+          ),
+          ),
         );
         setCodigo(String(enriched.codigo ?? lookupCode).trim());
         setHasAccess(true);
@@ -198,19 +225,19 @@ export default function SeguimientoPage() {
                 parsed = mergeSeguimientoProjectQuotes(projectResponse.data, parsed, project);
               }
               if (filesResponse.success && filesResponse.data) {
+                const fromEndpoint = filesResponse.data.map((file) => ({
+                  id: file.id ?? file._id ?? file.url,
+                  name: file.nombre,
+                  nombre: file.nombre,
+                  type: file.tipo ?? "otro",
+                  tipo: file.tipo ?? "otro",
+                  src: file.url,
+                  url: file.url,
+                }));
+                const fromProject = Array.isArray(parsed.archivos) ? parsed.archivos : [];
                 parsed = {
                   ...parsed,
-                  archivos: filesResponse.data
-                    .map((file) => ({
-                      id: file.id ?? file._id ?? file.url,
-                      name: file.nombre,
-                      nombre: file.nombre,
-                      type: file.tipo ?? "otro",
-                      tipo: file.tipo ?? "otro",
-                      src: file.url,
-                      url: file.url,
-                    }))
-                    .filter((file) => !isPlaceholderPreliminarArchivo(file)),
+                  archivos: mergeSeguimientoArchivos(fromProject, fromEndpoint),
                 };
               } else {
                 setFilesWarning(filesResponse.message || "No pudimos cargar los archivos del seguimiento.");

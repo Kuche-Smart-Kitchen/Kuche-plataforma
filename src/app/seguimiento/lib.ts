@@ -16,9 +16,11 @@ export type SeguimientoArchivo = {
   src?: string;
   indexedPdfKey?: string;
   isGeneratedPdf?: boolean;
+  isGeneratedFormal?: boolean;
 };
 
 export const LEVANTAMIENTO_ARCHIVO_ID = "pdf-levantamiento-detallado";
+export const FORMAL_ARCHIVO_ID = "pdf-cotizacion-formal";
 
 const MONTHS_ES = [
   "enero",
@@ -57,8 +59,13 @@ const normalizeSeguimientoFile = (raw: unknown, index: number): SeguimientoArchi
     src: src || undefined,
     indexedPdfKey: indexedPdfKey || undefined,
     isGeneratedPdf: row.isGeneratedPdf === true || id === LEVANTAMIENTO_ARCHIVO_ID,
+    isGeneratedFormal: row.isGeneratedFormal === true || id === FORMAL_ARCHIVO_ID,
   };
 };
+
+function quoteObjectHasData(value: unknown): boolean {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0);
+}
 
 /** Cotización con texto, importe o levantamiento capturado. Un objeto vacío no cuenta. */
 export function preliminarHasRealData(value: unknown): value is PreliminarData {
@@ -105,6 +112,32 @@ export function withLevantamientoDetalladoArchivo<T extends { archivos?: unknown
     type: "pdf",
     tipo: "pdf",
     isGeneratedPdf: true,
+  });
+  return { ...project, archivos };
+}
+
+export function withCotizacionFormalArchivo<T extends { archivos?: unknown; cotizacionFormalData?: unknown; cotizacionesFormales?: unknown }>(
+  project: T,
+): T {
+  const hasFormal =
+    (Array.isArray(project.cotizacionesFormales) && project.cotizacionesFormales.some((item) => quoteObjectHasData(item))) ||
+    quoteObjectHasData(project.cotizacionFormalData);
+  const archivos = Array.isArray(project.archivos) ? [...project.archivos] : [];
+  if (!hasFormal) return project;
+  const alreadyListed = archivos.some((file) => {
+    if (!file || typeof file !== "object") return false;
+    const row = file as Record<string, unknown>;
+    const name = String(row.name ?? row.nombre ?? "").toLowerCase();
+    return row.id === FORMAL_ARCHIVO_ID || row.isGeneratedFormal === true || name.includes("cotizacion formal") || name.includes("cotización formal");
+  });
+  if (alreadyListed) return project;
+  archivos.push({
+    id: FORMAL_ARCHIVO_ID,
+    nombre: "Cotización formal.pdf",
+    name: "Cotización formal.pdf",
+    type: "pdf",
+    tipo: "pdf",
+    isGeneratedFormal: true,
   });
   return { ...project, archivos };
 }
@@ -172,12 +205,59 @@ function formatWeekWindow(start: Date, min: number, max: number): string {
   return `${format(lo)} – ${format(hi)}`;
 }
 
+const ENTREGA_VACIA = new Set(["", "por definir", "sin definir", "—", "-"]);
+
+function textoDePlazo(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const text = value.trim();
+  if (!text || ENTREGA_VACIA.has(text.toLowerCase())) return "";
+  return /semana/i.test(text) ? text : "";
+}
+
+/** Plazo escrito en el levantamiento, por ejemplo «8 a 11 semanas aprox.». */
+export function plazoEntregaDesdeLevantamiento(project: {
+  preliminarData?: unknown;
+  preliminarCotizaciones?: unknown;
+}): string {
+  const quotes = [
+    project.preliminarData,
+    Array.isArray(project.preliminarCotizaciones) ? project.preliminarCotizaciones[0] : undefined,
+  ];
+  for (const quote of quotes) {
+    if (!quote || typeof quote !== "object") continue;
+    const record = quote as { date?: unknown; rangeLabel?: unknown };
+    const fromDate = textoDePlazo(record.date);
+    if (fromDate) return fromDate;
+    const fromRange = textoDePlazo(record.rangeLabel);
+    if (fromRange) return fromRange;
+  }
+  return "";
+}
+
+export function fechaEntregaSinResolver(value: unknown): boolean {
+  if (value == null) return true;
+  const text = String(value).trim();
+  return ENTREGA_VACIA.has(text.toLowerCase());
+}
+
+export function applyEntregaDesdeLevantamiento<T extends { fechaEntrega?: string; preliminarData?: unknown; preliminarCotizaciones?: unknown }>(
+  project: T,
+): T {
+  if (!fechaEntregaSinResolver(project.fechaEntrega)) return project;
+  const plazo = plazoEntregaDesdeLevantamiento(project);
+  if (!plazo) return project;
+  return { ...project, fechaEntrega: plazo };
+}
+
 /** Si la entrega copió el inicio, usa el plazo del levantamiento o proyecta de 8 a 11 semanas. */
 export function resolveEntregaEstimada(project: SeguimientoProject): string {
   const inicio = project.fechaInicio?.trim() || "";
   const entrega = project.fechaEntrega?.trim() || "";
-  if (!inicio || !entrega || inicio === "Por definir" || !sameCalendarDay(inicio, entrega)) {
-    return entrega || "Por definir";
+  if (fechaEntregaSinResolver(entrega)) {
+    return plazoEntregaDesdeLevantamiento(project) || "Por definir";
+  }
+  if (!inicio || inicio === "Por definir" || !sameCalendarDay(inicio, entrega)) {
+    return entrega;
   }
   const weeks =
     weeksFromQuote(project.preliminarData) ??

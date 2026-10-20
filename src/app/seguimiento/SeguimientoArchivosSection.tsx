@@ -17,6 +17,7 @@ type Props = {
   files: SeguimientoArchivo[];
   onOpenImage: (name: string, src: string) => void;
   onGeneratedLevantamiento?: (action: "open" | "download") => void;
+  onGeneratedFormal?: (action: "open" | "download") => void;
 };
 
 const isImageType = (type: string) => {
@@ -30,7 +31,12 @@ const fileLooksLikePdf = (name: string, src?: string) =>
 const fileLooksLikeImage = (name: string, src?: string) =>
   /\.(png|jpe?g|webp|gif)(\?|$)/i.test(name) || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(src ?? "");
 
-export function SeguimientoArchivosSection({ files, onOpenImage, onGeneratedLevantamiento }: Props) {
+export function SeguimientoArchivosSection({
+  files,
+  onOpenImage,
+  onGeneratedLevantamiento,
+  onGeneratedFormal,
+}: Props) {
   const visibleFiles = files.filter((file) => !isPlaceholderPreliminarArchivo(file));
   return (
     <div className="mt-6 rounded-3xl border border-primary/10 bg-white p-6">
@@ -44,8 +50,13 @@ export function SeguimientoArchivosSection({ files, onOpenImage, onGeneratedLeva
         {visibleFiles.map((f) => {
           const normalizedType = f.type.trim().toLowerCase();
           const isGenerated = f.isGeneratedPdf === true;
+          const isGeneratedFormal = f.isGeneratedFormal === true;
           const isDesign = normalizedType === "diseno";
-          const opensAsPdf = isGenerated || normalizedType === "pdf" || (isDesign && fileLooksLikePdf(f.name, f.src));
+          const opensAsPdf =
+            isGenerated ||
+            isGeneratedFormal ||
+            normalizedType === "pdf" ||
+            (isDesign && fileLooksLikePdf(f.name, f.src));
           const opensAsImage =
             isImageType(normalizedType) ||
             (isDesign && !opensAsPdf && (fileLooksLikeImage(f.name, f.src) || Boolean(f.src?.trim())));
@@ -53,10 +64,14 @@ export function SeguimientoArchivosSection({ files, onOpenImage, onGeneratedLeva
           const secondary = opensAsPdf ? getPdfButtonSecondaryFromFileName(f.name) : "";
           const canOpenFile = isGenerated
             ? Boolean(onGeneratedLevantamiento)
-            : opensAsPdf
+            : isGeneratedFormal
+              ? Boolean(onGeneratedFormal)
+              : opensAsPdf
               ? Boolean(f.indexedPdfKey || f.src?.trim())
               : Boolean(f.src?.trim());
-          if (isGenerated) {
+          if (isGenerated || isGeneratedFormal) {
+            const openGenerated = isGeneratedFormal ? onGeneratedFormal : onGeneratedLevantamiento;
+            const label = isGeneratedFormal ? "Ver cotización formal" : "Ver Levantamiento Detallado";
             return (
               <div
                 key={f.id}
@@ -65,17 +80,46 @@ export function SeguimientoArchivosSection({ files, onOpenImage, onGeneratedLeva
                 <button
                   type="button"
                   className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-primary"
-                  onClick={() => onGeneratedLevantamiento?.("open")}
+                  onClick={() => openGenerated?.("open")}
                 >
                   <FileText className="h-4 w-4" />
-                  Levantamiento detallado
+                  {label}
                 </button>
                 <button
                   type="button"
                   className="rounded-full bg-black px-3 py-1 text-xs text-white transition hover:bg-gray-800"
-                  onClick={() => onGeneratedLevantamiento?.("download")}
+                  onClick={() => openGenerated?.("download")}
                 >
                   Descargar
+                </button>
+              </div>
+            );
+          }
+          if (opensAsImage && f.src?.trim()) {
+            return (
+              <div
+                key={f.id}
+                className="flex items-center gap-3 rounded-full border border-gray-200 bg-gray-50/50 p-1 pl-4"
+              >
+                <span className="inline-flex items-center gap-2 text-xs font-semibold text-primary">
+                  <ImageIcon className="h-4 w-4" />
+                  {f.name}
+                </span>
+                <button
+                  type="button"
+                  className="rounded-full bg-black px-3 py-1 text-xs text-white transition hover:bg-gray-800"
+                  onClick={() => {
+                    void (async () => {
+                      const r = await resolveSeguimientoMediaRefForUi(f.src!);
+                      if ("missing" in r) {
+                        window.alert(SEGUIMIENTO_MEDIA_UNAVAILABLE_MSG);
+                        return;
+                      }
+                      onOpenImage(f.name, r.url);
+                    })();
+                  }}
+                >
+                  Vista previa
                 </button>
               </div>
             );

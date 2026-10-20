@@ -88,6 +88,13 @@ const GarantiaCountdown = ({ startDate }: { startDate: string }) => {
   );
 };
 
+function receiptIsOpenable(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const raw = value.trim();
+  if (raw.length > 2) return true;
+  return /^https?:\/\//i.test(raw) || raw.startsWith("data:") || raw.startsWith("/");
+}
+
 const formatPayment = (payment: { amount: number; date?: string }) => {
   const formatted = formatCurrency(payment.amount);
   if (payment.date?.trim()) return `${formatted} · ${payment.date}`;
@@ -165,6 +172,16 @@ export function ConfirmedDashboard({ project, onOpenImage }: Props) {
       return;
     }
     openPreliminarPdfInNewTab(data);
+  };
+  const openGeneratedFormal = (action: "open" | "download") => {
+    const data = formalesList[0];
+    if (!data) return;
+    const filename = `cotizacion-formal-${(data.projectType || "proyecto").replace(/\s+/g, "-")}.pdf`;
+    if (action === "download") {
+      downloadFormalPdf(data, filename);
+      return;
+    }
+    openFormalPdfInNewTab(data);
   };
 
   const inversionValue = project.inversion > 0 ? formatCurrency(project.inversion) : "Por definir";
@@ -273,8 +290,7 @@ export function ConfirmedDashboard({ project, onOpenImage }: Props) {
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             {installments.map((item) => {
               const payment = project.pagos[item.key];
-              const hasRecibo =
-                typeof payment.receiptImage === "string" && payment.receiptImage.trim().length > 2;
+              const hasRecibo = receiptIsOpenable(payment.receiptImage);
               return (
                 <div
                   key={item.key}
@@ -325,6 +341,7 @@ export function ConfirmedDashboard({ project, onOpenImage }: Props) {
           files={files}
           onOpenImage={onOpenImage}
           onGeneratedLevantamiento={openGeneratedLevantamiento}
+          onGeneratedFormal={openGeneratedFormal}
         />
       </section>
 

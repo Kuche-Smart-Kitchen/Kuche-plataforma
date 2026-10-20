@@ -268,6 +268,16 @@ export function PublicStatusEditorModal({
     setSaveError(null);
     setIsSaving(true);
     try {
+      const archivos = (Array.isArray(draft.archivos) ? (draft.archivos as ArchivoSeg[]) : []).map((file) => ({
+        id: file.id,
+        name: file.name,
+        nombre: file.name,
+        type: file.type,
+        tipo: file.type,
+        src: file.src,
+        url: file.src,
+        indexedPdfKey: file.indexedPdfKey,
+      }));
       const response = await seguimientoApi.actualizarEstatusPublico(codigoProyecto, {
         estadoProyecto: draft.estadoProyecto,
         etapaActual: draft.etapaActual,
@@ -276,6 +286,7 @@ export function PublicStatusEditorModal({
         garantiaInicio: draft.garantiaInicio,
         inversion: draft.inversion,
         pagos: effectivePagosFor(draft),
+        archivos,
       });
       if (!response.success) {
         throw new Error(response.message || "No se pudo actualizar el estatus público.");
