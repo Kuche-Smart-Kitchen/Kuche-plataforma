@@ -372,6 +372,14 @@ const STAGE_RANK: Record<TaskStage, number> = {
   contrato: 3,
 };
 
+const isUnassignedLabel = (value: string) => {
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.length === 0 || trimmed === "sin asignar";
+};
+
+const hasRealAssignee = (values: string[] | undefined) =>
+  Array.isArray(values) && values.some((value) => !isUnassignedLabel(value));
+
 /** Combina tarjetas locales con datos del backend sin perder trabajo offline. */
 export function mergeKanbanTaskLists(local: KanbanTask[], incoming: KanbanTask[]): KanbanTask[] {
   const merged = new Map<string, KanbanTask>();
@@ -409,6 +417,10 @@ export function mergeKanbanTaskLists(local: KanbanTask[], incoming: KanbanTask[]
       ...existing,
       sourceId: task.sourceId ?? existing.sourceId,
       sourceType: task.sourceType ?? existing.sourceType,
+      assignedTo:
+        !hasRealAssignee(existing.assignedTo) && hasRealAssignee(task.assignedTo)
+          ? task.assignedTo
+          : existing.assignedTo,
       assignedToIds: task.assignedToIds?.length ? task.assignedToIds : existing.assignedToIds,
       stage,
       preliminarData: existing.preliminarData ?? task.preliminarData,

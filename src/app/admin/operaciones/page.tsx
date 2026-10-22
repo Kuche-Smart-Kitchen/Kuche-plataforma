@@ -6,23 +6,15 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Calculator, FileText, Pencil, Trash2, UserPlus } from "lucide-react";
 
-import { DueDateInput } from "@/components/ui/DueDateInput";
 import { KanbanTablero } from "@/components/admin/KanbanTablero";
 import { PublicStatusEditorModal } from "@/components/admin/PublicStatusEditorModal";
+import { AsignarPendienteModal } from "@/components/kanban/AsignarPendienteModal";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import {
-  kanbanColumns,
   type KanbanTask,
-  type TaskPriority,
-  type TaskStage,
 } from "@/lib/kanban";
-import { generatePublicProjectCode } from "@/lib/project-code";
 import { fetchBackendKanbanTasks } from "@/lib/admin-workflow";
-import { agendarCita, asignarIngenierosCita } from "@/lib/axios/citasApi";
-import { crearTarea } from "@/lib/axios/tareasApi";
-import Captcha, { type CaptchaRef } from "@/components/ui/Captcha";
-import { dueDateToSortTimestamp } from "@/lib/kanban-due-datetime";
 import {
   INTEGRANTE_ROL_OPTIONS,
   type IntegranteRolSelectable,
@@ -40,19 +32,6 @@ export default function OperacionesPage() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
-  const [newTaskProject, setNewTaskProject] = useState("");
-  const [newTaskEmail, setNewTaskEmail] = useState("");
-  const [newTaskPhone, setNewTaskPhone] = useState("");
-  const [newTaskStage, setNewTaskStage] = useState<TaskStage>("citas");
-  const [newTaskAssignedTo, setNewTaskAssignedTo] = useState("");
-  const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>("media");
-  const [newTaskDueDate, setNewTaskDueDate] = useState("");
-  const [newTaskLocation, setNewTaskLocation] = useState("");
-  const [newTaskMapsUrl, setNewTaskMapsUrl] = useState("");
-  const [assignError, setAssignError] = useState("");
-  const [isCreatingPending, setIsCreatingPending] = useState(false);
-  const [assignCaptchaToken, setAssignCaptchaToken] = useState("");
-  const assignCaptchaRef = useRef<CaptchaRef | null>(null);
   const [newMemberName, setNewMemberName] = useState("");
   const [newMemberEmail, setNewMemberEmail] = useState("");
   const [newMemberRole, setNewMemberRole] = useState<IntegranteRolSelectable>("empleado");
@@ -67,12 +46,9 @@ export default function OperacionesPage() {
   const [kanbanTasks, setKanbanTasks] = useState<KanbanTask[]>([]);
   const [selectedPublicTaskId, setSelectedPublicTaskId] = useState<string | null>(null);
   const [isPublicEditorOpen, setIsPublicEditorOpen] = useState(false);
-  const assignModalRef = useRef<HTMLDivElement | null>(null);
   const teamModalRef = useRef<HTMLDivElement | null>(null);
 
-  useEscapeClose(isAssignModalOpen, () => setIsAssignModalOpen(false));
   useEscapeClose(isTeamModalOpen, () => setIsTeamModalOpen(false));
-  useFocusTrap(isAssignModalOpen, assignModalRef);
   useFocusTrap(isTeamModalOpen, teamModalRef);
 
   useEffect(() => {
@@ -118,132 +94,6 @@ export default function OperacionesPage() {
     }
   }, [tasksWithProjectCode, selectedPublicTaskId]);
 
-  useEffect(() => {
-    if (teamMembers.length > 0 && !newTaskAssignedTo) {
-      setNewTaskAssignedTo(teamMembers[0].name);
-    }
-  }, [teamMembers, newTaskAssignedTo]);
-
-  const handleAssignPending = async () => {
-    const project = newTaskProject.trim();
-    if (!project) {
-      setAssignError("Completa proyecto/cliente.");
-      return;
-    }
-    if (
-      newTaskStage === "citas" &&
-      (!newTaskPhone.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newTaskEmail.trim()))
-    ) {
-      setAssignError("Completa un correo válido y el teléfono para agendar la cita.");
-      return;
-    }
-    // El backend exige fecha futura, día hábil y hora 9:00-18:00; si se deja vacía, caía en
-    // "ahora mismo" (Date.now()), lo que siempre viola esa validación y devolvía 400.
-    const citaTimestamp = dueDateToSortTimestamp(newTaskDueDate, 0);
-    if (newTaskStage === "citas" && (!newTaskDueDate.trim() || citaTimestamp <= Date.now() + 60 * 60 * 1000)) {
-      setAssignError("Selecciona fecha y hora de la cita (día hábil, 9:00-18:00, con al menos 1 hora de anticipación).");
-      return;
-    }
-    // La cita se crea contra el mismo endpoint público que usa "Agendar cita" (Agenda / landing),
-    // así que exige el mismo captcha. Antes este formulario no lo pedía ni lo mostraba y el
-    // backend respondía 400 por captcha ausente.
-    if (newTaskStage === "citas" && !assignCaptchaToken) {
-      setAssignError("Confirma el captcha para agendar la cita.");
-      return;
-    }
-
-    setIsCreatingPending(true);
-    setAssignError("");
-    let citaCreada = false;
-    try {
-      if (newTaskStage === "citas") {
-        const response = await agendarCita({
-          nombreCliente: project,
-          correoCliente: newTaskEmail.trim(),
-          telefonoCliente: newTaskPhone.trim(),
-          ubicacion: newTaskLocation.trim() || undefined,
-          fechaAgendada: new Date(citaTimestamp).toISOString(),
-          informacionAdicional: newTaskMapsUrl.trim()
-            ? `Google Maps: ${newTaskMapsUrl.trim()}`
-            : "Cita creada desde Operaciones",
-          estado: "programada",
-        }, assignCaptchaToken);
-        if (!response.success) {
-          throw new Error(response.message || "No se pudo crear la cita");
-        }
-        citaCreada = true;
-
-        const result = response.data;
-        const nestedCita = result.cita && typeof result.cita === "object"
-          ? (result.cita as Record<string, unknown>)
-          : result;
-        const citaId = String(nestedCita._id ?? nestedCita.id ?? "").trim();
-        const assignedMember = teamMembers.find((member) => member.name === newTaskAssignedTo);
-        if (assignedMember && !citaId) {
-          throw new Error("La cita se creó, pero el backend no devolvió su identificador para asignarla.");
-        }
-        if (citaId && assignedMember?.id) {
-          const assignment = await asignarIngenierosCita(citaId, { ingenierosIds: [assignedMember.id] });
-          if (!assignment.success) {
-            throw new Error(assignment.message || "La cita se creó, pero no se pudo asignar al integrante.");
-          }
-        }
-      } else {
-        const assignees =
-          newTaskAssignedTo && newTaskAssignedTo !== "Sin asignar"
-            ? [newTaskAssignedTo]
-            : [];
-        const codigoProyecto = generatePublicProjectCode();
-        const response = await crearTarea({
-          nombreProyecto: project,
-          etapa: newTaskStage,
-          estado: "pendiente",
-          asignadoA: assignees,
-          prioridad: newTaskPriority,
-          ubicacion: newTaskLocation.trim() || undefined,
-          mapsUrl: newTaskMapsUrl.trim() || undefined,
-          notas: "",
-          codigoProyecto,
-          clienteId: codigoProyecto,
-          codigo: codigoProyecto,
-          codigoCliente: codigoProyecto,
-          fechaLimite: newTaskDueDate.trim() || undefined,
-        });
-        if (!response.success) {
-          throw new Error(response.message || "No se pudo crear la tarea");
-        }
-      }
-
-      setRefreshTrigger((t) => t + 1);
-      setIsAssignModalOpen(false);
-      setNewTaskProject("");
-      setNewTaskEmail("");
-      setNewTaskPhone("");
-      setNewTaskStage("citas");
-      setNewTaskAssignedTo(teamMembers[0]?.name ?? "Sin asignar");
-      setNewTaskPriority("media");
-      setNewTaskDueDate("");
-      setNewTaskLocation("");
-      setNewTaskMapsUrl("");
-      setAssignError("");
-      setAssignCaptchaToken("");
-    } catch (error) {
-      setRefreshTrigger((t) => t + 1);
-      setAssignError(
-        error instanceof Error
-          ? error.message
-          : citaCreada
-            ? "La cita se creó, pero falló la asignación."
-            : "No se pudo guardar el pendiente en backend.",
-      );
-      // El token de Turnstile es de un solo uso: hay que forzar uno nuevo antes de reintentar.
-      setAssignCaptchaToken("");
-      assignCaptchaRef.current?.reset();
-    } finally {
-      setIsCreatingPending(false);
-    }
-  };
-
   const handleAddMember = async () => {
     const name = newMemberName.trim();
     const correo = newMemberEmail.trim();
@@ -280,17 +130,6 @@ export default function OperacionesPage() {
   };
 
   const openAssignModal = () => {
-    setNewTaskProject("");
-    setNewTaskEmail("");
-    setNewTaskPhone("");
-    setNewTaskStage("citas");
-    setNewTaskAssignedTo(teamMembers[0]?.name ?? "Sin asignar");
-    setNewTaskPriority("media");
-    setNewTaskDueDate("");
-    setNewTaskLocation("");
-    setNewTaskMapsUrl("");
-    setAssignError("");
-    setAssignCaptchaToken("");
     setIsAssignModalOpen(true);
   };
 
@@ -514,169 +353,12 @@ export default function OperacionesPage() {
         </div>
       </div>
 
-      {isAssignModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div
-            ref={assignModalRef}
-            tabIndex={-1}
-            className="flex max-h-[90vh] w-full max-w-lg flex-col rounded-3xl border border-white/70 bg-white shadow-2xl"
-          >
-            <div className="flex shrink-0 items-center justify-between border-b border-primary/5 px-6 py-4">
-              <h3 className="text-lg font-semibold text-gray-900">Asignar pendiente</h3>
-              <button
-                type="button"
-                onClick={() => setIsAssignModalOpen(false)}
-                className="rounded-full border border-primary/10 px-3 py-1 text-xs font-semibold text-secondary"
-              >
-                Cerrar
-              </button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-            <div className="space-y-4">
-              <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
-                Proyecto / Cliente
-                <input
-                  value={newTaskProject}
-                  onChange={(e) => setNewTaskProject(e.target.value)}
-                  placeholder="Ej. Residencial Vega"
-                  className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-                />
-              </label>
-              {newTaskStage === "citas" ? (
-                <>
-                  <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
-                    Correo
-                    <input
-                      type="email"
-                      required
-                      value={newTaskEmail}
-                      onChange={(e) => setNewTaskEmail(e.target.value)}
-                      placeholder="cliente@correo.com"
-                      className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-                    />
-                  </label>
-                  <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
-                    Teléfono
-                    <input
-                      type="tel"
-                      required
-                      value={newTaskPhone}
-                      onChange={(e) => setNewTaskPhone(e.target.value)}
-                      placeholder="Número de contacto"
-                      className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-                    />
-                  </label>
-                  <div>
-                    <Captcha
-                      ref={assignCaptchaRef}
-                      onVerify={setAssignCaptchaToken}
-                      onExpire={() => setAssignCaptchaToken("")}
-                      onError={() => setAssignCaptchaToken("")}
-                    />
-                  </div>
-                </>
-              ) : null}
-              <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
-                Dirección / Localidad
-                <input
-                  value={newTaskLocation}
-                  onChange={(e) => setNewTaskLocation(e.target.value)}
-                  placeholder="Ej. Av. Principal 123, Col. Centro, Monterrey"
-                  className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-                />
-                <p className="mt-1 text-[10px] text-secondary">Opcional.</p>
-              </label>
-              <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
-                Enlace de Google Maps (opcional)
-                <input
-                  type="url"
-                  value={newTaskMapsUrl}
-                  onChange={(e) => setNewTaskMapsUrl(e.target.value)}
-                  placeholder="https://maps.google.com/..."
-                  className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-                />
-                <p className="mt-1 text-[10px] text-secondary">Pega el enlace de Maps.</p>
-              </label>
-              <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
-                Etapa inicial
-                <select
-                  value={newTaskStage}
-                  onChange={(e) => setNewTaskStage(e.target.value as TaskStage)}
-                  className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-                >
-                  {kanbanColumns.map((col) => (
-                    <option key={col.id} value={col.id}>
-                      {col.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
-                Asignar a
-                <select
-                  value={newTaskAssignedTo || "Sin asignar"}
-                  onChange={(e) => setNewTaskAssignedTo(e.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-                >
-                  <option value="Sin asignar">Sin asignar</option>
-                  {teamMembers.map((m) => (
-                    <option key={m.id} value={m.name}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
-                Prioridad
-                <select
-                  value={newTaskPriority}
-                  onChange={(e) => setNewTaskPriority(e.target.value as TaskPriority)}
-                  className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-                >
-                  <option value="alta">Alta</option>
-                  <option value="media">Media</option>
-                  <option value="baja">Baja</option>
-                </select>
-              </label>
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
-                <span className="block">
-                  {newTaskStage === "citas"
-                    ? "Fecha y hora de la cita (día hábil, 9:00-18:00)"
-                    : "Fecha límite (opcional)"}
-                </span>
-                <DueDateInput
-                  value={newTaskDueDate}
-                  onChange={(next) => setNewTaskDueDate(next ?? "")}
-                  className="mt-2"
-                />
-              </div>
-            </div>
-            {assignError ? (
-              <p className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-600">
-                {assignError}
-              </p>
-            ) : null}
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setIsAssignModalOpen(false)}
-                className="rounded-2xl border border-primary/10 bg-white px-5 py-2 text-xs font-semibold text-secondary"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleAssignPending}
-                disabled={isCreatingPending}
-                className="rounded-2xl bg-primary px-5 py-2 text-xs font-semibold text-white"
-              >
-                {isCreatingPending ? "Guardando..." : "Guardar pendiente"}
-              </button>
-            </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <AsignarPendienteModal
+        open={isAssignModalOpen}
+        onClose={() => setIsAssignModalOpen(false)}
+        onCreated={() => setRefreshTrigger((tick) => tick + 1)}
+        teamMembers={teamMembers}
+      />
 
       {isPublicEditorOpen && selectedPublicTask?.codigoProyecto ? (
         <PublicStatusEditorModal

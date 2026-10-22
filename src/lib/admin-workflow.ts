@@ -172,51 +172,71 @@ const inferFileType = (tipo: unknown, name?: unknown, url?: unknown): TaskFile["
   return "otro";
 };
 
-const getAssignedNames = (raw: Record<string, unknown>): string[] => {
-  const direct = raw.assignedTo;
-  if (Array.isArray(direct)) {
-    const names = direct.map((value) => toStringValue(value)).filter((value): value is string => Boolean(value));
-    if (names.length > 0) return names;
+const isObjectId = (value: string) => /^[a-fA-F0-9]{24}$/.test(value);
+
+const ASSIGNEE_FIELDS = [
+  "assignedTo",
+  "assignedToIds",
+  "asignadoA",
+  "asignadoANombre",
+  "ingenieroAsignado",
+  "ingenieros",
+  "ingenierosAsignados",
+] as const;
+
+const readAssignees = (raw: Record<string, unknown>): { names: string[]; ids: string[] } => {
+  const names: string[] = [];
+  const ids: string[] = [];
+  const seenNames = new Set<string>();
+  const seenIds = new Set<string>();
+
+  const pushName = (value: string | undefined) => {
+    const trimmed = value?.trim() ?? "";
+    if (!trimmed || trimmed.toLowerCase() === "sin asignar") return;
+    const key = trimmed.toLowerCase();
+    if (seenNames.has(key)) return;
+    seenNames.add(key);
+    names.push(trimmed);
+  };
+
+  const pushId = (value: string | undefined) => {
+    const trimmed = value?.trim() ?? "";
+    if (!isObjectId(trimmed) || seenIds.has(trimmed)) return;
+    seenIds.add(trimmed);
+    ids.push(trimmed);
+  };
+
+  const pushValue = (value: unknown) => {
+    if (Array.isArray(value)) {
+      for (const entry of value) pushValue(entry);
+      return;
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (isObjectId(trimmed)) pushId(trimmed);
+      else pushName(trimmed);
+      return;
+    }
+    const record = toRecord(value);
+    if (!record || Array.isArray(value)) return;
+    const rawId = record._id ?? record.id;
+    const id =
+      toStringValue(rawId) ??
+      (rawId && typeof rawId === "object" && isObjectId(String(rawId)) ? String(rawId) : undefined);
+    const name = toStringValue(record.nombre) ?? toStringValue(record.name);
+    if (id && isObjectId(id)) pushId(id);
+    else if (id) pushName(id);
+    pushName(name);
+  };
+
+  const sources = [raw, toRecord(raw.cita)].filter((source): source is Record<string, unknown> => Boolean(source));
+  for (const source of sources) {
+    for (const field of ASSIGNEE_FIELDS) {
+      pushValue(source[field]);
+    }
   }
 
-  const legacy = raw.asignadoANombre;
-  if (Array.isArray(legacy)) {
-    const names = legacy.map((value) => toStringValue(value)).filter((value): value is string => Boolean(value));
-    if (names.length > 0) return names;
-  }
-
-  const ingeniero = toRecord(raw.ingenieroAsignado);
-  const nombreIngeniero = toStringValue(ingeniero?.nombre);
-  if (nombreIngeniero) return [nombreIngeniero];
-
-  return [];
-};
-
-const getAssignedIds = (raw: Record<string, unknown>): string[] => {
-  const directIds = raw.assignedToIds;
-  if (Array.isArray(directIds)) {
-    const ids = directIds
-      .map((value) => toStringValue(value))
-      .filter((value): value is string => Boolean(value));
-    if (ids.length > 0) return ids;
-  }
-
-  const legacyIds = raw.asignadoA;
-  if (Array.isArray(legacyIds)) {
-    const ids = legacyIds
-      .map((value) => toStringValue(value))
-      .filter((value): value is string => Boolean(value));
-    if (ids.length > 0) return ids;
-  }
-
-  const singleLegacyId = toStringValue(raw.asignadoA);
-  if (singleLegacyId) return [singleLegacyId];
-
-  const ingeniero = toRecord(raw.ingenieroAsignado);
-  const ingenieroId = toStringValue(ingeniero?._id);
-  if (ingenieroId) return [ingenieroId];
-
-  return [];
+  return { names, ids };
 };
 
 const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
@@ -234,7 +254,7 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     stage = "disenos";
   }
 
-  const assignedTo = getAssignedNames(raw);
+  const assignees = readAssignees(raw);
   const clientName =
     toStringValue(cliente?.nombre) ??
     toStringValue(cita?.nombreCliente) ??
@@ -294,8 +314,8 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     title: clientName,
     stage,
     status: normalizeStatus(raw.estado ?? item.estado),
-    assignedTo: assignedTo.length > 0 ? assignedTo : ["Sin asignar"],
-    assignedToIds: getAssignedIds(raw),
+    assignedTo: assignees.names.length > 0 ? assignees.names : ["Sin asignar"],
+    assignedToIds: assignees.ids,
     project: clientName,
     clientEmail,
     clientPhone,
@@ -450,7 +470,6 @@ export async function syncKanbanTasksFromBackend(): Promise<KanbanTask[] | null>
   }
 }
 
-const isObjectId = (value: string) => /^[a-fA-F0-9]{24}$/.test(value);
 const isMissingRouteError = (error: unknown) => {
   const status = (error as { response?: { status?: number } })?.response?.status;
   return status === 404 || status === 405;

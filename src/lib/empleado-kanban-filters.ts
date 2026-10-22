@@ -20,23 +20,38 @@ export async function loadKanbanTasksForEmpleadoView(): Promise<KanbanTask[]> {
   return fallback;
 }
 
+const OBJECT_ID_PATTERN = /^[a-fA-F0-9]{24}$/;
+
+const sameAssigneeName = (left: string, right: string) =>
+  left.trim().toLowerCase() === right.trim().toLowerCase();
+
+const isAssigneeLabel = (value: string) => {
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.length > 0 && trimmed !== "sin asignar";
+};
+
 export function isTaskAssignedToEmpleado(task: KanbanTask, empleado: EmpleadoAssigneeMatch): boolean {
   const name = empleado.nombre.trim();
   const userId = empleado.userId?.trim();
+  const ids = Array.isArray(task.assignedToIds) ? task.assignedToIds : [];
+  const names = Array.isArray(task.assignedTo) ? task.assignedTo : [];
 
-  if (userId && Array.isArray(task.assignedToIds) && task.assignedToIds.some((id) => id === userId)) {
+  if (userId && ids.some((id) => id === userId)) {
     return true;
   }
 
-  if (!Array.isArray(task.assignedTo)) {
-    return false;
-  }
-
-  if (name && task.assignedTo.some((assignee) => assignee === name)) {
+  if (name && names.some((assignee) => isAssigneeLabel(assignee) && sameAssigneeName(assignee, name))) {
     return true;
   }
 
-  if (userId && task.assignedTo.some((assignee) => assignee === userId)) {
+  if (userId && names.some((assignee) => assignee === userId)) {
+    return true;
+  }
+
+  if (
+    name &&
+    ids.some((id) => isAssigneeLabel(id) && !OBJECT_ID_PATTERN.test(id.trim()) && sameAssigneeName(id, name))
+  ) {
     return true;
   }
 

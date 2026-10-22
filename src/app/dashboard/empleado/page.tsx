@@ -1,31 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Plus } from "lucide-react";
 
-import { useEscapeClose } from "@/hooks/useEscapeClose";
-import { useFocusTrap } from "@/hooks/useFocusTrap";
-import { DueDateInput } from "@/components/ui/DueDateInput";
 import { KanbanTablero } from "@/components/admin/KanbanTablero";
 import { PublicStatusEditorModal } from "@/components/admin/PublicStatusEditorModal";
+import { AsignarPendienteModal } from "@/components/kanban/AsignarPendienteModal";
 import { useAuthContext } from "@/contexts/AuthContext";
 import {
   getTasksFromLocalStorage,
-  kanbanColumns,
   kanbanTasksUpdatedEventName,
-  notifyKanbanTasksUpdated,
   taskPublicCode,
-  withUnifiedProjectCode,
   type KanbanTask,
-  type TaskPriority,
-  type TaskStage,
 } from "@/lib/kanban";
-import { generatePublicProjectCode, readPersistedPublicCode } from "@/lib/project-code";
 import { EMPLEADO_DASHBOARD_USER as CURRENT_USER } from "@/lib/empleado-dashboard-user";
 import { fetchAssignableUsers } from "@/lib/axios/usuariosApi";
-import { crearTarea } from "@/lib/axios/tareasApi";
 import {
   isTaskAssignedToEmpleado,
   loadKanbanTasksForEmpleadoView,
@@ -33,18 +23,6 @@ import {
   taskIsEnProcesoPipeline,
   taskIsInactivo,
 } from "@/lib/empleado-kanban-filters";
-
-const readCreatedTaskId = (data: unknown): string | null => {
-  if (!data || typeof data !== "object") return null;
-  const record = data as Record<string, unknown>;
-  const direct = record._id ?? record.id;
-  if (typeof direct === "string" && direct.trim()) return direct.trim();
-  const nested = record.tarea ?? record.task ?? record.data;
-  if (!nested || typeof nested !== "object") return null;
-  const inner = nested as Record<string, unknown>;
-  const nestedId = inner._id ?? inner.id;
-  return typeof nestedId === "string" && nestedId.trim() ? nestedId.trim() : null;
-};
 
 export default function EmpleadoDashboard() {
   const router = useRouter();
@@ -58,31 +36,15 @@ export default function EmpleadoDashboard() {
   const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>([]);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isPublicEditorOpen, setIsPublicEditorOpen] = useState(false);
-  const [isNewTaskModalOpen, setIsNewTaskModalOpen] = useState(false);
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [kanbanTasks, setKanbanTasks] = useState<KanbanTask[]>([]);
   const [selectedPublicTaskId, setSelectedPublicTaskId] = useState<string | null>(null);
-  const [newTaskProject, setNewTaskProject] = useState("");
-  const [newTaskEmail, setNewTaskEmail] = useState("");
-  const [newTaskPhone, setNewTaskPhone] = useState("");
-  const [newTaskStage, setNewTaskStage] = useState<TaskStage>("citas");
-  const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>("media");
-  const [newTaskDueDate, setNewTaskDueDate] = useState("");
 
   useEffect(() => {
     void fetchAssignableUsers()
       .then((users) => setTeamMembers(users.map((user) => ({ id: user.id ?? user._id ?? user.correo, name: user.nombre }))))
       .catch(() => setTeamMembers([]));
   }, []);
-  const [newTaskLocation, setNewTaskLocation] = useState("");
-  const [newTaskMapsUrl, setNewTaskMapsUrl] = useState("");
-  const [newTaskCode, setNewTaskCode] = useState("");
-  const [taskError, setTaskError] = useState("");
-  const [taskSaving, setTaskSaving] = useState(false);
-
-  const newTaskModalRef = useRef<HTMLDivElement | null>(null);
-
-  useEscapeClose(isNewTaskModalOpen, () => setIsNewTaskModalOpen(false));
-  useFocusTrap(isNewTaskModalOpen, newTaskModalRef);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -140,133 +102,6 @@ export default function EmpleadoDashboard() {
     [myTasksWithCode, selectedPublicTaskIdSafe],
   );
 
-  const handleCreateTask = async () => {
-    const project = newTaskProject.trim();
-    if (!project) {
-      setTaskError("Escribe el proyecto o cliente.");
-      return;
-    }
-
-    const userId = currentUserId?.trim();
-    const asignadoA = Array.from(
-      new Set([...(userId ? [userId] : []), currentUserName].filter(Boolean)),
-    );
-
-    const codigoProyecto = newTaskCode.trim() || generatePublicProjectCode();
-    const correo = newTaskEmail.trim();
-    const telefono = newTaskPhone.trim();
-    const contacto = {
-      nombre: project,
-      nombreCliente: project,
-      nombreProyecto: project,
-      correo: correo || undefined,
-      correoCliente: correo || undefined,
-      telefono: telefono || undefined,
-      telefonoCliente: telefono || undefined,
-      codigoProyecto,
-      codigo: codigoProyecto,
-      clienteId: codigoProyecto,
-      codigoCliente: codigoProyecto,
-    };
-
-    setTaskSaving(true);
-    setTaskError("");
-
-    try {
-      const response = await crearTarea({
-        etapa: newTaskStage,
-        estado: "pendiente",
-        asignadoA,
-        prioridad: newTaskPriority,
-        ubicacion: newTaskLocation.trim() || undefined,
-        mapsUrl: newTaskMapsUrl.trim() || undefined,
-        notas: "",
-        fechaLimite: newTaskDueDate.trim() || undefined,
-        ...contacto,
-      });
-
-      if (!response.success) {
-        throw new Error(response.message || "No se pudo crear la tarea");
-      }
-
-      const createdId = readCreatedTaskId(response.data) ?? `task-${Date.now()}`;
-      const createdRecord = response.data;
-      const pickCode = (value: unknown) => (typeof value === "string" ? value.trim() : "");
-      const persistedCode =
-        pickCode(createdRecord.clienteId) ||
-        pickCode(createdRecord.codigo) ||
-        readPersistedPublicCode(createdRecord);
-      if (!persistedCode) {
-        console.warn(
-          "El backend creó la tarea sin devolver clienteId ni codigoProyecto. El GET del Kanban no podrá rehidratar el código hasta que el modelo Tarea persista ese campo.",
-        );
-      }
-      const codeForCard = persistedCode || codigoProyecto;
-
-      const localTask = withUnifiedProjectCode(
-        {
-          id: createdId,
-          sourceId: createdId,
-          sourceType: "tarea",
-          title: project,
-          project,
-          stage: newTaskStage,
-          status: "pendiente" as const,
-          assignedTo: [currentUserName],
-          assignedToIds: userId ? [userId] : undefined,
-          notes: "",
-          priority: newTaskPriority,
-          dueDate: newTaskDueDate.trim() || undefined,
-          location: newTaskLocation.trim() || undefined,
-          mapsUrl: newTaskMapsUrl.trim() || undefined,
-          clientEmail: correo || undefined,
-          clientPhone: telefono || undefined,
-          createdAt: Date.now(),
-        },
-        codeForCard,
-      );
-      const nextTasks = [
-        ...getTasksFromLocalStorage().filter((task) => task.id !== createdId && taskPublicCode(task) !== codeForCard),
-        localTask,
-      ];
-      notifyKanbanTasksUpdated(nextTasks);
-      setKanbanTasks(nextTasks);
-
-      setRefreshTrigger((prev) => prev + 1);
-      setIsNewTaskModalOpen(false);
-      setNewTaskProject("");
-      setNewTaskEmail("");
-      setNewTaskPhone("");
-      setNewTaskStage("citas");
-      setNewTaskPriority("media");
-      setNewTaskDueDate("");
-      setNewTaskLocation("");
-      setNewTaskMapsUrl("");
-      setTaskError("");
-    } catch (error) {
-      const backendMessage = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setTaskError(
-        backendMessage ||
-          (error instanceof Error ? error.message : "No se pudo guardar la tarea en backend."),
-      );
-    } finally {
-      setTaskSaving(false);
-    }
-  };
-
-  const openNewTaskModal = () => {
-    setNewTaskProject("");
-    setNewTaskEmail("");
-    setNewTaskPhone("");
-    setNewTaskStage("citas");
-    setNewTaskPriority("media");
-    setNewTaskDueDate("");
-    setNewTaskLocation("");
-    setNewTaskMapsUrl("");
-    setNewTaskCode(generatePublicProjectCode());
-    setTaskError("");
-    setIsNewTaskModalOpen(true);
-  };
 
   return (
     <div className="space-y-8">
@@ -280,11 +115,10 @@ export default function EmpleadoDashboard() {
         </div>
         <button
           type="button"
-          onClick={openNewTaskModal}
+          onClick={() => setIsAssignModalOpen(true)}
           className="flex shrink-0 items-center gap-2 self-start rounded-2xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 sm:self-center"
         >
-          <Plus className="h-4 w-4" />
-          Nueva tarea
+          Asignar pendiente
         </button>
       </div>
 
@@ -463,151 +297,14 @@ export default function EmpleadoDashboard() {
         />
       ) : null}
 
-      {isNewTaskModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4 py-8">
-          <motion.div
-            ref={newTaskModalRef}
-            tabIndex={-1}
-            initial={{ y: 40, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            className="flex max-h-[min(90dvh,calc(100dvh-2rem))] w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-white/70 bg-white shadow-2xl"
-          >
-            <div className="shrink-0 border-b border-primary/5 px-6 pb-4 pt-6">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-lg font-semibold text-gray-900">Nueva tarea</h3>
-                <button
-                  type="button"
-                  onClick={() => setIsNewTaskModalOpen(false)}
-                  className="shrink-0 rounded-full border border-primary/10 px-3 py-1 text-xs font-semibold text-secondary"
-                >
-                  Cerrar
-                </button>
-              </div>
-              <p className="mt-2 text-sm text-secondary">
-                La tarea será asignada automáticamente a ti ({currentUserName}).
-              </p>
-              <p className="mt-3 text-sm text-gray-900">
-                Código de proyecto:{" "}
-                <span className="font-semibold tracking-wide text-primary">{newTaskCode}</span>
-              </p>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
-            <div className="space-y-4">
-              <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
-                Proyecto / Cliente
-                <input
-                  value={newTaskProject}
-                  onChange={(e) => setNewTaskProject(e.target.value)}
-                  placeholder="Ej. Residencial Vega"
-                  className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-                />
-              </label>
-              <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
-                Correo
-                <input
-                  type="email"
-                  value={newTaskEmail}
-                  onChange={(e) => setNewTaskEmail(e.target.value)}
-                  placeholder="cliente@correo.com"
-                  className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-                />
-              </label>
-              <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
-                Teléfono
-                <input
-                  type="tel"
-                  value={newTaskPhone}
-                  onChange={(e) => setNewTaskPhone(e.target.value)}
-                  placeholder="55 0000 0000"
-                  className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-                />
-              </label>
-              <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
-                Etapa
-                <select
-                  value={newTaskStage}
-                  onChange={(e) => setNewTaskStage(e.target.value as TaskStage)}
-                  className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-                >
-                  {kanbanColumns.map((col) => (
-                    <option key={col.id} value={col.id}>
-                      {col.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
-                Prioridad
-                <select
-                  value={newTaskPriority}
-                  onChange={(e) => setNewTaskPriority(e.target.value as TaskPriority)}
-                  className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-                >
-                  <option value="alta">Alta</option>
-                  <option value="media">Media</option>
-                  <option value="baja">Baja</option>
-                </select>
-              </label>
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
-                <span className="block">
-                  {newTaskStage === "citas"
-                    ? "Fecha de la cita (opcional)"
-                    : "Fecha límite (opcional)"}
-                </span>
-                <DueDateInput
-                  value={newTaskDueDate}
-                  onChange={(next) => setNewTaskDueDate(next ?? "")}
-                  className="mt-2"
-                />
-              </div>
-              <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
-                Ubicación (opcional)
-                <input
-                  value={newTaskLocation}
-                  onChange={(e) => setNewTaskLocation(e.target.value)}
-                  placeholder="Ej. Col. Centro"
-                  className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-                />
-              </label>
-              <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
-                URL de Maps (opcional)
-                <input
-                  type="url"
-                  value={newTaskMapsUrl}
-                  onChange={(e) => setNewTaskMapsUrl(e.target.value)}
-                  placeholder="https://maps.google.com/..."
-                  className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
-                />
-              </label>
-            </div>
-            {taskError ? (
-              <p className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-600">
-                {taskError}
-              </p>
-            ) : null}
-            </div>
-            <div className="shrink-0 border-t border-primary/10 bg-white px-6 py-4">
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsNewTaskModalOpen(false)}
-                  className="rounded-2xl border border-primary/10 bg-white px-5 py-2 text-xs font-semibold text-secondary"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleCreateTask()}
-                  disabled={taskSaving}
-                  className="rounded-2xl bg-primary px-5 py-2 text-xs font-semibold text-white disabled:cursor-wait disabled:opacity-60"
-                >
-                  {taskSaving ? "Guardando…" : "Crear tarea"}
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      ) : null}
+      <AsignarPendienteModal
+        open={isAssignModalOpen}
+        onClose={() => setIsAssignModalOpen(false)}
+        onCreated={() => setRefreshTrigger((tick) => tick + 1)}
+        teamMembers={teamMembers}
+        defaultAssigneeName={currentUserName}
+        defaultAssigneeId={currentUserId}
+      />
     </div>
   );
 }
