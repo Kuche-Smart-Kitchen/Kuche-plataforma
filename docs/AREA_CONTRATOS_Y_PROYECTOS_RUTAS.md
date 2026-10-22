@@ -86,16 +86,38 @@ Componente: `src/components/admin/PublicStatusEditorModal.tsx`, abierto con el b
     "garantiaInicio": "YYYY-MM-DD",
     "inversion": 0,
     "pagos": {
-      "anticipo": { "amount": 0, "date": "YYYY-MM-DD", "receiptLabel": "Ver recibo", "receiptImage": "<dataURL o vacío>" },
-      "segundoPago": { "amount": 0, "date": "YYYY-MM-DD", "receiptLabel": "Ver recibo", "receiptImage": "<dataURL o vacío>" },
-      "liquidacion": { "amount": 0, "date": "YYYY-MM-DD", "receiptLabel": "Ver recibo", "receiptImage": "<dataURL o vacío>" }
-    }
+      "anticipo": { "amount": 0, "date": "YYYY-MM-DD", "receiptLabel": "Ver recibo", "receiptImage": "https://..." },
+      "segundoPago": { "amount": 0, "date": "YYYY-MM-DD", "receiptLabel": "Ver recibo", "receiptImage": "https://..." },
+      "liquidacion": { "amount": 0, "date": "YYYY-MM-DD", "receiptLabel": "Ver recibo", "receiptImage": "https://..." }
+    },
+    "archivos": [
+      { "id": "seg-1", "nombre": "Render.jpg", "tipo": "jpg", "url": "https://..." },
+      { "id": "seg-2", "nombre": "Plano.pdf", "tipo": "pdf", "url": "https://..." }
+    ]
   }
   ```
 - `restante` (monto por pagar) se calcula en el cliente: `max(0, inversion - suma de amount de los 3 pagos)`,
   no se envía al backend.
-- Los `receiptImage` de los comprobantes se guardan como data URL (PDF sin comprimir, imágenes
-  comprimidas a JPEG) dentro de este mismo `PATCH`; no usan Cloudinary.
+- Imágenes, PDF del modal y comprobantes se suben a Cloudinary (`folder`: `kuche/seguimiento-publico`)
+  y el PATCH solo manda la URL `https`. No se guarda Base64 en Mongo.
+- `receiptImage: ""` limpia ese comprobante. Un PATCH que no incluye `pagos` no debe tocar los comprobantes.
+- Un PATCH que no incluye `archivos` no debe borrar el arreglo. Si incluye `archivos`, reemplaza o agrega por `id`.
+
+### Lectura que tiene que coincidir
+
+Estas tres respuestas deben devolver las mismas URLs guardadas en el documento del proyecto
+(`codigo` / `clienteId`, 6 caracteres):
+
+- `GET /api/seguimiento/proyecto`: `archivos[].url` y `pagos.*.receiptImage`.
+- `GET /api/seguimiento/archivos`: cada archivo con `nombre`, `tipo` y `url`.
+- `GET /api/seguimiento/pagos`: `pagos.anticipo`, `segundoPago` y `liquidacion` con `receiptImage`.
+  Si este GET omite `receiptImage`, el portal usa el del proyecto, pero ambos deben coincidir.
+
+El preset unsigned `kuche_uploads` tiene que aceptar imagen y PDF (`auto` o `raw`). Si solo acepta
+imagen, el PDF no obtiene URL y no aparece en seguimiento. Eso se configura en Cloudinary, no en Mongo.
+
+Mongo sí guarda el documento de seguimiento. Sin `archivos.url` y `pagos.receiptImage` persistidos,
+el cliente no ve archivos ni recibos en otro teléfono. El Kanban y localStorage no alcanzan.
 
 ## 3. Notas
 

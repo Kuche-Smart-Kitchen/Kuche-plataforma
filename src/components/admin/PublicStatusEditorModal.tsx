@@ -10,6 +10,13 @@ import DateMaskInput from "@/components/ui/DateMaskInput";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { seguimientoApi } from "@/lib/axios";
 import {
+  getTasksFromLocalStorage,
+  notifyKanbanTasksUpdated,
+  taskPublicCode,
+  type KanbanTask,
+} from "@/lib/kanban";
+import { prepareFileForSeguimiento } from "@/lib/seguimiento-media-payload";
+import {
   ESTADO_PROYECTO,
   mergeSeguimientoFromStorage,
   normalizeEstadoProyecto,
@@ -21,13 +28,50 @@ import {
 
 export type PublicStatusEditorRole = "admin" | "employee";
 
+function samePublicCode(task: KanbanTask, codigo: string): boolean {
+  const left = taskPublicCode(task).trim().toUpperCase().replace(/^K-/, "");
+  const right = codigo.trim().toUpperCase().replace(/^K-/, "");
+  return Boolean(left) && left === right;
+}
+
+function reflectPublicStatusOnKanbanCard(
+  codigo: string,
+  patch: { inversion: number; etapaActual: string; pagos: SeguimientoPagos },
+): void {
+  const tasks = getTasksFromLocalStorage();
+  let found = false;
+  const totalPagado = patch.pagos.anticipo.amount + patch.pagos.segundoPago.amount + patch.pagos.liquidacion.amount;
+  const next = tasks.map((task) => {
+    if (!samePublicCode(task, codigo)) return task;
+    found = true;
+    return {
+      ...task,
+      inversion: patch.inversion,
+      etapaActual: patch.etapaActual,
+      pagos: patch.pagos,
+      totalPagado,
+    };
+  });
+  if (!found) return;
+  notifyKanbanTasksUpdated(next);
+}
+
 type ArchivoSeg = {
   id: string;
   name: string;
   type: string;
   src?: string;
+  url?: string;
   indexedPdfKey?: string;
 };
+
+function firstFilledReceipt(...values: Array<string | undefined>): string {
+  for (const value of values) {
+    const trimmed = value?.trim() ?? "";
+    if (trimmed) return trimmed;
+  }
+  return "";
+}
 
 /** Contenedor visible para `<input type="file">` oculto (hover claro; el nativo casi no se estiliza). */
 const filePickButtonClass =
@@ -47,72 +91,6 @@ const formatCurrency = (value: number) =>
     currency: "MXN",
     maximumFractionDigits: 0,
   }).format(value);
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-/** Objetivo por debajo del umbral de offload (~40KB) para no depender solo de IndexedDB al guardar. */
-const RECEIPT_JPEG_TARGET_MAX_LEN = 35 * 1024;
-
-function compressImageFileToJpegDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      try {
-        let w = img.naturalWidth || img.width;
-        let h = img.naturalHeight || img.height;
-        const maxW = 1600;
-        if (w > maxW) {
-          h = Math.round((h * maxW) / w);
-          w = maxW;
-        }
-        const canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          void readFileAsDataUrl(file).then(resolve).catch(reject);
-          return;
-        }
-        ctx.drawImage(img, 0, 0, w, h);
-        let q = 0.88;
-        let jpeg = "";
-        for (let i = 0; i < 12; i++) {
-          jpeg = canvas.toDataURL("image/jpeg", q);
-          if (jpeg.length <= RECEIPT_JPEG_TARGET_MAX_LEN || q <= 0.52) break;
-          q -= 0.07;
-        }
-        resolve(jpeg);
-      } catch {
-        void readFileAsDataUrl(file).then(resolve).catch(reject);
-      }
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      void readFileAsDataUrl(file).then(resolve).catch(reject);
-    };
-    img.src = objectUrl;
-  });
-}
-
-/** PDF sin tocar; imágenes se comprimen a JPEG para el seguimiento del cliente. */
-async function readReceiptOrPdfAsStoredDataUrl(file: File): Promise<string> {
-  if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-    return readFileAsDataUrl(file);
-  }
-  if (file.type.startsWith("image/")) {
-    return compressImageFileToJpegDataUrl(file);
-  }
-  return readFileAsDataUrl(file);
-}
 
 function toInputDate(isoLike: string): string {
   const t = Date.parse(isoLike);
@@ -152,6 +130,8 @@ export function PublicStatusEditorModal({
     liquidacion: "",
   });
   const pendingReceiptsRef = useRef<Partial<Record<keyof SeguimientoPagos, string>>>({});
+  /** Solo «Quitar» vacía el comprobante. Un string vacío del ref no pisa la URL ya guardada. */
+  const clearedReceiptsRef = useRef<Partial<Record<keyof SeguimientoPagos, boolean>>>({});
   const [receiptTick, setReceiptTick] = useState(0);
   const [draft, setDraft] = useState<SeguimientoClienteProject | null>(null);
   /** Solo fallo al cargar desde localStorage (bloquea el formulario). */
@@ -205,6 +185,14 @@ export function PublicStatusEditorModal({
         ? projectResponse.data
         : response.data.project;
       const next = mergeSeguimientoFromStorage(project);
+      pendingReceiptsRef.current = {};
+      clearedReceiptsRef.current = {};
+      baselineReceiptsRef.current = {
+        anticipo: next.pagos.anticipo.receiptImage?.trim() ?? "",
+        segundoPago: next.pagos.segundoPago.receiptImage?.trim() ?? "",
+        liquidacion: next.pagos.liquidacion.receiptImage?.trim() ?? "",
+      };
+      setReceiptTick((tick) => tick + 1);
       setDraft(next);
       setInversionText(String(next.inversion || ""));
       setPagoAmountText({
@@ -237,11 +225,13 @@ export function PublicStatusEditorModal({
     const keys: (keyof SeguimientoPagos)[] = ["anticipo", "segundoPago", "liquidacion"];
     const next: SeguimientoPagos = { ...d.pagos };
     for (const k of keys) {
-      const ri =
-        pendingReceiptsRef.current[k] ??
-        baselineReceiptsRef.current[k] ??
-        d.pagos[k].receiptImage ??
-        "";
+      const ri = clearedReceiptsRef.current[k]
+        ? ""
+        : firstFilledReceipt(
+            pendingReceiptsRef.current[k],
+            baselineReceiptsRef.current[k],
+            d.pagos[k].receiptImage,
+          );
       next[k] = { ...d.pagos[k], receiptImage: ri };
     }
     return next;
@@ -265,32 +255,57 @@ export function PublicStatusEditorModal({
       setSaveError("No hay datos cargados. Cierra el modal y ábrelo de nuevo.");
       return;
     }
+    const codigo = codigoProyecto.trim().toUpperCase();
+    if (!codigo) {
+      setSaveError("Falta el código de proyecto.");
+      return;
+    }
     setSaveError(null);
     setIsSaving(true);
     try {
-      const archivos = (Array.isArray(draft.archivos) ? (draft.archivos as ArchivoSeg[]) : []).map((file) => ({
-        id: file.id,
-        name: file.name,
-        nombre: file.name,
-        type: file.type,
-        tipo: file.type,
-        src: file.src,
-        url: file.src,
-        indexedPdfKey: file.indexedPdfKey,
-      }));
-      const response = await seguimientoApi.actualizarEstatusPublico(codigoProyecto, {
+      const inversion = parseMoneyInput(inversionText);
+      const pagos = effectivePagosFor({
+        ...draft,
+        inversion,
+        pagos: {
+          anticipo: { ...draft.pagos.anticipo, amount: parseMoneyInput(pagoAmountText.anticipo) },
+          segundoPago: { ...draft.pagos.segundoPago, amount: parseMoneyInput(pagoAmountText.segundoPago) },
+          liquidacion: { ...draft.pagos.liquidacion, amount: parseMoneyInput(pagoAmountText.liquidacion) },
+        },
+      });
+      const archivos = (Array.isArray(draft.archivos) ? (draft.archivos as ArchivoSeg[]) : []).map((file) => {
+        const storedUrl = (file as ArchivoSeg & { url?: string }).url?.trim();
+        const src = file.src?.trim() || "";
+        const remote = [storedUrl, src].find((value) => value && /^https?:\/\//i.test(value));
+        return {
+          id: file.id,
+          name: file.name,
+          nombre: file.name,
+          type: file.type,
+          tipo: file.type,
+          src: remote || src,
+          url: remote || storedUrl || src,
+          indexedPdfKey: file.indexedPdfKey,
+        };
+      });
+      const response = await seguimientoApi.actualizarEstatusPublico(codigo, {
         estadoProyecto: draft.estadoProyecto,
         etapaActual: draft.etapaActual,
         fechaInicio: draft.fechaInicio,
         fechaEntrega: draft.fechaEntrega,
         garantiaInicio: draft.garantiaInicio,
-        inversion: draft.inversion,
-        pagos: effectivePagosFor(draft),
+        inversion,
+        pagos,
         archivos,
       });
       if (!response.success) {
         throw new Error(response.message || "No se pudo actualizar el estatus público.");
       }
+      reflectPublicStatusOnKanbanCard(codigo, {
+        inversion,
+        etapaActual: draft.etapaActual,
+        pagos,
+      });
       onSaved?.();
       if (saveSuccessTimerRef.current) {
         clearTimeout(saveSuccessTimerRef.current);
@@ -303,15 +318,20 @@ export function PublicStatusEditorModal({
       }, 2200);
     } catch (e) {
       console.error(e);
-      setSaveError("No se pudo guardar. Intenta de nuevo.");
+      setSaveError(e instanceof Error && e.message ? e.message : "No se pudo guardar. Intenta de nuevo.");
     } finally {
       setIsSaving(false);
     }
-  }, [codigoProyecto, draft, effectivePagosFor, onSaved, onClose]);
+  }, [codigoProyecto, draft, effectivePagosFor, inversionText, onSaved, onClose, pagoAmountText]);
 
 
   const addArchivo = () => {
     if (!draft) return;
+    const stored = newFileSrc?.trim() ?? "";
+    if (!/^https?:\/\//i.test(stored)) {
+      setSaveError("Elige un archivo y espera a que termine de subirse antes de añadirlo.");
+      return;
+    }
     const trimmed = newFileName.trim();
     const defaultName = newFileType === "jpg" ? "Imagen.jpg" : "Documento.pdf";
     const name = trimmed || defaultName;
@@ -319,7 +339,8 @@ export function PublicStatusEditorModal({
       id: `seg-${Date.now()}`,
       name,
       type: newFileType,
-      ...(newFileSrc ? { src: newFileSrc } : {}),
+      src: stored,
+      url: stored,
     };
     setDraft((prev) =>
       prev
@@ -597,12 +618,12 @@ export function PublicStatusEditorModal({
                         return;
                       }
                       try {
-                        setNewFileSrc(
-                          newFileType === "jpg" ? await compressImageFileToJpegDataUrl(f) : await readFileAsDataUrl(f),
-                        );
+                        setSaveError(null);
+                        setNewFileSrc(await prepareFileForSeguimiento(f));
                         setNewFileName((prev) => (prev.trim() ? prev : f.name));
-                      } catch {
+                      } catch (error) {
                         setNewFileSrc(undefined);
+                        setSaveError(error instanceof Error ? error.message : "No se pudo adjuntar el archivo.");
                       } finally {
                         e.target.value = "";
                       }
@@ -698,11 +719,14 @@ export function PublicStatusEditorModal({
                               }
                               void (async () => {
                                 try {
-                                  const dataUrl = await readReceiptOrPdfAsStoredDataUrl(f);
-                                  pendingReceiptsRef.current[item.key] = dataUrl;
+                                  setSaveError(null);
+                                  delete clearedReceiptsRef.current[item.key];
+                                  pendingReceiptsRef.current[item.key] = await prepareFileForSeguimiento(f);
                                   setReceiptTick((t) => t + 1);
-                                } catch {
-                                  /* ignore */
+                                } catch (error) {
+                                  setSaveError(
+                                    error instanceof Error ? error.message : "No se pudo adjuntar el comprobante.",
+                                  );
                                 } finally {
                                   input.value = "";
                                 }
@@ -713,13 +737,31 @@ export function PublicStatusEditorModal({
                         </span>
                       </label>
                       {(() => {
-                        const src =
-                          pendingReceiptsRef.current[item.key] ??
-                          baselineReceiptsRef.current[item.key] ??
-                          "";
-                        return src.length > 2 ? (
-                          <p className="mt-1 text-[10px] text-emerald-700">Comprobante cargado.</p>
-                        ) : null;
+                        const src = clearedReceiptsRef.current[item.key]
+                          ? ""
+                          : firstFilledReceipt(
+                              pendingReceiptsRef.current[item.key],
+                              baselineReceiptsRef.current[item.key],
+                              draft.pagos[item.key].receiptImage,
+                            );
+                        if (!src) return null;
+                        return (
+                          <div className="mt-1 flex items-center justify-between gap-2">
+                            <p className="text-[10px] text-emerald-700">Comprobante cargado.</p>
+                            <button
+                              type="button"
+                              className="text-[10px] font-semibold text-rose-600 hover:underline"
+                              onClick={() => {
+                                clearedReceiptsRef.current[item.key] = true;
+                                delete pendingReceiptsRef.current[item.key];
+                                baselineReceiptsRef.current[item.key] = "";
+                                setReceiptTick((tick) => tick + 1);
+                              }}
+                            >
+                              Quitar
+                            </button>
+                          </div>
+                        );
                       })()}
                     </div>
                   ))}

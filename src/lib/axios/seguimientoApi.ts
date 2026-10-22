@@ -1,5 +1,7 @@
 import { AxiosError } from "axios";
 
+import { slimEstatusPublicoPayload } from "@/lib/seguimiento-media-payload";
+
 import axiosInstance, { type ApiResponse } from "./axiosConfig";
 
 type SeguimientoLoginPayload = {
@@ -166,9 +168,32 @@ export const actualizarEstatusPublico = async (
   codigo: string,
   data: Record<string, unknown>,
 ): Promise<ApiResponse<{ project?: Record<string, unknown> }>> => {
-  const response = await axiosInstance.patch<ApiResponse<{ project?: Record<string, unknown> }>>(
-    `/api/seguimiento/proyectos/${encodeURIComponent(codigo.trim())}`,
-    data,
-  );
-  return response.data;
+  const codigoNormalizado = codigo.trim().toUpperCase();
+  let payload = data;
+  try {
+    payload = await slimEstatusPublicoPayload(data);
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "No se pudieron preparar los archivos del estatus público.",
+    };
+  }
+  const response = await axiosInstance.patch<
+    ApiResponse<{ project?: Record<string, unknown> }> | Record<string, unknown>
+  >(`/api/seguimiento/proyectos/${encodeURIComponent(codigoNormalizado)}`, payload);
+  const body = response.data;
+  if (body && typeof body === "object" && "success" in body) {
+    return body as ApiResponse<{ project?: Record<string, unknown> }>;
+  }
+  if (response.status >= 200 && response.status < 300) {
+    const project =
+      body && typeof body === "object" && !Array.isArray(body)
+        ? (body as Record<string, unknown>)
+        : undefined;
+    return { success: true, data: { project } };
+  }
+  return { success: false, message: "No se pudo actualizar el estatus público." };
 };

@@ -26,7 +26,9 @@ const isImageType = (type: string) => {
 };
 
 const fileLooksLikePdf = (name: string, src?: string) =>
-  name.toLowerCase().includes(".pdf") || (src ?? "").toLowerCase().includes(".pdf");
+  name.toLowerCase().includes(".pdf") ||
+  /\.pdf(\?|#|$)/i.test(src ?? "") ||
+  /\/raw\/upload\//i.test(src ?? "");
 
 const fileLooksLikeImage = (name: string, src?: string) =>
   /\.(png|jpe?g|webp|gif)(\?|$)/i.test(name) || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(src ?? "");

@@ -85,23 +85,75 @@ function preferQuoteList<T>(primary: unknown, fallback: T[] | undefined): T[] | 
   return fallback;
 }
 
+function remoteUrlOf(file: unknown): string {
+  if (!file || typeof file !== "object") return "";
+  const row = file as Record<string, unknown>;
+  const url = typeof row.url === "string" ? row.url.trim() : "";
+  const src = typeof row.src === "string" ? row.src.trim() : "";
+  if (/^https?:\/\//i.test(url)) return url;
+  if (/^https?:\/\//i.test(src)) return src;
+  return "";
+}
+
 function archivoIdentity(file: unknown): string {
   if (!file || typeof file !== "object") return "";
   const row = file as Record<string, unknown>;
-  return String(row.id ?? row.src ?? row.url ?? row.name ?? row.nombre ?? "").trim();
+  return String(row.id ?? row._id ?? row.src ?? row.url ?? row.name ?? row.nombre ?? "").trim();
 }
 
 function mergeSeguimientoArchivos(fromProject: unknown[], fromEndpoint: unknown[]): unknown[] {
   const merged: unknown[] = [];
-  const seen = new Set<string>();
+  const indexByKey = new Map<string, number>();
   for (const file of [...fromEndpoint, ...fromProject]) {
     if (!file || typeof file !== "object") continue;
     const row = file as { id?: unknown; name?: unknown; nombre?: unknown };
     if (isPlaceholderPreliminarArchivo(row)) continue;
     const key = archivoIdentity(file);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    merged.push(file);
+    if (!key) continue;
+    const existingIndex = indexByKey.get(key);
+    if (existingIndex === undefined) {
+      indexByKey.set(key, merged.length);
+      merged.push(file);
+      continue;
+    }
+    if (!remoteUrlOf(merged[existingIndex]) && remoteUrlOf(file)) {
+      merged[existingIndex] = file;
+    }
+  }
+  return merged;
+}
+
+const PAGO_KEYS = ["anticipo", "segundoPago", "liquidacion"] as const;
+
+function asPagoRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+/** Montos del endpoint de pagos; el comprobante del proyecto se conserva si el endpoint lo omite. */
+function mergePagosKeepReceipts(fromProject: unknown, fromEndpoint: unknown): unknown {
+  const endpointRoot = asPagoRecord(fromEndpoint);
+  const endpointPagos =
+    endpointRoot && asPagoRecord(endpointRoot.pagos) ? asPagoRecord(endpointRoot.pagos) : endpointRoot;
+  const projectPagos = asPagoRecord(fromProject);
+  if (!endpointPagos) return projectPagos ?? fromEndpoint;
+  if (!projectPagos) return endpointPagos;
+  const merged: Record<string, unknown> = { ...endpointPagos };
+  for (const key of PAGO_KEYS) {
+    const endpointRow = asPagoRecord(endpointPagos[key]);
+    const projectRow = asPagoRecord(projectPagos[key]);
+    if (!endpointRow && projectRow) {
+      merged[key] = projectRow;
+      continue;
+    }
+    if (!endpointRow) continue;
+    const endpointReceipt = typeof endpointRow.receiptImage === "string" ? endpointRow.receiptImage.trim() : "";
+    const projectReceipt = typeof projectRow?.receiptImage === "string" ? projectRow.receiptImage.trim() : "";
+    merged[key] = {
+      ...(projectRow ?? {}),
+      ...endpointRow,
+      receiptImage: endpointReceipt || projectReceipt,
+    };
   }
   return merged;
 }
@@ -243,7 +295,10 @@ export default function SeguimientoPage() {
                 setFilesWarning(filesResponse.message || "No pudimos cargar los archivos del seguimiento.");
               }
               if (paymentsResponse.success && paymentsResponse.data) {
-                parsed = { ...parsed, pagos: paymentsResponse.data.pagos ?? paymentsResponse.data };
+                parsed = {
+                  ...parsed,
+                  pagos: mergePagosKeepReceipts(parsed.pagos, paymentsResponse.data.pagos ?? paymentsResponse.data),
+                };
               }
             } catch (detailError) {
               if (seguimientoApi.seguimientoHttpStatus(detailError) === 429) {

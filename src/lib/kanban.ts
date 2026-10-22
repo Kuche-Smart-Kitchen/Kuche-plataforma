@@ -133,6 +133,14 @@ export type KanbanTask = {
   totalPagado?: number;
   /** Inversión estimada / total para seguimiento (MXN), cuando el backend la expone en la tarea. */
   inversion?: number;
+  /** Paso público del timeline de fabricación, guardado desde el estatus público. */
+  etapaActual?: string;
+  /** Pagos públicos (anticipo, segundo pago y liquidación) reflejados en la tarjeta. */
+  pagos?: {
+    anticipo?: { amount?: number; date?: string; receiptLabel?: string; receiptImage?: string };
+    segundoPago?: { amount?: number; date?: string; receiptLabel?: string; receiptImage?: string };
+    liquidacion?: { amount?: number; date?: string; receiptLabel?: string; receiptImage?: string };
+  };
   /** ID de documento Tarea en Mongo cuando la tarjeta kanban representa una cita u otra entidad. */
   linkedTareaId?: string;
 };

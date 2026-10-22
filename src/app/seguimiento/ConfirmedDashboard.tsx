@@ -88,6 +88,10 @@ const GarantiaCountdown = ({ startDate }: { startDate: string }) => {
   );
 };
 
+function receiptOpensAsPdf(url: string): boolean {
+  return isPdfDataUrl(url) || /\.pdf(\?|#|$)/i.test(url) || /\/raw\/upload\//i.test(url);
+}
+
 function receiptIsOpenable(value: unknown): boolean {
   if (typeof value !== "string") return false;
   const raw = value.trim();
@@ -316,7 +320,7 @@ export function ConfirmedDashboard({ project, onOpenImage }: Props) {
                           window.alert(SEGUIMIENTO_MEDIA_UNAVAILABLE_MSG);
                           return;
                         }
-                        if (isPdfDataUrl(r.url)) {
+                        if (receiptOpensAsPdf(r.url)) {
                           openPdfDataUrlOrUrlInNewTab(r.url);
                           return;
                         }
