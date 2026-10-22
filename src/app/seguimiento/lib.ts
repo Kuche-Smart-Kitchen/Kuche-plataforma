@@ -63,6 +63,12 @@ const normalizeSeguimientoFile = (raw: unknown, index: number): SeguimientoArchi
   };
 };
 
+function projectTypeFromQuote(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const projectType = (value as { projectType?: unknown }).projectType;
+  return typeof projectType === "string" ? projectType.trim() : "";
+}
+
 function quoteObjectHasData(value: unknown): boolean {
   return Boolean(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0);
 }
@@ -105,10 +111,18 @@ export function withLevantamientoDetalladoArchivo<T extends { archivos?: unknown
     return row.id === LEVANTAMIENTO_ARCHIVO_ID || row.isGeneratedPdf === true;
   });
   if (alreadyListed) return { ...project, archivos };
+  const preliminarList = Array.isArray(project.preliminarCotizaciones) ? project.preliminarCotizaciones : [];
+  const preliminarSource = preliminarHasRealData(project.preliminarData)
+    ? project.preliminarData
+    : preliminarList.find((item) => preliminarHasRealData(item));
+  const projectType = projectTypeFromQuote(preliminarSource);
+  const levantamientoName = projectType
+    ? `Levantamiento detallado — ${projectType}.pdf`
+    : "Levantamiento Detallado.pdf";
   archivos.push({
     id: LEVANTAMIENTO_ARCHIVO_ID,
-    nombre: "Levantamiento Detallado.pdf",
-    name: "Levantamiento Detallado.pdf",
+    nombre: levantamientoName,
+    name: levantamientoName,
     type: "pdf",
     tipo: "pdf",
     isGeneratedPdf: true,
@@ -131,10 +145,16 @@ export function withCotizacionFormalArchivo<T extends { archivos?: unknown; coti
     return row.id === FORMAL_ARCHIVO_ID || row.isGeneratedFormal === true || name.includes("cotizacion formal") || name.includes("cotización formal");
   });
   if (alreadyListed) return project;
+  const formalList = Array.isArray(project.cotizacionesFormales) ? project.cotizacionesFormales : [];
+  const formalSource = quoteObjectHasData(project.cotizacionFormalData)
+    ? project.cotizacionFormalData
+    : formalList.find((item) => quoteObjectHasData(item));
+  const projectType = projectTypeFromQuote(formalSource);
+  const formalName = projectType ? `Cotización formal — ${projectType}.pdf` : "Cotización formal.pdf";
   archivos.push({
     id: FORMAL_ARCHIVO_ID,
-    nombre: "Cotización formal.pdf",
-    name: "Cotización formal.pdf",
+    nombre: formalName,
+    name: formalName,
     type: "pdf",
     tipo: "pdf",
     isGeneratedFormal: true,

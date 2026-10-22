@@ -6,11 +6,23 @@ import Captcha, { type CaptchaRef } from "@/components/ui/Captcha";
 import { DueDateInput } from "@/components/ui/DueDateInput";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { useAuthContext } from "@/contexts/AuthContext";
+import { isLocalLoginCaptchaBypass, LOCAL_LOGIN_CAPTCHA_BYPASS } from "@/lib/login-captcha-bypass";
 import { agendarCita, asignarIngenierosCita } from "@/lib/axios/citasApi";
 import { asignarTrabajadoresTarea, crearTarea } from "@/lib/axios/tareasApi";
-import { kanbanColumns, type TaskPriority, type TaskStage } from "@/lib/kanban";
+import {
+  getTasksFromLocalStorage,
+  kanbanColumns,
+  mergeKanbanTaskLists,
+  notifyKanbanTasksUpdated,
+  taskPublicCode,
+  withUnifiedProjectCode,
+  type KanbanTask,
+  type TaskPriority,
+  type TaskStage,
+} from "@/lib/kanban";
 import { dueDateToSortTimestamp } from "@/lib/kanban-due-datetime";
-import { generatePublicProjectCode } from "@/lib/project-code";
+import { generatePublicProjectCode, readPersistedPublicCode } from "@/lib/project-code";
 
 export type AsignarPendienteMember = {
   id: string;
@@ -36,9 +48,36 @@ const readEntityId = (value: unknown): string => {
   return "";
 };
 
-const assigneeObjectId = (member: AsignarPendienteMember | undefined): string => {
-  const id = member?.id?.trim() ?? "";
+const objectIdOf = (value: string | null | undefined): string => {
+  const id = value?.trim() ?? "";
   return OBJECT_ID_PATTERN.test(id) ? id : "";
+};
+
+const assigneeObjectId = (member: AsignarPendienteMember | null | undefined): string => objectIdOf(member?.id);
+
+const readSaveError = (caught: unknown, citaCreada: boolean): string => {
+  const response = caught && typeof caught === "object" && "response" in caught
+    ? (caught as { response?: { status?: number; data?: { message?: unknown } } }).response
+    : undefined;
+  if (response?.status === 400 && typeof response.data?.message === "string" && response.data.message.trim()) {
+    return response.data.message.trim();
+  }
+  if (caught instanceof Error && caught.message.trim()) return caught.message;
+  return citaCreada
+    ? "La cita se creó, pero falló la asignación."
+    : "No se pudo guardar el pendiente en backend.";
+};
+
+const publishAssignedTask = (task: KanbanTask) => {
+  const sourceId = task.sourceId?.trim();
+  const code = taskPublicCode(task);
+  const withoutTwin = getTasksFromLocalStorage().filter((existing) => {
+    if (existing.id === task.id) return false;
+    if (sourceId && (existing.id === sourceId || existing.sourceId === sourceId)) return false;
+    if (code && taskPublicCode(existing) === code) return false;
+    return true;
+  });
+  notifyKanbanTasksUpdated(mergeKanbanTaskLists(withoutTwin, [task]));
 };
 
 type Props = {
@@ -59,6 +98,10 @@ export function AsignarPendienteModal({
   defaultAssigneeName,
   defaultAssigneeId,
 }: Props) {
+  const { user } = useAuthContext();
+  const isAdmin = user?.rol === "admin";
+  const sessionUserId = objectIdOf(user?.id) || objectIdOf(user?._id) || objectIdOf(defaultAssigneeId);
+  const sessionUserName = user?.nombre?.trim() || defaultAssigneeName?.trim() || "";
   const [project, setProject] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -71,17 +114,18 @@ export function AsignarPendienteModal({
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaMountKey, setCaptchaMountKey] = useState(0);
   const captchaRef = useRef<CaptchaRef | null>(null);
   const modalRef = useRef<HTMLDivElement | null>(null);
 
-  const assigneeOptions = (() => {
-    if (!defaultAssigneeName) return teamMembers;
-    const alreadyListed = teamMembers.some(
-      (member) => member.name === defaultAssigneeName || (defaultAssigneeId && member.id === defaultAssigneeId),
-    );
-    if (alreadyListed) return teamMembers;
-    return [{ id: defaultAssigneeId?.trim() || defaultAssigneeName, name: defaultAssigneeName }, ...teamMembers];
-  })();
+  const selfMember: AsignarPendienteMember | null = sessionUserName || sessionUserId
+    ? { id: sessionUserId, name: sessionUserName || "Tú" }
+    : null;
+  const assigneeOptions = isAdmin
+    ? teamMembers
+    : selfMember
+      ? [selfMember]
+      : [];
 
   const assigneeOptionsRef = useRef(assigneeOptions);
   assigneeOptionsRef.current = assigneeOptions;
@@ -89,6 +133,10 @@ export function AsignarPendienteModal({
   defaultAssigneeNameRef.current = defaultAssigneeName;
   const defaultAssigneeIdRef = useRef(defaultAssigneeId);
   defaultAssigneeIdRef.current = defaultAssigneeId;
+  const isAdminRef = useRef(isAdmin);
+  isAdminRef.current = isAdmin;
+  const selfMemberRef = useRef(selfMember);
+  selfMemberRef.current = selfMember;
 
   useEscapeClose(open, onClose);
   useFocusTrap(open, modalRef);
@@ -96,6 +144,7 @@ export function AsignarPendienteModal({
   useEffect(() => {
     if (!open) return;
     const options = assigneeOptionsRef.current;
+    const lockedSelf = selfMemberRef.current;
     const preferredName = defaultAssigneeNameRef.current;
     const preferredId = defaultAssigneeIdRef.current?.trim();
     const byName = preferredName && options.some((member) => member.name === preferredName)
@@ -104,7 +153,9 @@ export function AsignarPendienteModal({
     const byId = preferredId
       ? options.find((member) => member.id === preferredId)?.name ?? ""
       : "";
-    const preferred = byName || byId || options[0]?.name || "Sin asignar";
+    const preferred = isAdminRef.current
+      ? byName || byId || options[0]?.name || "Sin asignar"
+      : lockedSelf?.name || byName || byId || "";
     setProject("");
     setEmail("");
     setPhone("");
@@ -136,10 +187,40 @@ export function AsignarPendienteModal({
       setError("Selecciona fecha y hora de la cita (día hábil, 9:00-18:00, con al menos 1 hora de anticipación).");
       return;
     }
-    if (stage === "citas" && !captchaToken) {
-      setError("Confirma el captcha para agendar la cita.");
+    let captchaTokenForRequest = captchaToken.trim();
+    if (stage === "citas") {
+      if (!captchaTokenForRequest && isLocalLoginCaptchaBypass()) {
+        captchaTokenForRequest = LOCAL_LOGIN_CAPTCHA_BYPASS;
+      }
+      captchaRef.current?.reset();
+      setCaptchaToken("");
+      setCaptchaMountKey((current) => current + 1);
+      if (!captchaTokenForRequest) {
+        setError("Confirma el captcha para agendar la cita.");
+        return;
+      }
+    }
+
+    const selectedMember = isAdmin
+      ? assigneeOptions.find((member) => member.name === assignedTo)
+      : selfMember;
+    const wantsAssignee = isAdmin
+      ? Boolean(selectedMember && assignedTo !== "Sin asignar")
+      : true;
+    const assignedId = wantsAssignee
+      ? assigneeObjectId(selectedMember) || sessionUserId
+      : "";
+    const assignedName = selectedMember?.name || sessionUserName;
+    if (wantsAssignee && !assignedId) {
+      setError("No se pudo identificar al integrante para asignar la tarjeta.");
       return;
     }
+
+    const showOnBoard = (task: KanbanTask) => {
+      publishAssignedTask(task);
+      onCreated();
+      onClose();
+    };
 
     setSaving(true);
     setError("");
@@ -156,39 +237,53 @@ export function AsignarPendienteModal({
             ? `Google Maps: ${mapsUrl.trim()}`
             : "Cita creada desde Operaciones",
           estado: "programada",
-        }, captchaToken);
+        }, captchaTokenForRequest);
         if (!response.success) {
           throw new Error(response.message || "No se pudo crear la cita");
         }
         citaCreada = true;
 
-        const citaId = readEntityId(response.data);
-        const assignedMember = assigneeOptions.find((member) => member.name === assignedTo);
-        const wantsAssignee = Boolean(assignedMember && assignedTo !== "Sin asignar");
-        const assignedId = assigneeObjectId(assignedMember);
+        const citaPayload = response.data;
+        const citaId = readEntityId(citaPayload);
         if (wantsAssignee && !citaId) {
           throw new Error("La cita se creó, pero el backend no devolvió su identificador para asignarla.");
         }
-        if (wantsAssignee && !assignedId) {
-          throw new Error("No se pudo identificar al integrante para asignar la cita.");
-        }
+        let trackingCode = readPersistedPublicCode(citaPayload) ?? "";
         if (citaId && assignedId) {
           const assignment = await asignarIngenierosCita(citaId, { ingenierosIds: [assignedId] });
           if (!assignment.success) {
             throw new Error(assignment.message || "La cita se creó, pero no se pudo asignar al integrante.");
           }
+          trackingCode = readPersistedPublicCode(assignment.data) || trackingCode;
         }
+        const cardId = citaId || `cita-${Date.now()}`;
+        showOnBoard(withUnifiedProjectCode({
+          id: cardId,
+          sourceId: citaId || undefined,
+          sourceType: "cita",
+          title: projectName,
+          project: projectName,
+          stage: "citas",
+          status: "pendiente",
+          assignedTo: assignedName ? [assignedName] : ["Sin asignar"],
+          assignedToIds: assignedId ? [assignedId] : [],
+          clientEmail: email.trim() || undefined,
+          clientPhone: phone.trim() || undefined,
+          location: location.trim() || undefined,
+          mapsUrl: mapsUrl.trim() || undefined,
+          dueDate: dueDate.trim() || undefined,
+          priority,
+          notes: "",
+          createdAt: Date.now(),
+          followUpStatus: "pendiente",
+        }, trackingCode));
       } else {
-        const assignedMember = assigneeOptions.find((member) => member.name === assignedTo);
-        const wantsAssignee = Boolean(assignedMember && assignedTo && assignedTo !== "Sin asignar");
-        const assignedId = assigneeObjectId(assignedMember);
-        const assignees = wantsAssignee ? [assignedId || assignedTo] : [];
         const codigoProyecto = generatePublicProjectCode();
         const response = await crearTarea({
           nombreProyecto: projectName,
           etapa: stage,
           estado: "pendiente",
-          asignadoA: assignees,
+          asignadoA: assignedId ? [assignedId] : [],
           prioridad: priority,
           ubicacion: location.trim() || undefined,
           mapsUrl: mapsUrl.trim() || undefined,
@@ -202,8 +297,8 @@ export function AsignarPendienteModal({
         if (!response.success) {
           throw new Error(response.message || "No se pudo crear la tarea");
         }
-        if (wantsAssignee && assignedId) {
-          const taskId = readEntityId(response.data);
+        const taskId = readEntityId(response.data);
+        if (isAdmin && assignedId) {
           if (!taskId) {
             throw new Error("La tarea se creó, pero el backend no devolvió su identificador para asignarla.");
           }
@@ -212,21 +307,33 @@ export function AsignarPendienteModal({
             throw new Error(assignment.message || "La tarea se creó, pero no se pudo asignar al integrante.");
           }
         }
+        const cardId = taskId || `task-${Date.now()}`;
+        showOnBoard(withUnifiedProjectCode({
+          id: cardId,
+          sourceId: cardId,
+          sourceType: "tarea",
+          title: projectName,
+          project: projectName,
+          stage,
+          status: "pendiente" as const,
+          assignedTo: assignedName ? [assignedName] : ["Sin asignar"],
+          assignedToIds: assignedId ? [assignedId] : [],
+          location: location.trim() || undefined,
+          mapsUrl: mapsUrl.trim() || undefined,
+          dueDate: dueDate.trim() || undefined,
+          priority,
+          notes: "",
+          createdAt: Date.now(),
+          followUpStatus: "pendiente" as const,
+        }, codigoProyecto));
       }
-
-      onCreated();
-      onClose();
+      return;
     } catch (caught) {
       onCreated();
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : citaCreada
-            ? "La cita se creó, pero falló la asignación."
-            : "No se pudo guardar el pendiente en backend.",
-      );
+      setError(readSaveError(caught, citaCreada));
       setCaptchaToken("");
       captchaRef.current?.reset();
+      setCaptchaMountKey((current) => current + 1);
     } finally {
       setSaving(false);
     }
@@ -288,6 +395,7 @@ export function AsignarPendienteModal({
                 </label>
                 <div>
                   <Captcha
+                    key={captchaMountKey}
                     ref={captchaRef}
                     onVerify={setCaptchaToken}
                     onExpire={() => setCaptchaToken("")}
@@ -334,11 +442,12 @@ export function AsignarPendienteModal({
             <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-secondary">
               Asignar a
               <select
-                value={assignedTo || "Sin asignar"}
+                value={isAdmin ? (assignedTo || "Sin asignar") : (selfMember?.name || assignedTo)}
                 onChange={(e) => setAssignedTo(e.target.value)}
-                className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none"
+                disabled={!isAdmin}
+                className="mt-2 w-full rounded-2xl border border-primary/10 bg-white px-4 py-3 text-sm outline-none disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-secondary"
               >
-                <option value="Sin asignar">Sin asignar</option>
+                {isAdmin ? <option value="Sin asignar">Sin asignar</option> : null}
                 {assigneeOptions.map((member) => (
                   <option key={member.id || member.name} value={member.name}>
                     {member.name}

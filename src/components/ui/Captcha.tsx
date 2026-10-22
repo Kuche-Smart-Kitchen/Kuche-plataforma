@@ -76,26 +76,27 @@ const Captcha = forwardRef<CaptchaRef, CaptchaProps>(({
       }
     };
 
-    // Si el script global ya existe, renderizamos directamente
+    const scriptId = "cloudflare-turnstile-script";
     if (window.turnstile) {
       renderWidget();
     } else {
-      // Si no existe, lo cargamos una sola vez de forma segura
-      const scriptId = "cloudflare-turnstile-script";
-      let script = document.getElementById(scriptId) as HTMLScriptElement;
-
+      let script = document.getElementById(scriptId) as HTMLScriptElement | null;
       if (!script) {
         script = document.createElement("script");
         script.id = scriptId;
         script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
         script.async = true;
         script.defer = true;
+        script.addEventListener("load", () => {
+          script?.setAttribute("data-turnstile-ready", "true");
+          renderWidget();
+        });
         document.head.appendChild(script);
-      }
-
-      script.onload = () => {
+      } else if (script.getAttribute("data-turnstile-ready") === "true") {
         renderWidget();
-      };
+      } else {
+        script.addEventListener("load", () => renderWidget(), { once: true });
+      }
     }
 
     return () => {

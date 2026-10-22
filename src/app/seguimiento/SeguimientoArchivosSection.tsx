@@ -33,6 +33,9 @@ const fileLooksLikePdf = (name: string, src?: string) =>
 const fileLooksLikeImage = (name: string, src?: string) =>
   /\.(png|jpe?g|webp|gif)(\?|$)/i.test(name) || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(src ?? "");
 
+const chipClassName =
+  "group inline-flex items-center gap-2 rounded-full border border-primary/10 px-4 py-2 text-xs font-semibold text-primary transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-primary/10 disabled:hover:text-primary";
+
 export function SeguimientoArchivosSection({
   files,
   onOpenImage,
@@ -40,6 +43,16 @@ export function SeguimientoArchivosSection({
   onGeneratedFormal,
 }: Props) {
   const visibleFiles = files.filter((file) => !isPlaceholderPreliminarArchivo(file));
+
+  const openStored = async (src: string, onReady: (url: string) => void) => {
+    const resolved = await resolveSeguimientoMediaRefForUi(src);
+    if ("missing" in resolved) {
+      window.alert(SEGUIMIENTO_MEDIA_UNAVAILABLE_MSG);
+      return;
+    }
+    onReady(resolved.url);
+  };
+
   return (
     <div className="mt-6 rounded-3xl border border-primary/10 bg-white p-6">
       <p className="text-xs uppercase tracking-[0.3em] text-secondary">Archivos</p>
@@ -49,117 +62,58 @@ export function SeguimientoArchivosSection({
             Aún no hay archivos compartidos en tu expediente.
           </p>
         ) : null}
-        {visibleFiles.map((f) => {
-          const normalizedType = f.type.trim().toLowerCase();
-          const isGenerated = f.isGeneratedPdf === true;
-          const isGeneratedFormal = f.isGeneratedFormal === true;
+        {visibleFiles.map((file) => {
+          const normalizedType = file.type.trim().toLowerCase();
+          const isGenerated = file.isGeneratedPdf === true;
+          const isGeneratedFormal = file.isGeneratedFormal === true;
           const isDesign = normalizedType === "diseno";
           const opensAsPdf =
             isGenerated ||
             isGeneratedFormal ||
             normalizedType === "pdf" ||
-            (isDesign && fileLooksLikePdf(f.name, f.src));
+            fileLooksLikePdf(file.name, file.src) ||
+            (isDesign && fileLooksLikePdf(file.name, file.src));
           const opensAsImage =
-            isImageType(normalizedType) ||
-            (isDesign && !opensAsPdf && (fileLooksLikeImage(f.name, f.src) || Boolean(f.src?.trim())));
-          const primary = opensAsPdf ? getPdfButtonPrimaryLabelFromFileName(f.name) : "";
-          const secondary = opensAsPdf ? getPdfButtonSecondaryFromFileName(f.name) : "";
+            !opensAsPdf &&
+            (isImageType(normalizedType) || fileLooksLikeImage(file.name, file.src) || (isDesign && Boolean(file.src?.trim())));
+          const primary = opensAsPdf ? getPdfButtonPrimaryLabelFromFileName(file.name) : "";
+          const secondary = opensAsPdf ? getPdfButtonSecondaryFromFileName(file.name) : "";
           const canOpenFile = isGenerated
             ? Boolean(onGeneratedLevantamiento)
             : isGeneratedFormal
               ? Boolean(onGeneratedFormal)
               : opensAsPdf
-              ? Boolean(f.indexedPdfKey || f.src?.trim())
-              : Boolean(f.src?.trim());
-          if (isGenerated || isGeneratedFormal) {
-            const openGenerated = isGeneratedFormal ? onGeneratedFormal : onGeneratedLevantamiento;
-            const label = isGeneratedFormal ? "Ver cotización formal" : "Ver Levantamiento Detallado";
-            return (
-              <div
-                key={f.id}
-                className="flex items-center gap-3 rounded-full border border-gray-200 bg-gray-50/50 p-1 pl-4"
-              >
-                <button
-                  type="button"
-                  className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-primary"
-                  onClick={() => openGenerated?.("open")}
-                >
-                  <FileText className="h-4 w-4" />
-                  {label}
-                </button>
-                <button
-                  type="button"
-                  className="rounded-full bg-black px-3 py-1 text-xs text-white transition hover:bg-gray-800"
-                  onClick={() => openGenerated?.("download")}
-                >
-                  Descargar
-                </button>
-              </div>
-            );
-          }
-          if (opensAsImage && f.src?.trim()) {
-            return (
-              <div
-                key={f.id}
-                className="flex items-center gap-3 rounded-full border border-gray-200 bg-gray-50/50 p-1 pl-4"
-              >
-                <span className="inline-flex items-center gap-2 text-xs font-semibold text-primary">
-                  <ImageIcon className="h-4 w-4" />
-                  {f.name}
-                </span>
-                <button
-                  type="button"
-                  className="rounded-full bg-black px-3 py-1 text-xs text-white transition hover:bg-gray-800"
-                  onClick={() => {
-                    void (async () => {
-                      const r = await resolveSeguimientoMediaRefForUi(f.src!);
-                      if ("missing" in r) {
-                        window.alert(SEGUIMIENTO_MEDIA_UNAVAILABLE_MSG);
-                        return;
-                      }
-                      onOpenImage(f.name, r.url);
-                    })();
-                  }}
-                >
-                  Vista previa
-                </button>
-              </div>
-            );
-          }
+                ? Boolean(file.indexedPdfKey || file.src?.trim())
+                : Boolean(file.src?.trim());
+
           return (
             <button
-              key={f.id}
+              key={file.id}
               type="button"
               disabled={!canOpenFile}
               title={!canOpenFile ? "Archivo no adjunto aún" : undefined}
-              className="inline-flex items-center gap-2 rounded-full border border-primary/10 px-4 py-2 text-xs font-semibold text-primary transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-primary/10 disabled:hover:text-primary"
+              className={chipClassName}
               onClick={() => {
+                if (isGenerated) {
+                  onGeneratedLevantamiento?.("open");
+                  return;
+                }
+                if (isGeneratedFormal) {
+                  onGeneratedFormal?.("open");
+                  return;
+                }
                 if (opensAsPdf) {
-                  if (f.indexedPdfKey) {
-                    openPdfFromIndexedKey(f.indexedPdfKey);
+                  if (file.indexedPdfKey) {
+                    openPdfFromIndexedKey(file.indexedPdfKey);
                     return;
                   }
-                  if (f.src?.trim()) {
-                    void (async () => {
-                      const r = await resolveSeguimientoMediaRefForUi(f.src!);
-                      if ("missing" in r) {
-                        window.alert(SEGUIMIENTO_MEDIA_UNAVAILABLE_MSG);
-                        return;
-                      }
-                      openPdfDataUrlOrUrlInNewTab(r.url);
-                    })();
+                  if (file.src?.trim()) {
+                    void openStored(file.src, (url) => openPdfDataUrlOrUrlInNewTab(url));
                   }
                   return;
                 }
-                if (opensAsImage && f.src?.trim()) {
-                  void (async () => {
-                    const r = await resolveSeguimientoMediaRefForUi(f.src!);
-                    if ("missing" in r) {
-                      window.alert(SEGUIMIENTO_MEDIA_UNAVAILABLE_MSG);
-                      return;
-                    }
-                    onOpenImage(f.name, r.url);
-                  })();
+                if (opensAsImage && file.src?.trim()) {
+                  void openStored(file.src, (url) => onOpenImage(file.name, url));
                 }
               }}
             >
@@ -168,11 +122,13 @@ export function SeguimientoArchivosSection({
                 <span className="flex flex-col items-start leading-4">
                   <span className="leading-4">{primary}</span>
                   {secondary ? (
-                    <span className="text-[10px] font-semibold text-secondary/80">{secondary}</span>
+                    <span className="text-[10px] font-semibold text-secondary/80 group-hover:text-accent">
+                      {secondary}
+                    </span>
                   ) : null}
                 </span>
               ) : (
-                f.name
+                file.name
               )}
             </button>
           );
