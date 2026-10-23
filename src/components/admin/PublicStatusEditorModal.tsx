@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Loader2 } from "lucide-react";
 
 import { DateInput } from "@/components/ui/DateInput";
 import DateMaskInput from "@/components/ui/DateMaskInput";
@@ -377,7 +377,7 @@ export function PublicStatusEditorModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="public-status-editor-title"
-        className={`flex max-h-[min(90vh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl transition-opacity duration-300 ${saveSuccessVisible || isSaving ? "pointer-events-none opacity-50" : ""}`}
+        className={`flex max-h-[min(90vh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl ${saveSuccessVisible ? "pointer-events-none" : ""}`}
         style={{ color: "#111827" }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -797,9 +797,16 @@ export function PublicStatusEditorModal({
             <button
               type="submit"
               disabled={!draft || Boolean(loadError) || saveSuccessVisible || isSaving}
-              className="w-full rounded-2xl bg-accent py-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-accent py-3 text-xs font-semibold text-white disabled:cursor-not-allowed ${isSaving ? "disabled:opacity-100" : "disabled:opacity-50"}`}
             >
-              {isSaving ? "Guardando…" : "Guardar cambios"}
+              {isSaving ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  Guardando...
+                </>
+              ) : (
+                "Guardar cambios"
+              )}
             </button>
           </div>
         </form>

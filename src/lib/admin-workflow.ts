@@ -69,8 +69,35 @@ const toDueDateString = (value: unknown): string | undefined => {
   return new Date(parsed).toISOString().slice(0, 16);
 };
 
-const toNumberValue = (value: unknown): number | undefined =>
-  typeof value === "number" && Number.isFinite(value) ? value : undefined;
+const toNumberValue = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+};
+
+const parsePagoSlot = (value: unknown) => {
+  const row = toRecord(value);
+  if (!row) return undefined;
+  const amount = toNumberValue(row.amount);
+  const date = toStringValue(row.date);
+  const receiptLabel = toStringValue(row.receiptLabel);
+  const receiptImage = toStringValue(row.receiptImage);
+  if (amount === undefined && !date && !receiptLabel && !receiptImage) return undefined;
+  return { amount, date, receiptLabel, receiptImage };
+};
+
+const parsePagos = (value: unknown): KanbanTask["pagos"] | undefined => {
+  const row = toRecord(value);
+  if (!row) return undefined;
+  const anticipo = parsePagoSlot(row.anticipo);
+  const segundoPago = parsePagoSlot(row.segundoPago);
+  const liquidacion = parsePagoSlot(row.liquidacion);
+  if (!anticipo && !segundoPago && !liquidacion) return undefined;
+  return { anticipo, segundoPago, liquidacion };
+};
 
 /** ISO de backend -> `YYYY-MM-DD` para inputs `type=date`. */
 const toDateOnlyString = (value: unknown): string | undefined => {
@@ -306,6 +333,7 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     cotizacionesFormales[cotizacionesFormales.length - 1];
   const inversion = toNumberValue(itemRecord.inversion ?? raw.inversion);
   const linkedTareaId = resolveLinkedTareaId(raw, cita);
+  const pagos = parsePagos(raw.pagos);
 
   return {
     id: toStringValue(raw._id) ?? toStringValue(raw.id) ?? `${stage}-${clientName}`,
@@ -367,6 +395,7 @@ const mapKanbanItemToTask = (item: KanbanItem): KanbanTask => {
     projectTypeSummary: toStringValue(raw.tipo),
     presupuestoTotal: toNumberValue(raw.presupuestoTotal),
     totalPagado: toNumberValue(raw.totalPagado),
+    ...(pagos ? { pagos } : {}),
   };
 };
 
